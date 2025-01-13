@@ -1,0 +1,196 @@
+// Serif Day
+
+@font-face {
+  font-family: "iASerifDaySC";
+  font-style: normal;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerif-MediumS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDayHeadline";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerif-TextL.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: normal;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerif-BoldS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: normal;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerif-MediumS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerif-TextS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: italic;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerifItalic-TextSc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: italic;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerifItalic-MediumSc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDay";
+  font-style: italic;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerifItalic-BoldSc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDayBlock";
+  font-style: italic;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerifItalic-TextSa.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDayBlock";
+  font-style: italic;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerifItalic-MediumSa.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifDayBlock";
+  font-style: italic;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerifItalic-BoldSa.woff2") format("woff2");
+}
+
+// Serif Night
+
+@font-face {
+  font-family: "iASerifNightSC";
+  font-style: normal;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerif-MediumS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNightHeadline";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerif-RegularL.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: normal;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerif-BoldS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: normal;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerif-MediumS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerif-RegularS.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: italic;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerifItalic-Sc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: italic;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerifItalic-MediumSc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNight";
+  font-style: italic;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerifItalic-BoldSc.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNightBlock";
+  font-style: italic;
+  font-weight: normal;
+  src: url("/iA_Serif/iASerifItalic-Sa.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNightBlock";
+  font-style: italic;
+  font-weight: 500;
+  src: url("/iA_Serif/iASerifItalic-MediumSa.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iASerifNightBlock";
+  font-style: italic;
+  font-weight: bold;
+  src: url("/iA_Serif/iASerifItalic-BoldSa.woff2") format("woff2");
+}
+
+// ICONIC IS BACK!
+
+@font-face {
+  font-family: "iAIconic";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/Iconic/Iconic-Regular.woff2") format("woff2");
+}
+
+// Typography only for iA Window
+
+@font-face {
+  font-family: "iAWriter";
+  font-style: normal;
+  font-weight: normal;
+  src: url("/iA_Duo/iAWriterDuoS-Text.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iAWriter";
+  font-style: italic;
+  font-weight: normal;
+  src: url("/iA_Duo/iAWriterDuoS-TextItalic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iAWriter";
+  font-style: normal;
+  font-weight: bold;
+  src: url("/iA_Duo/iAWriterDuoS-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "iAWriter";
+  font-style: italic;
+  font-weight: bold;
+  src: url("/iA_Duo/iAWriterDuoS-BoldItalic.woff2") format("woff2");
+}

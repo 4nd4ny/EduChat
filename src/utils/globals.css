@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --text-primary: 255, 255, 255;
+    --text-secondary: 200, 200, 200;
+    --bg-primary: 17, 24, 39;
+    --bg-secondary: 31, 41, 55;
+    --bg-tertiary: 55, 65, 81;
+  }
+}
+
+@import url(/fonts.css);
+/* @import url('https.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap'); /* --> pas mal, mais pas mon style */
+/* @import url('https.googleapis.com/css2?family=Source+Code+Pro:wght@400;700&display=swap'); /* --> un peu écrasée, ce qui donne un look intéressant */
+/* @import url('https.googleapis.com/css2?family=Cousine&display=swap'); /* --> initialement ma préférée, mais un peu trop classique */
+/* @import url('https.googleapis.com/css2?family=Source+Sans+Pro:wght@400;700&display=swap'); /* --> classe mais un peu petite */
+/* @import url('https.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap'); /* --> bien */
+/* @import url('https.googleapis.com/css2?family=Roboto:wght@400;700&display=swap'); /* --> équilibré un peu petite */
+/* @import url('https.googleapis.com/css2?family=Lato:wght@400;700&display=swap'); /* --> petit */
+/* @import url('https.googleapis.com/css2?family=Latin+Modern+Roman:wght@400;700&display=swap'); /* --> moche */
+
+
+body {
+  font-family: 'iAWriter', monospace;
+  font-size: 110%;
+}
+
+.katex {
+  font-family: 'iAWriter', monospace;
+}
+
+.katex .mathnormal, .katex .mathdefault, .katex .mathrm {
+  font-family: 'iAWriter', monospace;
+}
+
+.MathJax_Display, .MathJax, .mjx-math {
+  font-family: 'iAWriter', monospace;
+}
+
+.MathJax_Preview, .mjx-preview {
+  font-family: 'iAWriter', monospace;
+}
+
+.MathJax_Preview, .mjx-preview {
+  font-family: 'iAWriter', monospace;
+}

@@ -1,0 +1,27 @@
+  .tab {
+    position: fixed;
+    z-index: 200;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color:  #005bb5;
+    color: white;
+    padding: 30px 5px;
+    cursor: pointer;
+    border-radius: 0 5px 5px 0;
+    transition: background-color 0.3s ease;
+  }
+
+  .tab span {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  
+  .button {
+    position: fixed;
+    z-index: 1000;
+    width: 5px;
+    padding: 0;
+    margin: 0;
+    background-color: #005bb5;
+  }
