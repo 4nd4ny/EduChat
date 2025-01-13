@@ -1,0 +1,12 @@
+[Unit]
+Description=Start Yarn for educh.at
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/yarn start
+WorkingDirectory=/var/www/html/educh-at/src
+Restart=always
+User=fedora
+
+[Install]
+WantedBy=multi-user.target

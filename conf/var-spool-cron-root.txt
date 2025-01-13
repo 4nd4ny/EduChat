@@ -1,0 +1,1 @@
+*/1 * * * * /usr/local/bin/log_to_web.sh

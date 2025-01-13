@@ -1,0 +1,9 @@
+# add \ before $
+SECRET_PASSWD=\$3a\$20\$kkkkkDEDPEy/RSDFblablablaZ.H5asdf12345asdf1234asdf1234XX 
+SECRET_OPENAI_API_KEY=sk-proj-kabcdefghijklmnopqrstuvwxyz-012345678901234678901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ
+SECRET_ANTHROPIC_API_KEY=sk-anth-kabcdefghijklmnopqrstuvwxyz-012345678901234678901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ
+
+# 1 for monday
+SECRET_ALLOWED_IPS=127.0.0.1,255.255.255.255,1.2.3.4,6.6.6.6,8.8.8.8
+SECRET_ALLOWED_HOURS=[{"day":1,"start":"09:00","end":"10:00"},{"day":2,"start":"14:00","end":"15:00"},{"day":3,"start":"16:00","end":"17:00"}] 
+SET_TIME_ZONE=Europe/Zurich
