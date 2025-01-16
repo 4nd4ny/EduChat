@@ -1,4 +1,3 @@
-// ChatMessage.tsx
 import React, { use, useEffect, useState } from "react";
 import { MdPerson, MdSmartToy, MdContentCopy, MdAutorenew, MdDeleteSweep } from "react-icons/md";
 import AssistantMessageContent from "./AssistantMessageContent";
@@ -84,6 +83,17 @@ export default function ChatMessage({
     return anthropic; // Par défaut, on utilise Anthropic
   };
 
+  const formatModelName = (model: string): string => {
+    // Cas spéciaux
+    if (model === 'o1') return 'O1';
+    
+    // Split sur le tiret et retourne le premier élément
+    const [firstPart] = model.split('-');
+    
+    // Première lettre en majuscule
+    return firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
+  };
+
   return (
     <div
       className={`flex cursor-pointer flex-row items-center p-4 transition-all ${
@@ -103,7 +113,7 @@ export default function ChatMessage({
         <div className="overflow-x-auto">
           {role === 'assistant' && model && (
             <div className="text-sm font-bold text-gray-500">
-              {isOpenAIModel(model) ? 'O1' : 'Claude'}
+              {formatModelName(model)}
             </div>
           )}
           <div className="text-md prose w-full max-w-6xl rounded p-4 text-primary dark:prose-invert prose-code:text-primary prose-pre:bg-transparent prose-pre:p-0">
@@ -158,7 +168,7 @@ export default function ChatMessage({
                 </div>
                 {isLastAssistantMessage && (
                   <div
-                    className={`cursor-pointer text-gray-500 transition-colors transition-transform transform hover:scale-110 hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center w-12 h-12`}
+                    className={`cursor-pointer text-gray-500 transition-colors transition-transform transform hover:scale-110 hover:bg-green-600 hover:text-white rounded-full flex items-center justify-center w-12 h-12`}
                     onClick={handleRegenerate}
                     title="Regénérer"
                   >
