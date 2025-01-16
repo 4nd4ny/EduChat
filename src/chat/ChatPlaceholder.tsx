@@ -21,7 +21,45 @@ export default function ChatPlaceholder({}: Props) {
         <h1>&nbsp;</h1>
         <h1>&nbsp;</h1>
         <center>
-          <img className="items-center justify-center" src="https://chamblandes.education/logo.png" alt="Gymnase de Chamblandes"/>
+          <style>
+            {`
+              .image-container {
+                position: relative;
+                width: 300px;
+                height: 300px;
+              }
+              @keyframes morph {
+                  0%, 35% { opacity: 1; }    /* Image visible */
+                  35%, 50% { opacity: 0; }   /* Fondu sortant */
+                  50%, 85% { opacity: 0; }   /* Image invisible */
+                  85%, 100% { opacity: 1; }  /* Fondu entrant */
+              }
+              .image-morph {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+                animation: morph 6s infinite cubic-bezier(0.4, 0, 0.2, 1);
+              }
+              .image-morph:nth-child(2) {
+                animation-delay: -3s;
+              }
+            `}
+          </style>
+          <div className="image-container">
+            <img 
+              className="image-morph"
+              src="https://chamblandes.education/logo.png" 
+              alt="Gymnase de Chamblandes"
+            />
+            <img 
+              className="image-morph"
+              src="https://chamblandes.education/regular-logo.png" 
+              alt="Gymnase de Chamblandes Alternatif"
+            />
+          </div>
         </center>
         <h1>&nbsp;</h1>
         <h1>&nbsp;</h1>
