@@ -67,7 +67,7 @@ export default function ChatInput({}: Props) {
           />
           <button
             type="submit"
-            className="rounded p-4 text-primary hover:bg-primary/50"
+            className="rounded p-4 text-primary hover:bg-[#DC6521]"
             disabled={loading || !input.trim()}
           >
             {loading ? (
