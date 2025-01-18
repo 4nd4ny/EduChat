@@ -390,14 +390,14 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
 
       // 3. Sanitisation des données
       const sanitizedConversation: Conversation = {
-        name: sanitizeString(jsonData.name, 100), // Limiter à 100 caractères
+        name: jsonData.name, // Limiter à 100 caractères
         createdAt: Number(jsonData.createdAt) || Date.now(),
         lastMessage: Number(jsonData.lastMessage) || Date.now(),
         messages: jsonData.messages.map((msg: any, index: number) => ({
           id: index,
           role: msg.role === "assistant" || msg.role === "user" ? msg.role : "user",
-          content: sanitizeString(typeof msg.content === 'string' ? msg.content : msg.content.reply, 10000), // Limiter à 10000 caractères
-          model: isValidModel(msg.model) ? msg.model : undefined
+          content: msg.content, // Limiter à 10000 caractères
+          model: msg.model
         }))
       };
 
