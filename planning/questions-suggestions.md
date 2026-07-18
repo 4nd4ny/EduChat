@@ -2,6 +2,15 @@
 
 *Vos idées ne sont pas figées — ce document liste ce qui doit être clarifié, par ordre d'impact sur l'architecture, puis les améliorations que nous proposons. Les fiches d'étapes supposent les réponses « proposées » ci-dessous ; toute autre réponse reste intégrable, d'autant plus facilement qu'elle arrive tôt.*
 
+## ✅ Réponses actées le 18 juillet 2026
+
+- **Modération** : validation **a priori** — un prompt publié arrive en statut `pending`, un admin l'approuve avant qu'il soit visible (questions 3 ; fiches 7 et 9).
+- **Favoris & ranking** : favoris **locaux au navigateur** + classement **calculé automatiquement** (usages + tokens + fraîcheur) ; vote humain éventuellement en v2 (questions 1-2 ; fiche 5).
+- **Visibilité** : le **catalogue, /publier et les fiches prompts sont publics** (vitrine) ; seul le chat reste derrière le verrou (question 4 ; fiches 2 et 5).
+- **Texte des prompts** : **public**, lisible par tous sur `/p/[nom]` (question 5 ; fiche 5).
+
+Les questions 6 à 13 restent ouvertes.
+
 ## Questions (par impact décroissant)
 
 1. **Favoris** (votre phrase était restée inachevée) : un favori purement **local au navigateur** (proposé : zéro donnée serveur, transportable via export) vous suffit-il, ou doit-il alimenter le ranking public ?
