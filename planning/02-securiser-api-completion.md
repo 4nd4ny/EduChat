@@ -3,12 +3,12 @@
 **Dépend de :** Étape 1 · **Estimation :** 1 session
 
 ## Objectif
-Fermer le trou de sécurité n°1 : `/api/completion` est aujourd'hui accessible sans aucune authentification et consomme les clés API payées par le serveur (exigences 10 et 15 côté serveur). Pour vérifier l'état de déverrouillage (`auth_lock.json`) avant de dépenser les clés, l'endpoint doit passer du runtime edge au runtime Node — ce qui est de toute façon requis par la décision SQLite pour la suite. En parallèle, réparer la chaîne du compteur de tokens, aujourd'hui cassée en trois morceaux : le serveur calcule `tokenUsage` mais le client le jette, alors que tout l'affichage (Layout, formatTokens) existe déjà (exigence 14).
+Fermer le trou de sécurité n°1 : `/api/completion` est aujourd'hui accessible sans aucune authentification et consomme les clés API payées par le serveur (exigences 10 et 15 côté serveur). Pour vérifier l'état de déverrouillage (`auth_lock.json`) avant de dépenser les clés, l'endpoint doit passer du runtime edge au runtime Node — ce qui est de toute façon requis par la décision SQLite pour la suite. En parallèle, réparer la chaîne du compteur de tokens, aujourd'hui cassée en trois morceaux : le serveur calcule `tokenUsage` mais le client le jette, alors que tout l'affichage (Layout, formatTokens) existe déjà (exigence 14). À terme (étape 9), les complétions sur clé interne seront aussi soumises au quota mensuel de tokens de l'établissement (résolution IP → base) ; cette étape pose le verrou d'accès et le comptage côté client, sans les quotas.
 
 ## Contexte et fichiers concernés
 - `src/pages/api/completion.ts` — l'endpoint de complétion multi-fournisseurs ; `runtime: "edge"` déclaré à la ligne 5, `defaults` des modèles dupliqués aux lignes 7-14, messages d'erreur français en dur. À convertir en Node et à protéger.
 - `src/pages/api/auth.ts` — contient déjà tout le nécessaire : pattern `failed_attempts.json` + proper-lockfile (l.80-173), vérification des tranches horaires `isAccessAllowed()` (l.215-243), vérification IP. À factoriser, pas à réécrire.
-- `src/server/access.ts` (à créer) — module partagé de contrôle d'accès extrait de auth.ts, importé par auth.ts et completion.ts.
+- `src/server/access.ts` (à créer) — module partagé de contrôle d'accès extrait de auth.ts, importé par auth.ts et completion.ts. C'est ce module que l'étape 9 étendra avec la résolution IP → établissement en base (les env `SECRET_ALLOWED_IPS`/`SECRET_ALLOWED_HOURS` restant en amorçage/secours).
 - `src/pages/api/ip.ts` — duplique la lecture de `SECRET_ALLOWED_IPS` sans passer par la validation d'`env.ts` ; à re-brancher sur `src/utils/env.ts`.
 - `src/context/AnthropicProvider.tsx` — `providerDefaults` dupliqués (l.10-17) ; `send()` (l.79-80) reçoit la réponse mais ignore `data.tokenUsage`.
 - `src/shared/providers.ts` (à créer) — source unique des fournisseurs/modèles par défaut, partagée client/serveur.
@@ -22,12 +22,12 @@ Fermer le trou de sécurité n°1 : `/api/completion` est aujourd'hui accessible
 4. Ajouter un rate-limiting par IP sur `/api/completion` (ex. 30 requêtes/minute) en réutilisant le pattern `failed_attempts.json` + proper-lockfile (auth.ts:80-173) ; borner la taille du corps à 100 Ko et valider `provider`/`model` contre une liste blanche.
 5. Côté client, dans `AnthropicProvider.send` (l.79-80) : lire `data.tokenUsage` (aujourd'hui jeté), cumuler dans `localStorage['totalTokens']` et dispatcher l'événement `totalTokensUpdated` — `Layout.tsx:26-36/65` et `formatTokens.ts` font déjà tout l'affichage.
 6. Afficher le compteur de tokens aussi dans l'UI (bandeau dans `ChatInput` ou sidebar), pas seulement dans le titre d'onglet.
-7. Unifier les `providerDefaults` dupliqués (`AnthropicProvider.tsx:10-17` vs `completion.ts:7-14`) dans `src/shared/providers.ts` ; remplacer les messages d'erreur français en dur par des CODES d'erreur stables (préparation i18n).
+7. Unifier les `providerDefaults` dupliqués (`AnthropicProvider.tsx:10-17` vs `completion.ts:7-14`) dans `src/shared/providers.ts` ; remplacer les messages d'erreur français en dur par des CODES d'erreur stables (préparation i18n — et extensibles : l'étape 9 y ajoutera par exemple `ERR_QUOTA_ETABLISSEMENT`).
 
 ## Livrables
 - `/api/completion` en runtime Node, protégé et rate-limité.
 - Compteur de tokens fonctionnel de bout en bout et visible dans l'UI.
-- `src/server/access.ts` et `src/shared/providers.ts` réutilisables par les étapes suivantes.
+- `src/server/access.ts` et `src/shared/providers.ts` réutilisables par les étapes suivantes (notamment l'étape 9 : quotas par établissement).
 
 ## Vérification
 - `curl -X POST /api/completion` sans `apiKey` ni site déverrouillé → **401**.
@@ -40,7 +40,7 @@ Fermer le trou de sécurité n°1 : `/api/completion` est aujourd'hui accessible
 ```text
 Tu travailles sur EduChat, un chatbot éducatif Next.js 14 (pages-router, TypeScript, yarn) développé par un enseignant seul assisté par IA, déployé sur un VPS OVH derrière Apache (ProxyPass) avec un service systemd mono-instance. Priorité : simplicité et maintenabilité, pas de nouvelle dépendance sans nécessité.
 
-Commence par lire planning/00-analyse-existant.md, planning/decisions-techniques.md et la fiche de l'étape 1 (planning/01-*.md), dont cette étape dépend. Décisions d'architecture à respecter : /api/completion passe en runtime Node (indispensable pour lire auth_lock.json avant de dépenser les clés serveur, et requis plus tard par SQLite) ; le BYOK (apiKey personnelle envoyée dans le body) reste toujours permis mais ne doit JAMAIS se replier silencieusement sur les clés serveur ; l'état d'auth reste en fichiers JSON (auth_lock.json, failed_attempts.json) avec proper-lockfile — ne pas migrer ; les API renvoient des CODES d'erreur stables ({ error: "ERR_..." }) traduits côté client (préparation i18n), plus de messages français en dur côté serveur.
+Commence par lire planning/00-analyse-existant.md, planning/decisions-techniques.md et la fiche de l'étape 1 (planning/01-*.md), dont cette étape dépend. Décisions d'architecture à respecter : /api/completion passe en runtime Node (indispensable pour lire auth_lock.json avant de dépenser les clés serveur, et requis plus tard par SQLite) ; le BYOK (apiKey personnelle envoyée dans le body) reste toujours permis mais ne doit JAMAIS se replier silencieusement sur les clés serveur ; l'état d'auth reste en fichiers JSON (auth_lock.json, failed_attempts.json) avec proper-lockfile — ne pas migrer ; les API renvoient des CODES d'erreur stables ({ error: "ERR_..." }) traduits côté client (préparation i18n), plus de messages français en dur côté serveur. Contexte à garder en tête sans l'implémenter ici : à l'étape 9, les complétions sur clés serveur seront soumises à un quota mensuel de tokens par établissement (résolution IP → base, les env SECRET_ALLOWED_IPS/HOURS restant en amorçage/secours) — cette étape pose uniquement le verrou d'accès et le comptage côté client ; ne code aucun quota, mais structure access.ts et les codes d'erreur pour que cet ajout (ex. ERR_QUOTA_ETABLISSEMENT) soit trivial.
 
 Tâches, dans l'ordre :
 1. Convertis src/pages/api/completion.ts du runtime edge (export const config = { runtime: "edge" }, l.5) en handler Node NextApiRequest/NextApiResponse, en conservant le comportement multi-fournisseurs actuel.

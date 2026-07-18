@@ -1,56 +1,65 @@
-# Étape 9 — Administration et modération
+# Étape 9 — Administration : établissements, quotas, modération et facturation
 
-**Dépend de :** Étape 7 · **Estimation :** 1 session
+**Dépend de :** Étapes 7 et 8 · **Estimation :** 2-3 sessions
 
 ## Objectif
-Donner aux administrateurs — définis en dur côté serveur via `SECRET_ADMIN_EMAILS` (exigence 9) — le pouvoir de retirer n'importe quel prompt publié, de façon réversible (soft-delete `status='hidden'`, le prompt reste en base). L'étape ajoute aussi une page `/admin` sobre offrant la visibilité sur le coût (tokens cumulés de la plateforme) et un bouton public de signalement anonyme, rendant la modération a posteriori praticable pour un enseignant seul.
+Donner aux administrateurs — définis en dur côté serveur via `SECRET_ADMIN_EMAILS` (exigence 9) — une page `/admin` complète couvrant la gestion des **établissements** (« clients » : IPs, quota mensuel de tokens, fournisseur/clé active, flag RESPIRE, contact de facturation), l'**application des quotas** sur la clé interne (blocage `ERR_QUOTA_ETABLISSEMENT`, remise à zéro mensuelle), la **modération a priori** (file des prompts `pending`, approbation par un admin OU un promptagogue vérifié, dépublication réversible `status='retired'`), la **facturation mensuelle** par établissement (export CSV, RESPIRE affiché à 0) et un tableau de bord des coûts, complétés par un signalement anonyme, un healthcheck `/api/health` et un garde-fou `MemoryMax` systemd.
 
 ## Contexte et fichiers concernés
-- `src/utils/env.ts` (lignes 1-5) — point d'entrée unique des variables `SECRET_*` ; y ajouter l'export de `SECRET_ADMIN_EMAILS` en suivant le pattern existant (split sur virgule + trim, comme `SecretPasswords` ligne 3).
+- `src/utils/env.ts` (lignes 1-5) — point d'entrée unique des variables `SECRET_*` ; y ajouter l'export de `SECRET_ADMIN_EMAILS` en suivant le pattern existant (split sur virgule + trim, comme `SecretPasswords` ligne 3). `SECRET_ALLOWED_IPS`/`SECRET_ALLOWED_HOURS` (lignes 4-5) restent en **amorçage/secours** : la résolution IP → établissement se fait désormais en base.
 - `conf/(dot)env.txt` — gabarit du `.env` de production ; y documenter la nouvelle variable avec sa valeur par défaut.
-- `src/pages/api/prompts/[name].ts` — endpoint CRUD des prompts créé aux étapes précédentes ; y brancher la méthode `DELETE` protégée.
-- `src/pages/p/[name].tsx` et `src/pages/index.tsx` — page publique d'un prompt et accueil ; y placer les boutons contextuels retirer/restaurer et le bouton « signaler ».
+- `src/pages/api/completion.ts` et `src/pages/api/auth.ts` — y brancher le module de résolution IP → établissement et le blocage de quota sur la clé interne.
+- Tables du **schéma SQLite v2** créées à l'étape 4 : `etablissements`, `usage_log` (alimentée à l'étape 8), `users` (rôles `is_promptagogue`/`is_teacher`), `prompts` (statuts `draft`/`pending`/`published`/`retired`, `author_email NULL` = proposition anonyme).
+- `src/pages/api/prompts/[name].ts` — endpoint CRUD des prompts créé aux étapes précédentes ; y brancher `DELETE` et la dépublication selon les droits de la fiche 07.
+- `src/pages/p/[name].tsx` et `src/pages/index.tsx` — page publique d'un prompt et accueil ; y placer les boutons contextuels dépublier/restaurer/supprimer et le bouton « signaler ».
 - `src/chatSidebar/ChatSidebar.tsx` (ligne 69) — le bouton « Tout effacer » existant, déclenché sans confirmation : contre-exemple explicite, les actions de modération devront, elles, être confirmées.
-- Module serveur d'authentification promptagogue de l'étape 7 (vérification du jeton HMAC) — y ajouter le middleware `requireAdmin`.
-- À créer : `src/pages/admin.tsx` (page d'administration), endpoint de signalement anonyme (ex. `src/pages/api/report.ts`), journal des actions admin dans `DATA_DIR` (fichier ou table simple).
+- Module serveur d'authentification par jeton HMAC des étapes 6-7 — y ajouter les middlewares `requireAdmin` et `requireModerator` (rôles relus en base/env à chaque requête).
+- À créer : `src/pages/admin.tsx`, endpoints admin (établissements, modération, facturation), `src/pages/api/report.ts` (signalement anonyme), `src/pages/api/health.ts`, journal des actions admin dans `DATA_DIR` (fichier ou table simple).
 
 ## Tâches
-1. Ajouter `SECRET_ADMIN_EMAILS` dans `src/utils/env.ts` et `conf/(dot)env.txt` (valeur par défaut : `blanvillain@harmonia.education`), puis écrire un middleware `requireAdmin` = `requireAuth` (jeton valide) **et** email présent dans la liste — liste relue à CHAQUE requête, un vieux jeton seul ne suffit jamais.
-2. Implémenter `DELETE /api/prompts/[name]` : autorisé pour un admin (sur tout prompt) ou pour l'auteur (sur les siens uniquement) ; soft-delete réversible (`status='hidden'`, jamais de suppression physique) ; journaliser chaque action de modération (fichier admin dans `DATA_DIR` ou table simple).
-3. Ajouter des boutons contextuels retirer/restaurer sur `/p/[name]` et sur l'accueil, visibles uniquement selon le jeton (auteur ou admin), AVEC dialogue de confirmation — contrairement au « Tout effacer » existant de la sidebar.
-4. Créer la page `/admin`, sobre : liste complète des prompts y compris masqués et `pending`, et statistiques globales (tokens cumulés de la plateforme = pilotage du budget).
-5. Ajouter un bouton public « signaler ce prompt », anonyme (aucune donnée personnelle), dont les signalements alimentent la page `/admin`.
-6. Option (selon la réponse du client) : statut `pending` à la création d'un prompt, publication effective seulement après validation admin.
+1. Ajouter `SECRET_ADMIN_EMAILS` dans `src/utils/env.ts` et `conf/(dot)env.txt` (valeur par défaut : `blanvillain@harmonia.education`), puis écrire deux middlewares : `requireAdmin` = `requireAuth` (jeton valide) **et** email présent dans la liste — liste relue à CHAQUE requête, un vieux jeton seul ne suffit jamais — et `requireModerator` = admin OU promptagogue vérifié (`users.is_promptagogue`, relu en base).
+2. **CRUD des établissements** dans `/admin` : nom, adresses IP, flag RESPIRE (gratuit), quota mensuel de tokens, fournisseur/clé API active pour cette école, contact de facturation. Écrire un module de résolution IP → établissement partagé par `auth.ts` et `completion.ts` ; les env `SECRET_ALLOWED_IPS`/`SECRET_ALLOWED_HOURS` restent en amorçage/secours.
+3. **Application des quotas** : sur la clé interne, sommer `usage_log` de l'établissement sur le mois civil courant ; quota atteint → refus avec code stable `ERR_QUOTA_ETABLISSEMENT` (traduit côté client), remise à zéro mensuelle de fait. Option « **fournisseur gratuit pour tous** » : un fournisseur marqué gratuit est accessible hors quota, même sans établissement.
+4. **Modération a priori** : file des prompts `pending` dans `/admin`, approbation (→ `published`) par un admin OU un promptagogue vérifié ; dépublication réversible (→ `retired`, jamais de suppression physique silencieuse) ; suppression définitive selon la fiche 07 : l'auteur pour SES prompts, l'admin pour tout, un prompt anonyme (`author_email NULL`) par l'admin uniquement. Boutons contextuels sur `/p/[name]` et l'accueil, AVEC dialogue de confirmation. Journaliser chaque action de modération.
+5. **Facturation** : bilan mensuel par établissement à partir des agrégats de `usage_log` (tokens par fournisseur, coût estimé ; établissements RESPIRE affichés à 0), export CSV. Le bilan par enseignant sera complété à l'étape 14.
+6. **Tableau de bord des coûts** dans `/admin` : tokens par prompt, par établissement et global (pilotage du budget).
+7. Ajouter un bouton public « signaler ce prompt », anonyme (aucune donnée personnelle), dont les signalements alimentent `/admin` — complément a posteriori de la validation a priori.
+8. Ajouter `GET /api/health` (healthcheck simple pour supervision) et documenter `MemoryMax` dans le gabarit d'unité systemd de `conf/`.
 
 ## Livrables
-- `DELETE /api/prompts/[name]` protégé (admin ou auteur) + page `/admin`
-- `SECRET_ADMIN_EMAILS` documenté dans `env.ts` et `conf/(dot)env.txt`
-- Signalement anonyme fonctionnel, visible dans `/admin`
+- Page `/admin` : CRUD établissements, file de modération `pending`, facturation mensuelle avec export CSV, tableau de bord des coûts, signalements
+- Module de résolution IP → établissement + blocage de quota `ERR_QUOTA_ETABLISSEMENT` actif sur la clé interne
+- `SECRET_ADMIN_EMAILS` documenté dans `env.ts` et `conf/(dot)env.txt` ; middlewares `requireAdmin`/`requireModerator` ; journal des actions admin
+- Signalement anonyme fonctionnel, `/api/health`, `MemoryMax` documenté
 
 ## Vérification
-- [ ] Avec un jeton promptagogue non-admin, `DELETE` sur le prompt d'autrui → réponse 403.
-- [ ] Avec un jeton `blanvillain@harmonia.education`, retirer un prompt → il disparaît de l'accueil mais reste présent en base (`status='hidden'`).
-- [ ] La restauration du même prompt le fait réapparaître sur l'accueil.
-- [ ] Un signalement anonyme envoyé depuis `/p/[name]` apparaît dans la page `/admin`.
+- [ ] Avec un jeton ni admin ni promptagogue vérifié, l'approbation d'un prompt `pending` → réponse 403.
+- [ ] Avec un jeton promptagogue vérifié, approuver un `pending` → il passe `published` et apparaît au catalogue.
+- [ ] `DELETE` sur un prompt anonyme avec un jeton promptagogue non-admin → 403 ; avec `blanvillain@harmonia.education` → OK.
+- [ ] Dépublier un prompt → il disparaît du catalogue mais reste en base (`status='retired'`) ; la restauration le fait réapparaître.
+- [ ] Établissement de test avec quota 1000 tokens : une fois dépassé, la complétion sur clé interne → `ERR_QUOTA_ETABLISSEMENT` ; l'augmentation du quota (ou le mois suivant) débloque.
+- [ ] Export CSV du bilan mensuel cohérent avec `usage_log` ; établissement RESPIRE affiché à 0.
+- [ ] Un signalement anonyme envoyé depuis `/p/[name]` apparaît dans la page `/admin` ; `GET /api/health` répond 200.
 
 ## Prompt à copier-coller dans Claude Code
 ```text
-Tu travailles sur EduChat, un chatbot éducatif Next.js 14 (pages-router, TypeScript, Tailwind) développé par un enseignant seul assisté par IA, déployé sur un VPS OVH (Apache en reverse proxy + service systemd, mono-instance Node). Les données vivent dans une base SQLite (better-sqlite3, synchrone) stockée dans DATA_DIR hors racine web. Les promptagogues s'authentifient par un jeton HMAC-SHA256 (module crypto natif, payload {name, email, exp}) stocké en localStorage 'promptagogue-token' et envoyé en Authorization: Bearer — pas de cookie ; la signature est revérifiée côté serveur à chaque requête.
+Tu travailles sur EduChat, un chatbot éducatif Next.js 14 (pages-router, TypeScript, Tailwind) développé par un enseignant seul assisté par IA, déployé sur un VPS OVH (Apache en reverse proxy + service systemd, mono-instance Node). Les données vivent dans une base SQLite (better-sqlite3, synchrone) stockée dans DATA_DIR hors racine web, avec le schéma v2 : users (comptes vérifiés par email, rôles is_promptagogue/is_teacher — les élèves n'ont JAMAIS de compte), etablissements (IPs, flag RESPIRE, quota mensuel de tokens, fournisseur actif, contact facturation), prompts (statuts 'draft'/'pending'/'published'/'retired', author_email NULL = proposition anonyme), usage_log (alimentée à l'étape 8). L'authentification repose sur un jeton HMAC-SHA256 {name, email, exp} envoyé en Authorization: Bearer ; les rôles sont relus en base/env côté serveur à chaque requête sensible.
 
-Commence par lire planning/00-analyse-existant.md, planning/decisions-techniques.md, puis la fiche planning/07-*.md (étape dont celle-ci dépend) et planning/09-administration.md. Prends connaissance du module serveur de vérification du jeton créé à l'étape 7 avant d'écrire du code.
+Commence par lire planning/00-analyse-existant.md, planning/decisions-techniques.md, puis les fiches planning/07-*.md et planning/08-*.md (étapes dont celle-ci dépend) et planning/09-administration.md.
 
-Objectif de cette étape : administration et modération. Admins définis en dur côté serveur, retrait réversible de tout prompt, page /admin, signalement anonyme.
+Objectif de cette étape : administration complète — gestion des établissements (« clients »), quotas de tokens, modération a priori, facturation.
 
 Tâches :
-1. Dans src/utils/env.ts, ajoute l'export SECRET_ADMIN_EMAILS (liste d'emails séparés par des virgules, split + trim comme SecretPasswords ligne 3 ; défaut : blanvillain@harmonia.education). Documente la variable dans conf/(dot)env.txt.
-2. Écris un middleware serveur requireAdmin = requireAuth (jeton valide) ET email du jeton présent dans SECRET_ADMIN_EMAILS. La liste est relue à CHAQUE requête sensible : la liste en dur est la source de vérité, un vieux jeton ne suffit pas.
-3. Dans src/pages/api/prompts/[name].ts, implémente DELETE : autorisé si admin (tout prompt) ou si auteur (ses propres prompts), sinon 403 avec un code d'erreur stable (ex. {error:'ERR_FORBIDDEN'}) traduit côté client. Soft-delete uniquement : status='hidden', réversible (restauration possible), jamais de suppression physique. Journalise chaque action de modération (qui, quoi, quand) dans un fichier admin sous DATA_DIR ou une table simple.
-4. Sur /p/[name] et sur l'accueil, ajoute des boutons contextuels retirer/restaurer, visibles seulement si le jeton local correspond à l'auteur ou à un admin, AVEC dialogue de confirmation (contrairement au bouton « Tout effacer » de src/chatSidebar/ChatSidebar.tsx ligne 69, qui n'en a pas).
-5. Crée src/pages/admin.tsx, page sobre réservée aux admins : liste complète des prompts y compris masqués et 'pending', statistiques globales dont les tokens cumulés de la plateforme (somme de tokens_total, pour piloter le budget).
-6. Ajoute un bouton public « signaler ce prompt » : POST anonyme (aucune donnée personnelle stockée), signalements listés dans /admin.
-7. Optionnel, seulement si planning/decisions-techniques.md l'indique validé par le client : statut 'pending' à la création, publication après validation admin.
+1. Dans src/utils/env.ts, ajoute SECRET_ADMIN_EMAILS (split virgule + trim comme SecretPasswords ligne 3 ; défaut : blanvillain@harmonia.education), documenté dans conf/(dot)env.txt. Écris deux middlewares : requireAdmin (jeton valide ET email dans SECRET_ADMIN_EMAILS, liste relue à CHAQUE requête — un vieux jeton seul ne suffit jamais) et requireModerator (admin OU promptagogue vérifié en base users).
+2. CRUD des établissements dans /admin : nom, adresses IP, flag RESPIRE (gratuit), quota mensuel de tokens, fournisseur/clé API active pour cette école, contact de facturation. Écris un module de résolution IP → établissement utilisé par src/pages/api/auth.ts et src/pages/api/completion.ts ; les variables SECRET_ALLOWED_IPS/SECRET_ALLOWED_HOURS restent en amorçage/secours.
+3. Quotas : pour chaque complétion sur la clé interne, somme mensuelle (mois civil) de usage_log pour l'établissement résolu par IP ; quota atteint → refus avec le code stable {error:'ERR_QUOTA_ETABLISSEMENT'} traduit côté client ; la remise à zéro est mensuelle de fait. Prévois l'option « fournisseur gratuit pour tous » : un fournisseur marqué gratuit est accessible hors quota, même sans établissement.
+4. Modération a priori : dans /admin, file des prompts 'pending' avec approbation (→ 'published') par un admin OU un promptagogue vérifié ; dépublication réversible (→ 'retired', jamais de suppression physique silencieuse) ; suppression définitive : l'auteur pour SES prompts, l'admin pour tout, un prompt anonyme (author_email NULL) par l'admin uniquement, sinon 403 avec code stable. Boutons contextuels sur /p/[name] et l'accueil, AVEC dialogue de confirmation (contrairement au « Tout effacer » de src/chatSidebar/ChatSidebar.tsx ligne 69). Journalise chaque action de modération (qui, quoi, quand) sous DATA_DIR.
+5. Facturation : bilan mensuel par établissement à partir des agrégats de usage_log (tokens par fournisseur, coût estimé ; établissements RESPIRE affichés à 0) avec export CSV. Le bilan par enseignant sera complété à l'étape 14.
+6. Tableau de bord des coûts dans /admin : tokens par prompt, par établissement et global.
+7. Bouton public « signaler ce prompt » : POST anonyme (aucune donnée personnelle stockée), signalements listés dans /admin — complément a posteriori de la validation a priori.
+8. Ajoute GET /api/health (healthcheck simple) et documente MemoryMax dans le gabarit d'unité systemd de conf/.
 
-Critères d'acceptation obligatoires : jeton non-admin sur le prompt d'autrui → 403 ; jeton blanvillain@harmonia.education → le prompt disparaît de l'accueil mais reste en base ; restauration OK ; un signalement apparaît dans /admin.
+Critères d'acceptation obligatoires : approbation refusée (403) à un jeton ni admin ni promptagogue vérifié ; un promptagogue vérifié fait passer un 'pending' en 'published' ; suppression d'un prompt anonyme réservée à l'admin ; dépublication → 'retired' réversible ; quota dépassé → ERR_QUOTA_ETABLISSEMENT ; export CSV cohérent avec usage_log ; un signalement apparaît dans /admin.
 
-Termine par : yarn build sans erreur, vérification manuelle des quatre critères ci-dessus en local, puis un commit git avec un message descriptif en français. Interdiction absolue de commiter .env, secret.txt, data/ ou tout secret ; vérifie le .gitignore avant de commiter.
+Termine par : yarn build sans erreur, vérification manuelle des critères ci-dessus en local, puis un commit git avec un message descriptif en français. Interdiction absolue de commiter .env, secret.txt, data/ ou tout secret ; vérifie le .gitignore avant de commiter.
 ```

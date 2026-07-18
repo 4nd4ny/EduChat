@@ -1,52 +1,43 @@
-# Questions à trancher et suggestions d'amélioration
+# Questions et réponses actées — suggestions retenues
 
-*Vos idées ne sont pas figées — ce document liste ce qui doit être clarifié, par ordre d'impact sur l'architecture, puis les améliorations que nous proposons. Les fiches d'étapes supposent les réponses « proposées » ci-dessous ; toute autre réponse reste intégrable, d'autant plus facilement qu'elle arrive tôt.*
+*Toutes les questions ont été tranchées par le client le 18 juillet 2026. Ce document est l'enregistrement de référence ; les décisions détaillées sont dans [decisions-techniques.md](decisions-techniques.md), leur mise en œuvre dans les fiches 01 à 15.*
 
-## ✅ Réponses actées le 18 juillet 2026
+## Réponses aux 13 questions
 
-- **Modération** : validation **a priori** — un prompt publié arrive en statut `pending`, un admin l'approuve avant qu'il soit visible (questions 3 ; fiches 7 et 9).
-- **Favoris & ranking** : favoris **locaux au navigateur** + classement **calculé automatiquement** (usages + tokens + fraîcheur) ; vote humain éventuellement en v2 (questions 1-2 ; fiche 5).
-- **Visibilité** : le **catalogue, /publier et les fiches prompts sont publics** (vitrine) ; seul le chat reste derrière le verrou (question 4 ; fiches 2 et 5).
-- **Texte des prompts** : **public**, lisible par tous sur `/p/[nom]` (question 5 ; fiche 5).
+1. **Favoris** → locaux au navigateur (localStorage, transportables via export et sync opt-in).
+2. **Ranking** → automatique (usages + tokens + fraîcheur), pas de vote humain en v1.
+3. **Modération** → validation a priori ; approbation par **un admin ou un promptagogue authentifié**. En complément : **création de comptes en option** pour que les promptagogues basculent d'un navigateur à l'autre — dans ce cas l'équivalent de la mémoire du navigateur est sauvegardé sur le serveur (→ étape 15, sync opt-in).
+4. **Visibilité** → catalogue visible et public, seul le chat reste derrière le verrou.
+5. **Texte des prompts** → public en intégral (« l'école est gratuite »).
+6. **Uploads** → texte uniquement, pas de pièces jointes. Quotas 1 Mo / 256 Ko inchangés.
+7. **Quota de tokens** → défini **par établissement** (donc par adresse IP) via l'interface d'administration. Tokens de la clé interne **refacturés à l'établissement** ; **gratuit pour les écoles RESPIRE** (financées par les revenus générés autrement) (→ étapes 4, 9, 14).
+8. **Email OVH** → confirmé, mais la boîte `noreply@educh.at` **n'est pas encore créée** (prérequis manuel de l'étape 6).
+9. **Versions** → le changement de version exige une **action explicite de l'utilisateur**, qui choisit le nouveau prompt pour poursuivre ; les conversations restent sinon sur leur version (→ étape 8).
+10. **Mot de passe prof** → « gabbagabbahey » **conservé** : ce n'est pas un mot de passe sensible, juste un déblocage de salle de TP pour cadrer les heures d'usage. Vision du client : donner accès aux LLM frontières aux élèves rétablit l'équilibre sociétal — c'est à l'école de payer.
+11. **Suppression** → un prompt publié par un promptagogue peut être supprimé **par son auteur** ; un prompt **anonyme** validé par l'admin ne peut être supprimé **que par l'admin** (→ étapes 7, 9).
+12. **Clés API** → une clé par moteur LLM. Si un LLM gratuit avec clé API existe, accès pour tout le monde ; sinon **choix de la clé active par école** → gestion de clients avec suivi des coûts (→ étape 9).
+13. **Journal public** → **supprimé** (cron `log_to_web.sh` retiré). Le code sera audité si besoin par quelqu'un de l'établissement (→ étapes 1, 13).
 
-Les questions 6 à 13 restent ouvertes.
+## Suggestions : sort réservé
 
-## Questions (par impact décroissant)
+| # | Suggestion | Décision |
+|---|---|---|
+| 1 | Plafond de tokens serveur | ✅ Retenu, décliné **par établissement** (étape 9) |
+| 2 | Statut « en attente de validation » | ✅ Retenu (étapes 7, 9) |
+| 3 | Gabarit socratique guidé | ✅ Retenu + **exemples fournis par le client à intégrer** (placeholder, étape 7) |
+| 4 | Prévisualisation « tester avant de publier » | ✅ Étendu : statut **« en construction »** (`draft`) testable et partageable par **URL secrète** non verrouillée, invisible du catalogue, pour inviter des testeurs (étape 7) |
+| 5 | Officialiser `<thinking>`/`<encouragement>` | ✅ Retenu (étape 7, guide du promptagogue) |
+| 6 | Streaming SSE | ✅ Retenu (bonus post-v1) |
+| 7 | Sauvegarde hors VPS | ✅ Retenu (runbook, étape 13) |
+| 8 | Métadonnées pédagogiques + QR code | ✅ Retenu (étapes 5, 7) |
+| 9 | Recherche web désactivable par prompt | ✅ Étendu : **par prompt ET par session** — au déverrouillage, le prof (compte email sans mot de passe, comme les promptagogues) accède à une interface de réglages pour les élèves de son établissement (identifié par IP) : prompt par défaut + recherche web on/off (étapes 8, **14**) |
+| 10 | Tableau de bord admin des coûts | ✅ Étendu : **bilan de facturation mensuel par enseignant et par établissement** (étapes 9, 14) |
+| 11 | Amorcer le catalogue | ✅ Retenu + **traduction automatique des prompts publiés** dans les langues du site (étape 10) |
 
-1. **Favoris** (votre phrase était restée inachevée) : un favori purement **local au navigateur** (proposé : zéro donnée serveur, transportable via export) vous suffit-il, ou doit-il alimenter le ranking public ?
-2. **Ranking** : classement **calculé automatiquement** (usages + fraîcheur — proposé en v1) ou **votes humains** ? Attention : derrière l'IP partagée d'un établissement, tout dédoublonnage par IP est illusoire (toute l'école = une IP).
-3. **Modération** : un prompt publié est-il visible **immédiatement**, ou doit-il être **approuvé par un admin** avant publication ? Public cible = élèves mineurs : une validation a priori (statut `pending`) est prudente et quasi gratuite à développer — mais elle change le flux de publication, donc à trancher tôt.
-4. **Visibilité du catalogue** : la page d'accueil (catalogue), `/publier` et `/p/[nom]` doivent-elles être visibles **sans déverrouillage** du site (vitrine publique pour recruter des promptagogues — proposé), le chat seul restant derrière le verrou ? Cela conditionne la liste `isProtected` et l'architecture d'accès.
-5. **Texte des prompts** : le texte intégral est-il **public** (lisible par tous sur `/p/[nom]`, esprit open source — proposé) ou **secret** (seules les métadonnées visibles, texte injecté uniquement côté serveur) ? Cela change l'API, la page détail et la proposition de valeur.
-6. **Quota 1 Mo / 256 Ko** : s'agit-il uniquement de prompts **textuels** (256 Ko ≈ 60 000 mots, très large) ou anticipez-vous des **pièces jointes** (images, PDF de cours) ? Des fichiers joints seraient un chantier supplémentaire complet (stockage, types MIME, sécurité) à cadrer maintenant.
-7. **Quota de tokens** (exigence 14) : un affichage **informatif** côté navigateur (proposé, réutilise l'existant) vous suffit-il, ou voulez-vous un **plafond bloquant** ? Un plafond honnête exige un comptage serveur — nous proposons un budget global par fenêtre de déverrouillage (aucune donnée individuelle, RGPD-compatible).
-8. **Email OVH** : confirmez-vous que le domaine (`educh.at` ?) est chez OVH avec MX Plan inclus, et que vous pouvez créer `noreply@educh.at` + accéder à la zone DNS pour SPF/DKIM ? C'est le prérequis matériel de toute la vérification email.
-9. **Versions de prompts** : quand un prompt passe en version N+1, les conversations en cours continuent-elles avec l'**ancienne** version (reproductibilité pédagogique) ou basculent-elles sur la nouvelle ? Les anciennes versions sont-elles consultables publiquement ?
-10. **Mot de passe prof** : « gabbagabbahey » a été transmis en clair (donc à considérer compromis). Acceptez-vous d'en choisir un autre, ajouté à la liste `SECRET_PASSWD` existante (mécanisme bcrypt + durée en suffixe conservé), avec une durée maximale bornée (480 min proposé) ?
-11. **Suppression et RGPD** : quand un admin retire un prompt ou qu'un promptagogue demande l'effacement de son compte : suppression définitive, anonymisation de l'auteur en conservant le prompt, ou dépublication réversible (proposé) ? Un promptagogue peut-il retirer lui-même ses propres prompts ?
-12. **Clés RESPIRE (exigence 18)** : le multi-fournisseurs + clé personnelle existe déjà — s'agit-il seulement d'**ajouter les clés RESPIRE au `.env`**, ou de **réserver les modèles coûteux** à un contexte précis (second mot de passe prof « premium », IP école uniquement) ? Le mécanisme multi-mots de passe existant permet deux niveaux sans nouveau code.
-13. **Journal public et /police** : conserver le log public (`/ip-direct/educh-at.log`) comme preuve de transparence (avec filtrage des chemins sensibles — proposé) ou le remplacer par une mention dans la page RGPD ? La page `/police` : conservée, traduite en 4 langues, ou hors périmètre ?
+## Risques : arbitrages du client
 
-## Suggestions d'amélioration
-
-1. **Plafond de tokens serveur par fenêtre de déverrouillage** (ex. 500 K tokens par pose de `auth_lock`, compteur SQLite remis à zéro) : LA protection budgétaire qui manque au modèle « verrou global anonyme », parfaitement RGPD (aucune donnée individuelle).
-2. **Statut « en attente de validation »** pour les nouveaux prompts (+ email de notification à l'admin) : protège les élèves mineurs d'un contenu inapproprié pour un coût quasi nul — fortement recommandé en contexte scolaire.
-3. **Gabarit socratique guidé** à la publication (rôle / matière / niveau / règles « ne jamais donner la réponse » / ton) plutôt qu'une zone de texte vide : abaisse la barrière d'entrée et homogénéise la qualité du catalogue.
-4. **Prévisualisation « tester avant de publier »** et bouton « Essayer » sur chaque carte du catalogue : la démonstration vaut mieux que la description ; réutilise le chat existant sans persistance.
-5. **Officialiser les balises `<thinking>`/`<encouragement>`** déjà rendues par `AssistantMessageContent.tsx:59-76` comme convention des prompts socratiques, documentée dans un « guide du promptagogue » sur `/publier` (avec charte : ne jamais collecter de données personnelles d'élèves via le prompt).
-6. **Streaming des réponses (SSE)** une fois `completion.ts` en Node : les élèves voient la réponse se construire — gain pédagogique réel sur les longues réponses socratiques. Chantier bonus naturel post-v1.
-7. **Sauvegarde hors VPS** : le cron local ne protège pas d'une perte du serveur — rclone hebdomadaire chiffré de `DATA_DIR` vers un stockage à vous, ou téléchargement manuel documenté.
-8. **Métadonnées pédagogiques légères** par prompt (matière, niveau scolaire, langue) + **QR code / lien direct** `educh.at/t/NomPropre` : le prof projette le QR, chaque élève démarre avec le bon tuteur — friction zéro, idéal avec l'auto-login par IP d'établissement.
-9. **Recherche web désactivable par prompt** (aujourd'hui activée en dur pour les 6 fournisseurs) : un tuteur de maths n'en a pas besoin — économie de tokens et de surface non maîtrisée, au choix du promptagogue.
-10. **Tableau de bord admin de pilotage du coût** (tokens par prompt et global, quotas par promptagogue) + healthcheck `GET /api/health` + `MemoryMax` dans l'unité systemd : exploitation sereine d'un VPS solo.
-11. **Amorcer le catalogue avant l'ouverture** : 8-10 tuteurs de qualité couvrant les matières principales, idéalement dans les 4 langues — un catalogue vide ne recrute ni élèves ni promptagogues.
-
-## Risques majeurs à garder en tête
-
-- `/api/completion` est aujourd'hui un **proxy ouvert sans authentification** qui consomme les clés serveur — à corriger (étape 2) **avant toute publicité** de la plateforme.
-- **XSS via prompts tiers** (rendu HTML non assaini) — la sanitisation (étape 3) doit précéder l'ouverture des publications (étape 7). L'ordre du plan le garantit.
-- **Écart déclaratif RGPD** : `/rgpd` promet « aucune donnée serveur, pas de cookies » — l'étape 12 doit être en production **avant** l'ouverture réelle des comptes promptagogues.
-- **Le journal public des logs** est un piège permanent : jamais de secret en GET, règle d'or à respecter dans toute évolution future.
-- **Délivrabilité email** : sans SPF/DKIM corrects, les codes finissent en spam et le parcours promptagogue meurt à la première étape — tester avec de vraies boîtes dès l'étape 6.
-- **Le dépôt vit dans Dropbox** : le `.gitignore` ne protège pas de la synchro cloud de `.env`/`data/` — exclure ces chemins de Dropbox ou développer hors Dropbox.
-- **~14-17 sessions de travail** au total : le plan est ordonné pour un palier déployable dès l'étape 8 (catalogue + tuteurs fonctionnels et sécurisés) ; ne pas réordonner au détriment des étapes de sécurité.
+- Proxy ouvert `/api/completion`, XSS : d'accord, ordre du plan conservé (étapes 2 et 3 en tête).
+- **RGPD** : ⚠ texte à revoir précisément — « sans login » vaut pour les **élèves uniquement** ; login et compte pour les promptagogues, les enseignants responsables facturés, les admins (étape 12).
+- **Journal public** : supprimé, c'est plus simple.
+- **Dropbox** : pas un problème — usage personnel assumé pour stocker les secrets. Ne plus alerter.
+- Les « Failles et pièges découverts » de [00-analyse-existant.md](00-analyse-existant.md) : **tous validés par le client**.
