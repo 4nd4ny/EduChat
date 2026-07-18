@@ -2,13 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ChatPlaceholder from "./ChatPlaceholder";
-import { useAIProvider } from "../context/AIProviderManager";
-import { useOpenAI } from "../context/OpenAIProvider";
 import { useAnthropic } from "../context/AnthropicProvider";
 
 export default function ChatMessages() {
-  const { useOpenAIForNext, setUseOpenAIForNext } = useAIProvider();
-  const openai = useOpenAI();
   const anthropic = useAnthropic();
   
   // Utiliser les messages d'Anthropic comme source principale
@@ -81,20 +77,6 @@ export default function ChatMessages() {
     };
   }, []);
 
-  // Raccourci clavier pour la soumission
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && e.metaKey && anthropic.addMessage) {
-        anthropic.addMessage();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [anthropic]);
-
-
-
   return (
     <div className="flex h-full w-full flex-col items-stretch md:pl-[320px]">
       <div
@@ -120,6 +102,7 @@ export default function ChatMessages() {
             <hr className="border-b border-stone-400/20" />
           </>
         )}
+        {anthropic.error && <p className="mx-auto my-4 max-w-4xl rounded bg-red-950/40 p-3 text-sm text-red-200">{anthropic.error}</p>}
         <div ref={messageEndRef} />
       </div>
       <ChatInput />

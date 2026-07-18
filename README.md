@@ -4,13 +4,14 @@ This project is based on [EduChat](https://github.com/4nd4ny/EduChat-4o), which 
 
 ## Overview
 
-EduChat is designed for educational institutions aiming to provide their students with free access to the latest versions of Claude and O1 artificial intelligence models, in compliance with the GDPR. The installation on a server is accomplished easily using a few simple commands, enabling quick and efficient implementation of this educational tool.
+EduChat is a text-only multi-provider chat for educational institutions. It offers access to current language models while keeping the choice of provider, model, reasoning level, and API-key mode explicit.
 
 ## Key Features
 
-- Easy server installation
-- Access to Claude models by default
-- Access to O1 when a refresh is done
+- Claude, ChatGPT, Gemini, OpenRouter, Grok, and Mistral
+- Web search enabled by default for every provider
+- User-selectable reasoning level: fast, balanced, or thorough
+- A personal API key for the active session, or a developer-managed server key
 
 ## Differences from EduChat
 
@@ -24,7 +25,18 @@ This is my second React/Next.js/TypeScript/Flex project. Thanks to ChatGPT, I wa
 
 ## Installation
 
-To install this project, create a `.env` file in the root folder of the project (same folder as `src`), with API Key, encrypted password, allowed IPs and allowed hours, as provided in `(dot)env`.
+To install this project, create a `.env` file in the root folder of the project (same folder as `src`). Add the keys that the developer manages on the server; users can alternatively provide their own key in the interface.
+
+```dotenv
+SECRET_OPENAI_API_KEY=
+SECRET_ANTHROPIC_API_KEY=
+SECRET_GEMINI_API_KEY=
+SECRET_OPENROUTER_API_KEY=
+SECRET_XAI_API_KEY=
+SECRET_MISTRAL_API_KEY=
+```
+
+Personal keys remain only in the browser session memory and are not stored by the application. Never expose developer-managed keys with a `NEXT_PUBLIC_` prefix.
 
 ## Running Locally
 

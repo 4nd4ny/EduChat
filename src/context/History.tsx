@@ -1,4 +1,4 @@
-import { AnthropicChatMessage } from "@/utils/Anthropic";
+import type { ChatMessage } from "@/context/AnthropicProvider";
 import { v4 as uuidv4 } from "uuid";
 
 const HISTORY_KEY = "pg-history";
@@ -8,7 +8,7 @@ export type Conversation = {
   name: string;
   createdAt: number; // Unix timestamp
   lastMessage: number; // Unix timestamp
-  messages: AnthropicChatMessage[];
+  messages: ChatMessage[];
 };
 
 export type History = Record<string, Conversation>;

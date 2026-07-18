@@ -1,6 +1,6 @@
 import React from 'react';
 import type { AppProps } from "next/app";
-import { AIProviderManager } from '../context/AIProviderManager';
+import AnthropicProvider from '../context/AnthropicProvider';
 import Layout from '../context/Layout'; 
 
 import "@/utils/globals.css";
@@ -8,11 +8,11 @@ import "@/utils/globals.css";
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
-      <AIProviderManager>
+      <AnthropicProvider>
         <Layout>
           <Component {...pageProps} />
         </Layout>
-      </AIProviderManager>
+      </AnthropicProvider>
     </>
   );
 }

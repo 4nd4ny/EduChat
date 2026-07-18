@@ -1,9 +1,7 @@
-import React, { use, useEffect, useState } from "react";
-import { MdPerson, MdSmartToy, MdContentCopy, MdAutorenew, MdDeleteSweep } from "react-icons/md";
+import React, { useEffect, useState } from "react";
+import { MdPerson, MdSmartToy, MdContentCopy, MdDeleteSweep } from "react-icons/md";
 import AssistantMessageContent from "./AssistantMessageContent";
 import UserMessageContent from "./UserMessageContent";
-import { useAIProvider } from "../context/AIProviderManager";
-import { useOpenAI } from "../context/OpenAIProvider";
 import { useAnthropic } from "../context/AnthropicProvider";
 
 type Props = {
@@ -21,11 +19,8 @@ export default function ChatMessage({
 }: Props) {
   const [hover, setHover] = React.useState(false);
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
-  const [showRegenerateMessage, setShowRegenerateMessage] = useState(false);
   const [showDeleteMessage, setShowDeleteMessage] = useState(false);
-  
-  const { isOpenAIModel, isAnthropicModel, setUseOpenAIForNext } = useAIProvider();
-  const { openai, anthropic } = { openai: useOpenAI(), anthropic: useAnthropic() };
+  const anthropic = useAnthropic();
   const { deleteMessagesFromIndex } = useAnthropic();
 
   useEffect(() => {
@@ -41,46 +36,12 @@ export default function ChatMessage({
     setTimeout(() => setShowCopiedMessage(false), 2000);
   };
   
-  const handleRegenerate = () => {
-    if (openai.loading || anthropic.loading) return;
-    
-    setShowRegenerateMessage(true);
-    setUseOpenAIForNext(true);
-    
-    const messagesWithoutLast = anthropic.messages.slice(0, -1);
-    
-    // Mettre à jour l'état d'Anthropic immédiatement
-    anthropic.setMessages(messagesWithoutLast);
-    
-    // Appeler regenerateMessage avec un callback
-    openai.regenerateMessage(anthropic.messages, (reply) => {
-      // Ajouter la nouvelle réponse aux messages d'Anthropic
-      anthropic.setMessages(prev => [...prev, {
-        id: prev.length,
-        role: 'assistant',
-        content: reply,
-        model: 'o1'  // Le modèle OpenAI utilisé
-      }]);
-    });
-    
-    setShowRegenerateMessage(false);
-  };
-
   const handleDeleteFromHere = () => {
     setShowDeleteMessage(true);
     setTimeout(() => {
       setShowDeleteMessage(false);
       deleteMessagesFromIndex(messageIndex); // Utilise la fonction deleteMessagesFromIndex du provider
     }, 1000);
-  };
-
-  // Détermine le provider en fonction du modèle du message
-  const getProvider = () => {
-    if (model) {
-      if (isOpenAIModel(model)) return openai;
-      if (isAnthropicModel(model)) return anthropic;
-    }
-    return anthropic; // Par défaut, on utilise Anthropic
   };
 
   const formatModelName = (model: string): string => {
@@ -152,10 +113,6 @@ export default function ChatMessage({
                   <div className="absolute bottom-full mb-2 text-xs text-white">
                     Réponse copiée !
                   </div>
-                )) || (showRegenerateMessage && (
-                  <div className="absolute bottom-full mb-2 text-xs text-white">
-                    Régénération avec O1...
-                  </div>
                 ))}
               </div>
               <div className="relative mx-auto flex flex-row items-center mb-2 space-x-12">
@@ -166,15 +123,6 @@ export default function ChatMessage({
                 >
                   <MdContentCopy className="text-2xl" />
                 </div>
-                {isLastAssistantMessage && (
-                  <div
-                    className={`cursor-pointer text-gray-500 transition-colors transition-transform transform hover:scale-110 hover:bg-green-600 hover:text-white rounded-full flex items-center justify-center w-12 h-12`}
-                    onClick={handleRegenerate}
-                    title="Regénérer"
-                  >
-                    <MdAutorenew className="text-2xl" />
-                  </div>
-                )}
               </div>
             </div>
           )}

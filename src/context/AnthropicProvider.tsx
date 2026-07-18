@@ -1,586 +1,103 @@
 import { v4 as uuidv4 } from "uuid";
-import {
-  Conversation,
-  getHistory,
-  clearHistory,
-  storeConversation,
-  History,
-  deleteConversationFromHistory,
-  updateConversation,
-} from "./History";
-import {
-  AnthropicChatMessage,
-  AnthropicChatModels,
-  ProviderSubmitFunction,
-} from "../utils/Anthropic";
-import {
-  AnthropicApiKey,
-} from "../utils/env"
-import React, { 
-  PropsWithChildren,
-  useCallback, 
-  useEffect,
-} from "react";
+import React, { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import { Conversation, getHistory, clearHistory, storeConversation, History, deleteConversationFromHistory, updateConversation } from "./History";
 
-const CHAT_ROUTE = "/";
+export type ProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral";
+export type ReasoningLevel = "low" | "medium" | "high";
+export type ChatMessage = { id: number; role: "user" | "assistant"; content: string; model?: string };
 
-const defaultContext = {
-  loading: false,
-  
-  messages: [] as AnthropicChatMessage[],
-  setMessages: (() => {}) as React.Dispatch<React.SetStateAction<AnthropicChatMessage[]>>,
-  submit: (() => {}) as ProviderSubmitFunction,
-  addMessage: () => {},
-  updateMessageContent: (id: number, content: string) => {},
-  removeMessage: (id: number) => {},
-  toggleMessageRole: (id: number) => {},
-
-  conversationId: "",
-  conversationName: "",
-  updateConversationName: () => {},
-  generateTitle: () => {},
-  loadConversation: (id: string, conversation: Conversation) => {},
-  importConversation: (jsonData: any) => {},
-  resetConversation: () => {}, 
-  deleteConversation: () => {},  
-  deleteMessagesFromIndex: (index: number) => {},
-  clearConversation: () => {},
-
-  conversations: {} as History,
-  clearConversations: () => {},
-
-  error: "",
+export const providerDefaults: Record<ProviderId, { label: string; model: string }> = {
+  anthropic: { label: "Claude", model: "claude-sonnet-4-5" },
+  openai: { label: "ChatGPT", model: "gpt-5.1" },
+  gemini: { label: "Gemini", model: "gemini-3.5-flash" },
+  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1" },
+  grok: { label: "Grok", model: "grok-4.5" },
+  mistral: { label: "Mistral", model: "mistral-medium-latest" },
 };
 
-const AnthropicContext = React.createContext<{
-  loading: boolean;
+type Context = {
+  loading: boolean; messages: ChatMessage[]; setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  addMessage: (content: string, submit?: boolean, role?: "user" | "assistant") => void;
+  provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
+  apiKey: string; setApiKey: (value: string) => void; reasoning: ReasoningLevel; setReasoning: (value: ReasoningLevel) => void;
+  conversationId: string; conversationName: string; updateConversationName: (id: string, name: string) => void;
+  generateTitle: () => void; loadConversation: (id: string, conversation: Conversation) => void; importConversation: (jsonData: any) => void;
+  resetConversation: () => void; deleteConversation: (id: string) => void; deleteMessagesFromIndex: (index: number) => void;
+  clearConversation: () => void; conversations: History; clearConversations: () => void; error: string;
+};
 
-  messages: AnthropicChatMessage[];
-  setMessages: React.Dispatch<React.SetStateAction<AnthropicChatMessage[]>>;
-  submit: () => void;
-  addMessage: (
-    content?: string,
-    submit?: boolean,
-    role?: "user" | "assistant"
-  ) => void;
-  updateMessageContent: (id: number, content: string) => void;
-  removeMessage: (id: number) => void;
-  toggleMessageRole: (id: number) => void;
-
-  conversationId: string;
-  conversationName: string;
-  updateConversationName: (id: string, name: string) => void;
-  generateTitle: () => void;
-
-  loadConversation: (id: string, conversation: Conversation) => void;
-  importConversation: (jsonData: any) => void;
-  resetConversation: () => void; 
-  deleteConversation: (id: string) => void;
-  deleteMessagesFromIndex: (index: number) => void;
-  clearConversation: () => void;
-  conversations: History;
-  clearConversations: () => void;
-
-  error: string;
-}>(defaultContext);
+const noop = () => {};
+const ChatContext = React.createContext<Context>({
+  loading: false, messages: [], setMessages: noop as any, addMessage: noop as any,
+  provider: "anthropic", setProvider: noop as any, model: providerDefaults.anthropic.model, setModel: noop as any,
+  apiKey: "", setApiKey: noop as any, reasoning: "medium", setReasoning: noop as any,
+  conversationId: "", conversationName: "", updateConversationName: noop as any, generateTitle: noop,
+  loadConversation: noop as any, importConversation: noop as any, resetConversation: noop, deleteConversation: noop as any,
+  deleteMessagesFromIndex: noop as any, clearConversation: noop, conversations: {}, clearConversations: noop, error: "",
+});
 
 export default function AnthropicProvider({ children }: PropsWithChildren) {
-  
-  // General
-  const router = useRouter(); 
-  const [loading, setLoading] = React.useState(false);
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [provider, setProviderState] = useState<ProviderId>("anthropic");
+  const [model, setModel] = useState(providerDefaults.anthropic.model);
+  const [apiKey, setApiKey] = useState("");
+  const [reasoning, setReasoning] = useState<ReasoningLevel>("medium");
+  const [conversationId, setConversationId] = useState("");
+  const [conversationName, setConversationName] = useState("...");
+  const [conversations, setConversations] = useState<History>({});
+  const [error, setError] = useState("");
 
-  // Model
-  const modelList = Object.keys(AnthropicChatModels);
-
-  // Messages
-  const [messages, setMessages] = React.useState<AnthropicChatMessage[]>([]);
-  
-  // Fonction updateTokenCount pour mettre à jour le total de tokens :
-  const updateTotalTokens = (newTotal: number) => {
-    localStorage.setItem('totalTokens', newTotal.toString());
-    // Créez un événement personnalisé
-    const event = new Event('totalTokensUpdated');
-    window.dispatchEvent(event);
-  };
-  function updateTokenCount(tokenUsage: number) {
-    const storedTokens = localStorage.getItem('totalTokens');
-    const previousTokenTotal = storedTokens ? parseInt(storedTokens, 10) : 0;
-    const totalTokens = previousTokenTotal + tokenUsage;
-    updateTotalTokens(totalTokens);
-  }
-  function estimateFrenchTokens(text: string) {
-    // 1 token = 3,5 caractères (à la louche pour le français...) mais c'est plus compliqué que ça 
-    const wordCount = text.split(/\s+/).length;  // Nombre de mots (séparés par espace)
-    const charCount = text.length;  // Nombre total de caractères, y compris non-lettres
-    const estimatedTokens = (0.75 * wordCount) + (charCount / 4);  // Formule approximative
-    return Math.ceil(estimatedTokens);
-  }
-  function updateInputTokens(text: string) {
-    /*
-      // Use tiktoken to better count tokens
-      const { encoding_for_model } = require("tiktoken");
-      async function countTokens(text, model = "gpt-3.5-turbo") {
-        const encoder = await encoding_for_model(model); // Chargement de l'encodeur basé sur le modèle
-        const tokens = encoder.encode(text); // Tokenisation du texte
-        return tokens.length;
-      }
-    */
-    updateTokenCount(estimateFrenchTokens(text)); 
-  }
-  
-  const submit: ProviderSubmitFunction = useCallback(
-    async (messages_: AnthropicChatMessage[] = [], modelIndex: number = 0) => {
-      
-      if (loading) return; // Si déjà en cours, on ne fait rien
-      setLoading(true); // Verrouille le bouton submit
-
-      const messagesToSend = messages_?.length ? messages_ : messages || [];
-
-      const currentModel = modelList[0]; // Modèle par défaut
-        
-      try {
-        // Sélection du modèle actuel en fonction de l'index
-        const maximum = AnthropicChatModels[currentModel].maxLimit;
-        
-        let requestBody = {
-          max_completion_tokens: maximum,
-          model: currentModel,
-          messages: messagesToSend.map(({ role, content }) => ({ 
-            role, 
-            content: typeof content === 'string' ? content : content.reply 
-          })),
-        };
-        updateInputTokens(JSON.stringify(requestBody.messages));
-
-        const response = await fetch("/api/completion", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${AnthropicApiKey}`,
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error?.message || "Failed to fetch response, check your API key and try again.");
-        }
-  
-        const { reply, tokenUsage } = await response.json(); // Lecture du contenu JSON
-        updateTokenCount(tokenUsage);
-
-        const message: AnthropicChatMessage = {
-          id: messagesToSend.length,
-          role: 'assistant',
-          content: reply, 
-          model: currentModel,
-        };
-
-        setMessages((prev) => [...prev, message]);
-        
-      } catch (error: any) {
-        console.error("Error in submit:", error);
-        setMessages((prev) => [
-          ...(prev || []),
-          { 
-            id: (prev || []).length, 
-            role: 'assistant', 
-            content: error.message || "An error occurred", 
-            model: currentModel 
-          },
-        ]);
-      }
-
-      setLoading(false); // Déverrouille le bouton submit
-    },
-    [messages, loading]
-  );
-
-  const addMessage = useCallback(
-    (
-      content: string = "",
-      newPrompt: boolean = true,
-      role: "user" | "assistant" = "user"
-    ) => {
-      setMessages((prev) => {
-        const prevMessages = prev || [];
-        const messages = [
-          ...prevMessages,
-          {
-            id: prevMessages.length,
-            role,
-            content: content || "",
-          } as AnthropicChatMessage,
-        ];
-        submit(messages);
-        return messages;
-      });
-    },
-    [submit]
-  );
-
-  const updateMessageContent = (id: number, content: string) => {
-    setMessages((prev) => {
-      const prevMessages = prev || [];
-      const index = prevMessages.findIndex((message) => message.id === id);
-      if (index === -1) return prevMessages;
-      const message = prevMessages[index];
-      return [
-        ...prevMessages.slice(0, index),
-        {
-          ...message,
-          content,
-        },
-        ...prevMessages.slice(index + 1),
-      ];
-    });
-  };
-
-  const removeMessage = (id: number) => {
-    setMessages((prev) => {
-      const prevMessages = prev || [];
-      return [...prevMessages.filter((message) => message.id !== id)];
-    });
-  };
-
-  // Roles
-  const toggleMessageRole = (id: number) => {
-    setMessages((prev) => {
-      const prevMessages = prev || [];
-      const index = prevMessages.findIndex((message) => message.id === id);
-      if (index === -1) return prevMessages;
-      const message = prevMessages[index];
-      return [
-        ...prevMessages.slice(0, index),
-        {
-          ...message,
-          role: message.role === "user" ? "assistant" : "user",
-        },
-        ...prevMessages.slice(index + 1),
-      ];
-    });
-  };
-
-  // Conversation 
-  const [conversationId, setConversationId] = React.useState<string>("");
-  const [conversationName, setConversationName] = React.useState("");
-  const updateConversationName = (id: string, name: string) => {
-    setConversations((prev) => {
-      const conversation = prev[id];
-      if (!conversation) return prev;
-      return {
-        ...prev,
-        [id]: {
-          ...conversation,
-          name,
-        },
-      };
-    });
-    if (id === conversationId) setConversationName(name);
-    updateConversation(id, { name });
-  };
-
-  const handleStoreConversation = useCallback(() => {
-  // Vérifier si messages existe et n'est pas vide
-  if (!messages?.length) return;
-  
-    const conversation = {
-      name: conversationName || "...",
-      createdAt: Date.now(),
-      lastMessage: Date.now(),
-      messages,
-    } as Conversation;
-
-    let id = storeConversation(conversationId, conversation);
-    setConversationId(id);
-    setConversations((prev) => ({ ...prev, [id]: conversation }));
-
-    if (router.pathname === CHAT_ROUTE) router.push(`/chat/${id}`);
-  }, [conversationId, messages, conversationName, router.pathname]);
-
+  useEffect(() => setConversations(getHistory()), []);
   useEffect(() => {
-    handleStoreConversation();
+    if (!messages.length) return;
+    const conversation: Conversation = { name: conversationName || "...", createdAt: Date.now(), lastMessage: Date.now(), messages: messages as any };
+    const id = storeConversation(conversationId, conversation);
+    setConversationId(id); setConversations(previous => ({ ...previous, [id]: conversation }));
+    if (router.pathname === "/") router.push(`/chat/${id}`);
   }, [messages]);
 
-  const generateTitle = useCallback(async () => {
-    if (!messages?.length || !messages[0]?.content) {
-      setConversationName("...");
-      return;
-    }
-    // Éviter la récursion si on a déjà un nom
-    if (conversationName && conversationName !== "...") {
-      return;
-    }
-
-    const firstMessage = messages[0].content;
-    const messageText = typeof firstMessage === 'string' ? firstMessage : firstMessage.reply;
-
-    const titlePrompt = `Summarize the following text in three words, maintaining the language of the statement (usually french):
-      <TEXT>
-      ${messageText}
-      </TEXT>`;
-
-    updateInputTokens(titlePrompt);
-    try {
-      const response = await fetch('/api/completion', {
-        headers: {
-          'x-api-key': AnthropicApiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-        body: JSON.stringify({
-          model: 'claude-3-5-haiku-latest',
-          messages: [{
-            role: "user",
-            content: titlePrompt
-          }],
-          max_completion_tokens: 100
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const { reply, tokenUsage } = await response.json(); // Lecture du contenu JSON  
-      setConversationName(reply);
-      updateConversationName(conversationId, reply);
-      updateTokenCount(tokenUsage);
-
-    } catch (error) {
-      console.error("Error generating title:", error);
-      setConversationName(messageText.slice(0, 30) + "...");
-    }
-  
-  }, [conversationId, messages, conversationName, setConversationName, updateConversationName]);
-
-  // Modifier également le useEffect pour éviter les appels inutiles :
-  useEffect(() => {
-    if (
-      messages?.length === 1 && 
-      messages[0]?.role === 'user' && 
-      conversationName === "..."
-    ) {
-      generateTitle();
-    }
-  }, [messages, conversationName]);
-
-  const loadConversation = (id: string, conversation: Conversation) => {
-    setConversationId(id);
-    const { messages, name } = conversation;
-    setMessages(messages);
-    setConversationName(name);
-  };
-
-  const importConversation = useCallback((jsonData: any) => {
-    try {
-      // 1. Validation stricte de la structure
-      if (!isValidConversationStructure(jsonData)) {
-        throw new Error("Invalid conversation structure");
-      }
-
-      // 2. Limiter la taille du JSON
-      const jsonString = JSON.stringify(jsonData);
-      if (jsonString.length > 1000000) { // Par exemple, limite à 1 Mo
-        throw new Error("Imported conversation is too large");
-      }
-
-      // 3. Sanitisation des données
-      const sanitizedConversation: Conversation = {
-        name: jsonData.name, // Limiter à 100 caractères
-        createdAt: Number(jsonData.createdAt) || Date.now(),
-        lastMessage: Number(jsonData.lastMessage) || Date.now(),
-        messages: jsonData.messages.map((msg: any, index: number) => ({
-          id: index,
-          role: msg.role === "assistant" || msg.role === "user" ? msg.role : "user",
-          content: msg.content, // Limiter à 10000 caractères
-          model: msg.model
-        }))
-      };
-
-      const newId = uuidv4();
-
-      // Mettre à jour l'état local
-      setConversations((prev: History) => ({
-        ...prev,
-        [newId]: sanitizedConversation
-      }));
-
-      // Stocker la nouvelle conversation
-      storeConversation(newId, sanitizedConversation);
-
-      // Charger la conversation importée
-      loadConversation(newId, sanitizedConversation);
-
-      // Rediriger vers la nouvelle conversation
-      router.push(`/chat/${newId}`);
-
-      console.log("Conversation imported successfully");
-    } catch (error) {
-      console.error("Error importing conversation:", error);
-      // Notification à l'utilisateur
-    }
-  }, [router, loadConversation]);
-
-  // Fonctions auxiliaires
-
-  function isValidConversationStructure(data: any): boolean {
-    return (
-      typeof data === 'object' &&
-      typeof data.name === 'string' &&
-      Array.isArray(data.messages) &&
-      data.messages.every((msg: any) =>
-        typeof msg === 'object' &&
-        (msg.role === 'assistant' || msg.role === 'user') &&
-        (typeof msg.content === 'string' || (typeof msg.content === 'object' && typeof msg.content.reply === 'string'))
-      )
-    );
-  }
-
-  function sanitizeString(str: string, maxLength: number): string {
-    // Échapper les caractères HTML et limiter la longueur
-    return str
-      .replace(/[&<>"']/g, (char) => {
-        const entities: { [key: string]: string } = {
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;'
-        };
-        return entities[char];
-      })
-      .slice(0, maxLength);
-  }
-
-  function isValidModel(model: any): model is keyof typeof AnthropicChatModels {
-    return typeof model === 'string' && model in AnthropicChatModels;
-  }
-  
-  const deleteMessagesFromIndex = useCallback((index: number) => {
-    setMessages((prev) => {
-      const prevMessages = prev || [];
-      // Garde uniquement les messages jusqu'à l'index spécifié
-      return prevMessages.slice(0, index);
-    });
-  }, []);  
-
-  const resetConversation = useCallback(() => {
-    const newId = Date.now().toString();
-
-    setConversationId(newId);
-    setConversationName("...");
-    setMessages([]);
-
-    // Créer une nouvelle conversation
-    const newConversation: Conversation = {
-      name: "...",
-      createdAt: Date.now(),
-      lastMessage: Date.now(),
-      messages: [],
-    };
-
-    // Mettre à jour l'historique des conversations
-    setConversations(prev => ({
-      ...prev,
-      [newId]: newConversation
-    }));
-
-    // Stocker la nouvelle conversation
-    storeConversation(newId, newConversation);
-
-    // Rediriger vers la nouvelle conversation
-    router.push(`/chat/${newId}`);
-  }, [router]);
-
-  const deleteConversation = (id: string) => {
-    deleteConversationFromHistory(id);
-    setConversations((prev) => {
-      const { [id]: _, ...rest } = prev;
-      return rest;
-    });
-
-    if (id === conversationId) clearConversation();
-  };
-
-  const clearConversation = () => {
-    setMessages([]);
-    setConversationId("");
-  };
-
-  // Conversations
-  const [conversations, setConversations] = React.useState<History>({} as History);
-
-  // Load conversation from local storage
-  useEffect(() => {
-    setConversations(getHistory());
+  const setProvider = useCallback((next: ProviderId) => { setProviderState(next); setModel(providerDefaults[next].model); setError(""); }, []);
+  const updateConversationName = useCallback((id: string, name: string) => {
+    setConversationName(name); updateConversation(id, { name });
+    setConversations(previous => previous[id] ? { ...previous, [id]: { ...previous[id], name } } : previous);
   }, []);
+  const generateTitle = useCallback(() => {
+    const first = messages[0]?.content?.trim();
+    if (!first || conversationName !== "...") return;
+    updateConversationName(conversationId, first.slice(0, 48) + (first.length > 48 ? "…" : ""));
+  }, [messages, conversationName, conversationId, updateConversationName]);
 
-  const clearConversations = useCallback(() => {
-    clearHistory();
+  const send = useCallback(async (nextMessages: ChatMessage[]) => {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch("/api/completion", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, model, apiKey, reasoning, messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error?.message || "La réponse a échoué.");
+      setMessages(previous => [...previous, { id: previous.length, role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
+    } catch (exception: any) {
+      const message = exception?.message || "Erreur inconnue.";
+      setError(message); setMessages(previous => [...previous, { id: previous.length, role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
+    } finally { setLoading(false); }
+  }, [provider, model, apiKey, reasoning]);
 
-    setMessages([]);
-    setConversationId("");
-    setConversations({});
+  const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user") => {
+    const value = content.trim(); if (!value) return;
+    setMessages(previous => { const next = [...previous, { id: previous.length, role, content: value }]; if (submit && role === "user") void send(next); return next; });
+  }, [send]);
+  const deleteMessagesFromIndex = useCallback((index: number) => setMessages(previous => previous.slice(0, index)), []);
+  const resetConversation = useCallback(() => { setMessages([]); setConversationId(""); setConversationName("..."); router.push("/"); }, [router]);
+  const clearConversation = useCallback(() => { setMessages([]); setConversationId(""); }, []);
+  const deleteConversation = useCallback((id: string) => { deleteConversationFromHistory(id); setConversations(previous => { const { [id]: _, ...rest } = previous; return rest; }); if (id === conversationId) clearConversation(); }, [conversationId, clearConversation]);
+  const clearConversations = useCallback(() => { clearHistory(); setMessages([]); setConversationId(""); setConversations({}); router.push("/"); }, [router]);
+  const loadConversation = useCallback((id: string, conversation: Conversation) => { setConversationId(id); setConversationName(conversation.name); setMessages(conversation.messages as any); }, []);
+  const importConversation = useCallback((jsonData: any) => { if (!Array.isArray(jsonData?.messages)) return; const id = uuidv4(); const conversation = { name: String(jsonData.name || "Discussion importée"), createdAt: Date.now(), lastMessage: Date.now(), messages: jsonData.messages } as Conversation; storeConversation(id, conversation); setConversations(previous => ({ ...previous, [id]: conversation })); loadConversation(id, conversation); router.push(`/chat/${id}`); }, [loadConversation, router]);
 
-    router.push("/");
-  }, []);
-
-  const [error] = React.useState("");
-
-  const value = React.useMemo(
-    () => ({
-      loading,
-      
-      messages,
-      setMessages,
-      submit,
-      addMessage,
-      updateMessageContent,
-      removeMessage,
-      
-      toggleMessageRole,
-
-      conversationId,
-      conversationName,
-      updateConversationName,
-      generateTitle,
-      loadConversation,
-      importConversation,
-      deleteConversation,
-      deleteMessagesFromIndex,
-      resetConversation,
-      clearConversation,
-      clearConversations,
-      conversations,
-      
-      error,
-    }),
-    [
-      loading,
-
-      messages,
-      setMessages,
-      submit,
-      addMessage,
-
-      conversationId,
-      importConversation,
-      deleteMessagesFromIndex,
-      resetConversation,
-      clearConversations,
-      conversations,
-
-      error,
-    ]
-  );
-
-  return (
-    <AnthropicContext.Provider value={value}>{children}</AnthropicContext.Provider>
-  );
+  const value = useMemo(() => ({ loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
-export const useAnthropic = () => React.useContext(AnthropicContext);
+export const useAnthropic = () => React.useContext(ChatContext);
