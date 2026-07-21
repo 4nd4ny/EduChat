@@ -2,8 +2,9 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import rehypeRaw from "rehype-raw"; 
-import remarkGfm from 'remark-gfm'; 
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkGfm from 'remark-gfm';
 import remarkBreaks from "remark-breaks"; 
 import rangeParser from "parse-numeric-range";
 
@@ -29,6 +30,31 @@ SyntaxHighlighter.registerLanguage("cpp", cpp);
 SyntaxHighlighter.registerLanguage("json", json);
 
 const syntaxTheme = oneDark;
+
+// Schéma de sanitisation en LISTE BLANCHE.
+//
+// Le modèle peut émettre du HTML arbitraire : sans ce filtre, un prompt
+// malveillant ferait exécuter du JavaScript dans le navigateur de l'élève
+// (et pourrait voler le jeton de compte stocké en localStorage).
+// Tout ce qui n'est pas explicitement autorisé ici est retiré du rendu.
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    // Balises pédagogiques rendues par les composants personnalisés ci-dessous
+    'thinking',
+    'encouragement',
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    // Classes nécessaires à KaTeX : remark-math les pose, rehype-katex les lit
+    // ensuite pour produire les formules.
+    div: [...(defaultSchema.attributes?.div || []), ['className', 'math', 'math-display']],
+    span: [...(defaultSchema.attributes?.span || []), ['className', 'math', 'math-inline']],
+    // Classes language-* nécessaires à la coloration syntaxique Prism.
+    code: [...(defaultSchema.attributes?.code || []), ['className', /^language-./]],
+  },
+};
 
 type Props = {
   content: string;
@@ -195,19 +221,23 @@ export default function AssistantMessageContent({ content, ...props }: Props) {
       );
     },
 
-    mathml: ({ node } : any) => (
-      <div dangerouslySetInnerHTML={{ __html: node.outerHTML }} />
-    ),
+    // Le renderer « mathml » a été SUPPRIMÉ : il réinjectait node.outerHTML via
+    // dangerouslySetInnerHTML, contournant toute sanitisation. Les formules sont
+    // rendues par rehype-katex, qui produit un balisage sûr.
 
   };
 
-  return ( 
+  return (
       <ReactMarkdown
         remarkPlugins={[remarkMath, remarkBreaks, remarkGfm]}
-        rehypePlugins={[rehypeKatex, rehypeRaw]}
+        // L'ORDRE est essentiel : rehypeRaw transforme le HTML du modèle en nœuds,
+        // rehypeSanitize élague tout ce qui n'est pas en liste blanche, et seulement
+        // ensuite rehypeKatex génère les formules — sa sortie provient de notre code
+        // et n'a donc pas à repasser par le filtre (qui la mutilerait).
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
         components={MarkdownComponents}
       >
         {transformedContent}
-      </ReactMarkdown> 
+      </ReactMarkdown>
   );
 }

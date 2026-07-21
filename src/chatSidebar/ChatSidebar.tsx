@@ -1,7 +1,7 @@
 import Link from "next/link";
 import React, { useCallback }  from "react";
 import { MdAdd, MdDeleteOutline, MdUploadFile } from "react-icons/md";
-import { useAnthropic } from "../context/AnthropicProvider";
+import { MAX_IMPORT_BYTES, useAnthropic } from "../context/AnthropicProvider";
 import Conversations from "./Conversations";
 import ButtonContainer from "./ButtonContainer";
 import { useDropzone } from 'react-dropzone';
@@ -15,27 +15,39 @@ export default function ChatSidebar({}: Props) {
     resetConversation();
   }; 
 
+  const [importError, setImportError] = React.useState("");
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    setImportError("");
     acceptedFiles.forEach((file) => {
       const reader = new FileReader();
-      reader.onabort = () => console.log('file reading was aborted');
-      reader.onerror = () => console.log('file reading has failed');
+      reader.onabort = () => setImportError("Lecture du fichier interrompue.");
+      reader.onerror = () => setImportError("Impossible de lire le fichier.");
       reader.onload = () => {
         const fileContent = reader.result as string;
         try {
-          const jsonData = JSON.parse(fileContent);
-          importConversation(jsonData);
+          importConversation(JSON.parse(fileContent));
         } catch (error) {
-          console.error('Error parsing JSON:', error);
-          // Vous pourriez ajouter ici une notification pour l'utilisateur
+          setImportError("Fichier illisible : ce n'est pas du JSON valide.");
         }
       };
       reader.readAsText(file);
     });
   }, [importConversation]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+  // Les fichiers écartés par react-dropzone (trop volumineux, mauvais type)
+  // doivent le dire à l'utilisateur, et non disparaître en silence.
+  const onDropRejected = useCallback((rejections: any[]) => {
+    const tooLarge = rejections.some(r => r.errors?.some((e: any) => e.code === "file-too-large"));
+    setImportError(tooLarge
+      ? `Fichier trop volumineux (maximum ${MAX_IMPORT_BYTES / (1024 * 1024)} Mo).`
+      : "Fichier refusé : un fichier .json est attendu.");
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
+    maxSize: MAX_IMPORT_BYTES,
     accept: {
       'application/json': ['.json']
     }
@@ -59,6 +71,9 @@ export default function ChatSidebar({}: Props) {
             <MdUploadFile />
             {isDragActive ? "Déposez le fichier" : "Importer une discussion"}
           </div>
+          {importError && (
+            <p role="alert" className="px-3 text-xs text-red-400">{importError}</p>
+          )}
         </div>
 
         <Conversations />

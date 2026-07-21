@@ -7,7 +7,7 @@ import { providerDefaults, type ProviderId, type ReasoningLevel } from "../share
 
 export { providerDefaults };
 export type { ProviderId, ReasoningLevel };
-export type ChatMessage = { id: number; role: "user" | "assistant"; content: string; model?: string };
+export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; model?: string };
 
 // Traduction des codes d'erreur stables renvoyés par les API.
 // À l'arrivée de l'i18n (étape 10), cette table déménagera dans les dictionnaires.
@@ -22,6 +22,37 @@ const errorMessages: Record<string, string> = {
   ERR_EMPTY_CONVERSATION: "La conversation est vide.",
   ERR_UPSTREAM: "Le fournisseur d'IA n'a pas répondu correctement.",
 };
+
+export const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2 Mo
+
+/**
+ * Valide et normalise une conversation importée. Lève une erreur explicite au
+ * moindre écart : le fichier vient de l'extérieur et son contenu finira rendu
+ * dans le navigateur. Gère aussi l'ancien format { reply, tokenUsage }.
+ */
+function parseImportedMessages(jsonData: any): ChatMessage[] {
+  if (!jsonData || typeof jsonData !== "object") throw new Error("Fichier illisible : JSON attendu.");
+  if (!Array.isArray(jsonData.messages)) throw new Error("Fichier invalide : aucune liste « messages ».");
+  if (jsonData.messages.length > 5000) throw new Error("Conversation trop longue (plus de 5000 messages).");
+
+  return jsonData.messages.map((message: any, index: number) => {
+    if (!message || typeof message !== "object") throw new Error(`Message ${index + 1} : format invalide.`);
+    if (message.role !== "user" && message.role !== "assistant") {
+      throw new Error(`Message ${index + 1} : rôle « ${String(message.role)} » non autorisé.`);
+    }
+    // Ancien format : le contenu pouvait être un objet { reply, tokenUsage }.
+    const raw = typeof message.content === "object" && message.content !== null && typeof message.content.reply === "string"
+      ? message.content.reply
+      : message.content;
+    if (typeof raw !== "string") throw new Error(`Message ${index + 1} : contenu textuel attendu.`);
+    return {
+      id: uuidv4(),
+      role: message.role,
+      content: raw,
+      ...(typeof message.model === "string" ? { model: message.model } : {}),
+    } as ChatMessage;
+  });
+}
 
 // Cumule les tokens consommés et notifie l'affichage (titre d'onglet et bandeau).
 // Layout.tsx et formatTokens.ts assurent déjà le rendu : il ne manquait que
@@ -98,16 +129,16 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
         throw new Error((code && errorMessages[code]) || "La réponse a échoué.");
       }
       addTokenUsage(Number(data.tokenUsage));
-      setMessages(previous => [...previous, { id: previous.length, role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
+      setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
     } catch (exception: any) {
       const message = exception?.message || "Erreur inconnue.";
-      setError(message); setMessages(previous => [...previous, { id: previous.length, role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
+      setError(message); setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
     } finally { setLoading(false); }
   }, [provider, model, apiKey, reasoning]);
 
   const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user") => {
     const value = content.trim(); if (!value) return;
-    setMessages(previous => { const next = [...previous, { id: previous.length, role, content: value }]; if (submit && role === "user") void send(next); return next; });
+    setMessages(previous => { const next = [...previous, { id: uuidv4(), role, content: value }]; if (submit && role === "user") void send(next); return next; });
   }, [send]);
   const deleteMessagesFromIndex = useCallback((index: number) => setMessages(previous => previous.slice(0, index)), []);
   const resetConversation = useCallback(() => { setMessages([]); setConversationId(""); setConversationName("..."); router.push("/"); }, [router]);
@@ -115,7 +146,21 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const deleteConversation = useCallback((id: string) => { deleteConversationFromHistory(id); setConversations(previous => { const { [id]: _, ...rest } = previous; return rest; }); if (id === conversationId) clearConversation(); }, [conversationId, clearConversation]);
   const clearConversations = useCallback(() => { clearHistory(); setMessages([]); setConversationId(""); setConversations({}); router.push("/"); }, [router]);
   const loadConversation = useCallback((id: string, conversation: Conversation) => { setConversationId(id); setConversationName(conversation.name); setMessages(conversation.messages as any); }, []);
-  const importConversation = useCallback((jsonData: any) => { if (!Array.isArray(jsonData?.messages)) return; const id = uuidv4(); const conversation = { name: String(jsonData.name || "Discussion importée"), createdAt: Date.now(), lastMessage: Date.now(), messages: jsonData.messages } as Conversation; storeConversation(id, conversation); setConversations(previous => ({ ...previous, [id]: conversation })); loadConversation(id, conversation); router.push(`/chat/${id}`); }, [loadConversation, router]);
+  const importConversation = useCallback((jsonData: any) => {
+    try {
+      const messages = parseImportedMessages(jsonData);
+      const id = uuidv4();
+      const conversation = { name: String(jsonData.name || "Discussion importée").slice(0, 200), createdAt: Date.now(), lastMessage: Date.now(), messages } as Conversation;
+      storeConversation(id, conversation);
+      setConversations(previous => ({ ...previous, [id]: conversation }));
+      loadConversation(id, conversation);
+      setError("");
+      router.push(`/chat/${id}`);
+    } catch (exception: any) {
+      // Rejet explicite : l'ancienne implémentation abandonnait en silence.
+      setError(exception?.message || "Fichier de conversation invalide.");
+    }
+  }, [loadConversation, router]);
 
   const value = useMemo(() => ({ loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

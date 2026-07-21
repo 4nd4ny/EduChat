@@ -89,7 +89,7 @@ export default function ChatMessages() {
           <>
             {visibleMessages.map((message, index) => (
               <ChatMessage
-                key={`${message.id}-${message.role}`}
+                key={message.id}
                 message={message}
                 isInitialUserMessage={index === 0}
                 isLastAssistantMessage={
