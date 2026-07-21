@@ -1,6 +1,6 @@
 # EduChat
 
-This project is based on [EduChat](https://github.com/4nd4ny/EduChat-4o), which itself is based on the [GPT-4 Playground](https://github.com/Nashex/gpt4-playground) project by [Nashex](https://github.com/Nashex).
+This project is based on the [GPT-4 Playground](https://github.com/Nashex/gpt4-playground) project by [Nashex](https://github.com/Nashex).
 
 ## Overview
 
@@ -9,12 +9,8 @@ EduChat is designed for educational institutions aiming to provide their student
 ## Key Features
 
 - Easy server installation
-- Access to Claude models by default
-- Access to O1 when a refresh is done
-
-## Differences from EduChat
-
-The main difference from [EduChat](https://github.com/4nd4ny/EduChat-4o) is the mixture of Claude and O1, instead of using ChatGPT 4o and O1. Which mean, you need two API keys!
+- Access to Claude
+- Access to ChatGPT
 
 ## Development Notes
 
