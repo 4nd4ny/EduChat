@@ -18,3 +18,4 @@ failed_attempts.json
 auth_log.txt
 
 .DS_Store
+tsconfig.tsbuildinfo

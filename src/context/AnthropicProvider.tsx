@@ -3,18 +3,35 @@ import React, { PropsWithChildren, useCallback, useEffect, useMemo, useState } f
 import { useRouter } from "next/router";
 import { Conversation, getHistory, clearHistory, storeConversation, History, deleteConversationFromHistory, updateConversation } from "./History";
 
-export type ProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral";
-export type ReasoningLevel = "low" | "medium" | "high";
+import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
+
+export { providerDefaults };
+export type { ProviderId, ReasoningLevel };
 export type ChatMessage = { id: number; role: "user" | "assistant"; content: string; model?: string };
 
-export const providerDefaults: Record<ProviderId, { label: string; model: string }> = {
-  anthropic: { label: "Claude", model: "claude-sonnet-4-5" },
-  openai: { label: "ChatGPT", model: "gpt-5.1" },
-  gemini: { label: "Gemini", model: "gemini-3.5-flash" },
-  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1" },
-  grok: { label: "Grok", model: "grok-4.5" },
-  mistral: { label: "Mistral", model: "mistral-medium-latest" },
+// Traduction des codes d'erreur stables renvoyés par les API.
+// À l'arrivée de l'i18n (étape 10), cette table déménagera dans les dictionnaires.
+const errorMessages: Record<string, string> = {
+  ERR_METHOD_NOT_ALLOWED: "Méthode non autorisée.",
+  ERR_LOCKED: "Le site est verrouillé. Demandez à votre enseignant de le déverrouiller, ou saisissez votre clé API personnelle.",
+  ERR_RATE_LIMIT: "Trop de requêtes en peu de temps. Patientez une minute.",
+  ERR_BODY_TOO_LARGE: "La conversation est trop longue à envoyer.",
+  ERR_PROVIDER_UNSUPPORTED: "Fournisseur non pris en charge.",
+  ERR_MODEL_INVALID: "Nom de modèle invalide.",
+  ERR_NO_API_KEY: "Aucune clé API n'est configurée sur le serveur pour ce fournisseur.",
+  ERR_EMPTY_CONVERSATION: "La conversation est vide.",
+  ERR_UPSTREAM: "Le fournisseur d'IA n'a pas répondu correctement.",
 };
+
+// Cumule les tokens consommés et notifie l'affichage (titre d'onglet et bandeau).
+// Layout.tsx et formatTokens.ts assurent déjà le rendu : il ne manquait que
+// l'alimentation de la clé localStorage, jamais écrite jusqu'ici.
+function addTokenUsage(tokens: number) {
+  if (typeof window === "undefined" || !Number.isFinite(tokens) || tokens <= 0) return;
+  const previous = parseInt(localStorage.getItem("totalTokens") || "0", 10) || 0;
+  localStorage.setItem("totalTokens", String(previous + tokens));
+  window.dispatchEvent(new Event("totalTokensUpdated"));
+}
 
 type Context = {
   loading: boolean; messages: ChatMessage[]; setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -76,7 +93,11 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
       const response = await fetch("/api/completion", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, model, apiKey, reasoning, messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || "La réponse a échoué.");
+      if (!response.ok) {
+        const code = data?.error?.code as string | undefined;
+        throw new Error((code && errorMessages[code]) || "La réponse a échoué.");
+      }
+      addTokenUsage(Number(data.tokenUsage));
       setMessages(previous => [...previous, { id: previous.length, role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
     } catch (exception: any) {
       const message = exception?.message || "Erreur inconnue.";

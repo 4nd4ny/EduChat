@@ -1,19 +1,23 @@
-type Provider = "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral";
-type Reasoning = "low" | "medium" | "high";
+import type { NextApiRequest, NextApiResponse } from "next";
+import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
+import {
+  ERR,
+  isProviderId,
+  isReasoningLevel,
+  providerDefaults,
+  type ProviderId,
+  type ReasoningLevel,
+} from "../../shared/providers";
+
 type Message = { role: "user" | "assistant"; content: string };
 
-export const config = { runtime: "edge" };
-
-const defaults: Record<Provider, string> = {
-  anthropic: "claude-sonnet-4-5",
-  openai: "gpt-5.1",
-  gemini: "gemini-3.5-flash",
-  openrouter: "openai/gpt-5.1",
-  grok: "grok-4.5",
-  mistral: "mistral-medium-latest",
+// Runtime Node (et non edge) : indispensable pour lire auth_lock.json sur le
+// disque avant de dépenser les clés du serveur, et requis par SQLite à l'étape 4.
+export const config = {
+  api: { bodyParser: { sizeLimit: "100kb" } },
 };
 
-const developerKeys: Record<Provider, string | undefined> = {
+const developerKeys: Record<ProviderId, string | undefined> = {
   anthropic: process.env.SECRET_ANTHROPIC_API_KEY,
   openai: process.env.SECRET_OPENAI_API_KEY,
   gemini: process.env.SECRET_GEMINI_API_KEY,
@@ -21,11 +25,6 @@ const developerKeys: Record<Provider, string | undefined> = {
   grok: process.env.SECRET_XAI_API_KEY,
   mistral: process.env.SECRET_MISTRAL_API_KEY,
 };
-
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
-  status,
-  headers: { "Content-Type": "application/json" },
-});
 
 function textFromResponse(data: any): string {
   if (typeof data?.output_text === "string") return data.output_text;
@@ -38,7 +37,7 @@ function textFromResponse(data: any): string {
       if (typeof content?.text === "string") return content.text;
     }
   }
-  return "Le fournisseur n’a renvoyé aucun texte exploitable.";
+  return "";
 }
 
 function usageFromResponse(data: any): number {
@@ -49,26 +48,69 @@ function usageFromResponse(data: any): number {
 async function requestJson(url: string, init: RequestInit) {
   const response = await fetch(url, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message ?? data?.message ?? `Erreur du fournisseur (${response.status}).`);
+  if (!response.ok) {
+    const detail = data?.error?.message ?? data?.message ?? `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
   return data;
 }
 
-export default async function handler(req: Request) {
-  if (req.method !== "POST") return json({ error: { message: "Méthode non autorisée." } }, 405);
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).json({ error: { code: ERR.METHOD } });
+  }
+
+  const clientIp = getClientIp(req);
+
+  // Limitation de débit par IP (30 requêtes/minute) avant tout traitement coûteux.
+  if (await isRateLimited(clientIp)) {
+    return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
+  }
+
+  const body = req.body ?? {};
+  const provider = body.provider;
+  const messages = body.messages as Message[];
+  const reasoning: ReasoningLevel = isReasoningLevel(body.reasoning) ? body.reasoning : "medium";
+
+  if (!isProviderId(provider)) {
+    return res.status(400).json({ error: { code: ERR.PROVIDER } });
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: { code: ERR.EMPTY } });
+  }
+
+  const model = String(body.model || providerDefaults[provider].model).trim();
+  if (!model || model.length > 128) {
+    return res.status(400).json({ error: { code: ERR.MODEL } });
+  }
+
+  // Règle d'accès : une clé personnelle (BYOK) est TOUJOURS acceptée. Sinon, les
+  // clés du serveur ne sont servies que si le site est déverrouillé, ou depuis une
+  // IP d'établissement pendant une plage horaire autorisée. Aucun repli silencieux
+  // de l'une vers l'autre.
+  const personalKey = String(body.apiKey || "").trim();
+  let apiKey = personalKey;
+
+  if (!apiKey) {
+    if (!(await mayUseServerKeys(clientIp))) {
+      return res.status(401).json({ error: { code: ERR.LOCKED } });
+    }
+    apiKey = String(developerKeys[provider] || "").trim();
+    if (!apiKey) {
+      return res.status(503).json({ error: { code: ERR.NO_KEY } });
+    }
+  }
+
+  const cleanMessages = messages
+    .filter(m => m && (m.role === "user" || m.role === "assistant"))
+    .map(({ role, content }) => ({ role, content: String(content) }));
+
+  if (!cleanMessages.length) {
+    return res.status(400).json({ error: { code: ERR.EMPTY } });
+  }
 
   try {
-    const body = await req.json();
-    const provider = body.provider as Provider;
-    const messages = body.messages as Message[];
-    const reasoning = (body.reasoning ?? "medium") as Reasoning;
-    const model = String(body.model || defaults[provider]);
-    const apiKey = String(body.apiKey || developerKeys[provider] || "").trim();
-
-    if (!Object.prototype.hasOwnProperty.call(defaults, provider)) throw new Error("Fournisseur non pris en charge.");
-    if (!apiKey) throw new Error(`Aucune clé API n’est configurée pour ${provider}.`);
-    if (!Array.isArray(messages) || !messages.length) throw new Error("La conversation est vide.");
-
-    const cleanMessages = messages.map(({ role, content }) => ({ role, content: String(content) }));
     let data: any;
 
     if (provider === "openai" || provider === "grok") {
@@ -83,7 +125,7 @@ export default async function handler(req: Request) {
         }),
       });
     } else if (provider === "anthropic") {
-      const budgets: Record<Reasoning, number> = { low: 1024, medium: 4096, high: 8192 };
+      const budgets: Record<ReasoningLevel, number> = { low: 1024, medium: 4096, high: 8192 };
       data = await requestJson("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "content-type": "application/json" },
@@ -113,8 +155,11 @@ export default async function handler(req: Request) {
       });
     }
 
-    return json({ reply: textFromResponse(data), tokenUsage: usageFromResponse(data) });
+    return res.status(200).json({ reply: textFromResponse(data), tokenUsage: usageFromResponse(data) });
   } catch (error: any) {
-    return json({ error: { message: error?.message ?? "Erreur lors de la génération." } }, 400);
+    // Le détail du fournisseur est journalisé côté serveur, jamais renvoyé tel quel
+    // au client (il peut contenir des informations d'infrastructure).
+    console.error(`Erreur du fournisseur ${provider} :`, error?.message);
+    return res.status(502).json({ error: { code: ERR.UPSTREAM } });
   }
 }

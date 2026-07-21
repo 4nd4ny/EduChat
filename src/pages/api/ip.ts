@@ -1,15 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import requestIp from 'request-ip';
+import { getClientIp, isKnownIp } from '../../server/access';
 
-// Extract IPs from environment variables
-const allowedIpsString = process.env.SECRET_ALLOWED_IPS || '';
-const allowedIps = [
-  ...allowedIpsString.split(',').map(ip => ip.trim()), // Nettoie et divise les IPs
-];
-
+// La liste d'IP autorisées provient d'un point unique (src/utils/env.ts, via
+// server/access.ts) : plus de relecture directe de process.env sans validation.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  const ip = requestIp.getClientIp(req) || 'unknown';
-  // Function to check if the client's IP is allowed
-  const isIpAllowed = (ip: string) => { return allowedIps.includes(ip); };
-  res.status(200).json({ip: ip, isIpAllowed: isIpAllowed(ip)});
+  const ip = getClientIp(req);
+  res.status(200).json({ ip, isIpAllowed: isKnownIp(ip) });
 }

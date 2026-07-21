@@ -1,11 +1,25 @@
 import React, { useCallback } from "react";
 import { MdSend } from "react-icons/md";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
+import { formatTokens } from "../utils/formatTokens";
 
 export default function ChatInput() {
   const { loading, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning } = useAnthropic();
   const textAreaRef = React.useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = React.useState("");
+  const [totalTokens, setTotalTokens] = React.useState(0);
+
+  // Compteur de tokens : alimenté par AnthropicProvider après chaque réponse.
+  React.useEffect(() => {
+    const refresh = () => setTotalTokens(parseInt(localStorage.getItem("totalTokens") || "0", 10) || 0);
+    refresh();
+    window.addEventListener("totalTokensUpdated", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("totalTokensUpdated", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
 
   const handleSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
@@ -40,6 +54,11 @@ export default function ChatInput() {
             <input type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder="Sinon : clé gérée" aria-label="Clé API personnelle" />
           </label>
         </div>
+        {totalTokens > 0 && (
+          <div className="text-right text-xs text-primary opacity-60" title="Total de tokens consommés depuis ce navigateur">
+            {formatTokens(totalTokens)} consommés
+          </div>
+        )}
         <div className="relative flex w-full rounded border border-stone-500/20 bg-tertiary shadow-xl">
           <textarea name="query" placeholder="Posez votre question — la recherche web est activée." ref={textAreaRef} className="flex max-h-[120px] w-full resize-none border-none bg-tertiary p-4 text-primary outline-none" onChange={event => setInput(event.target.value)} value={input} rows={1} />
           <button type="submit" className="rounded p-4 text-primary hover:bg-[#DC6521]" disabled={loading || !input.trim()} aria-label="Envoyer">

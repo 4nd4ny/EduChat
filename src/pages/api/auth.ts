@@ -1,12 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { SecretPasswords, AllowedHours, AllowedIps, DataDir, MaxUnlockMinutes } from '../../utils/env';
+import { SecretPasswords, DataDir, MaxUnlockMinutes } from '../../utils/env';
+import { checkAuthLock, getClientIp, isAccessAllowed, isKnownIp, LOCK_FILE_PATH } from '../../server/access';
 import fs from 'fs/promises';
 import path from 'path';
 import bcrypt from 'bcrypt';
 import lockfile from 'proper-lockfile';
-import requestIp from 'request-ip';
-import { isIP } from 'net';
-import { DateTime } from 'luxon';
 
 // Fonction utilitaire pour convertir les minutes en millisecondes
 const minutesToMilliseconds = (minutes: number): number => minutes * 60 * 1000;
@@ -14,7 +12,6 @@ const minutesToMilliseconds = (minutes: number): number => minutes * 60 * 1000;
 // Chemins des fichiers d'état, dans le répertoire de données persistantes.
 // En conteneur, DataDir pointe sur un volume monté : sans cela, ces fichiers
 // seraient perdus à chaque redéploiement.
-const LOCK_FILE_PATH = path.join(DataDir, 'auth_lock.json');
 const ATTEMPTS_FILE_PATH = path.join(DataDir, 'failed_attempts.json');
 const LOG_FILE_PATH = path.join(DataDir, 'auth_log.txt');
 
@@ -35,12 +32,6 @@ function extractPasswordAndDuration(passwordWithDuration: string): { password: s
   }
   // Si la chaîne ne se termine pas par des chiffres, considérer que la durée est par défaut
   return { password: passwordWithDuration, duration: 0 };
-}
-
-// Obtenir l'adresse IP réelle du client
-function getClientIp(req: NextApiRequest): string {
-  const ip = requestIp.getClientIp(req) || 'unknown';
-  return isIP(ip) ? ip : 'unknown';
 }
 
 // Enregistre les tentatives d'authentification.
@@ -178,25 +169,6 @@ async function handleFailedAttempt(ip: string): Promise<void> {
   }
 }
 
-// Vérifie le verrou d'authentification
-async function checkAuthLock(): Promise<boolean> {
-  try {
-    const fileExists = await fs.access(LOCK_FILE_PATH).then(() => true).catch(() => false);
-    if (fileExists) {
-      const fileContent = await fs.readFile(LOCK_FILE_PATH, 'utf8');
-      const lockData = JSON.parse(fileContent);
-      if (Date.now() < lockData.timestamp) {
-        return true;
-      } else {
-        await fs.unlink(LOCK_FILE_PATH); // Supprimer le fichier de verrouillage expiré
-      }
-    }
-  } catch (error) {
-    console.error('Erreur lors de la vérification du verrou d\'authentification:', error);
-  }
-  return false;
-}
-
 // Crée le verrou d'authentification
 async function setAuthLock(durationInMinutes: number) {
   try {
@@ -209,45 +181,6 @@ async function setAuthLock(durationInMinutes: number) {
   }
 } 
   
-// Fonction pour vérifier si l'heure actuelle est dans une plage horaire d'ouverture du site
-function isInTimeRange(startHour: number, startMinute: number, endHour: number, endMinute: number, currentHour: number, currentMinute: number): boolean {
-  const start = startHour * 60 + startMinute;
-  const end = endHour * 60 + endMinute;
-  const current = currentHour * 60 + currentMinute;
-  return current >= start && current <= end;
-}
-
-// Fonction pour vérifier si l'accès est dans la plage horaire autorisée
-function isAccessAllowed() {
-  // Récupérer le fuseau horaire à partir de la variable d'environnement
-  const timeZone = process.env.SET_TIME_ZONE || 'Europe/Zurich'; // Défaut sur 'Europe/Zurich'
-
-  // Obtenir la date et l'heure actuelles dans le fuseau horaire spécifié
-  const localTime = DateTime.now().setZone(timeZone);
-
-  // Obtenir le jour de la semaine (0 = Dimanche, 1 = Lundi, ..., 6 = Samedi)
-  const currentDay = localTime.weekday % 7; // luxon utilise 1 = Lundi, on ajuste pour 0 = Dimanche
-
-  // Obtenir l'heure et les minutes actuelles
-  const currentHour = localTime.hour;
-  const currentMinute = localTime.minute;
-  // Récupérer les plages horaires définies dans l'environnement
-  const accessHours = JSON.parse(AllowedHours || '[]');
-
-  // Vérifier si l'heure actuelle correspond à une des plages autorisées
-  for (let entry of accessHours) {
-    const [startHour, startMinute] = entry.start.split(':').map(Number);
-    const [endHour, endMinute] = entry.end.split(':').map(Number);
-    // Si le jour correspond et que l'heure est dans la plage, on autorise l'accès
-    if (entry.day === currentDay && isInTimeRange(startHour, startMinute, endHour, endMinute, currentHour, currentMinute)) {
-      return true;
-    }
-  }
-
-  // Si aucune plage n'a été trouvée, accès refusé
-  return false;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const clientIp = getClientIp(req);
@@ -263,7 +196,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } 
 
   // Vérifier si l'IP est dans la liste des IP autorisées et dans la plage horaire autorisée, sans qu'il soit nécessaire de déverrouiller le site
-  if (AllowedIps.includes(clientIp) && isAccessAllowed()) {
+  if (isKnownIp(clientIp) && isAccessAllowed()) {
     logAttempt(ANONYMOUS, true, 'ip'); // Ne mémorise pas les IP connues des postes-école utilisés par les élèves
     setAuthLock(30); // Définir une durée de verrouillage par défaut, par exemple 30 minutes
     res.status(200).json({ success: true, message: "Connexion autorisée via IP" });
