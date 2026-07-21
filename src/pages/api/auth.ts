@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { SecretPasswords, AllowedHours, AllowedIps } from '../../utils/env';
+import { SecretPasswords, AllowedHours, AllowedIps, DataDir, MaxUnlockMinutes } from '../../utils/env';
 import fs from 'fs/promises';
 import path from 'path';
 import bcrypt from 'bcrypt';
@@ -11,8 +11,12 @@ import { DateTime } from 'luxon';
 // Fonction utilitaire pour convertir les minutes en millisecondes
 const minutesToMilliseconds = (minutes: number): number => minutes * 60 * 1000;
 
-// Chemin vers le fichier de verrouillage
-const LOCK_FILE_PATH = path.join(process.cwd(), 'auth_lock.json');
+// Chemins des fichiers d'état, dans le répertoire de données persistantes.
+// En conteneur, DataDir pointe sur un volume monté : sans cela, ces fichiers
+// seraient perdus à chaque redéploiement.
+const LOCK_FILE_PATH = path.join(DataDir, 'auth_lock.json');
+const ATTEMPTS_FILE_PATH = path.join(DataDir, 'failed_attempts.json');
+const LOG_FILE_PATH = path.join(DataDir, 'auth_log.txt');
 
 // Configuration du nombre de tentatives maximales
 const MAX_ATTEMPTS = 5;
@@ -39,19 +43,21 @@ function getClientIp(req: NextApiRequest): string {
   return isIP(ip) ? ip : 'unknown';
 }
 
-// Enregistre les tentatives d'authentification
+// Enregistre les tentatives d'authentification.
+// IMPORTANT : le mot de passe saisi n'est JAMAIS journalisé — une tentative
+// erronée est souvent un mot de passe réel mal tapé. Le paramètre `detail` ne
+// doit contenir que des informations non sensibles (durée demandée, motif).
 async function logAttempt(
-  req: NextApiRequest,
   ip: string,
-  password: string,
   success: boolean,
-  method: 'password' | 'unlocked' | 'ip'
+  method: 'password' | 'unlocked' | 'ip',
+  detail: string = ''
 ) {
   const now = new Date();
-  const logEntry = `${now.toISOString()} | IP: ${ip} | Method: ${method} | Password: ${password} | Success: ${success}\n`;
-  const logFilePath = path.join(process.cwd(), 'auth_log.txt');
+  const suffix = detail ? ` | ${detail}` : '';
+  const logEntry = `${now.toISOString()} | IP: ${ip} | Method: ${method} | Success: ${success}${suffix}\n`;
   try {
-    await fs.appendFile(logFilePath, logEntry);
+    await fs.appendFile(LOG_FILE_PATH, logEntry);
   } catch (err) {
     console.error('Erreur lors de l\'écriture dans le fichier de log:', err);
   };
@@ -59,7 +65,7 @@ async function logAttempt(
 
 // Fonction pour vérifier si une IP est verrouillée
 async function isIpLocked(ip: string): Promise<boolean> {
-  const attemptsFilePath = path.join(process.cwd(), 'failed_attempts.json');
+  const attemptsFilePath = ATTEMPTS_FILE_PATH;
   const fileExists = await fs.access(attemptsFilePath).then(() => true).catch(() => false);
   if (fileExists) {
     try {
@@ -78,7 +84,7 @@ async function isIpLocked(ip: string): Promise<boolean> {
 
 // Fonction pour gérer les tentatives échouées
 async function handleFailedAttempt(ip: string): Promise<void> {
-  const attemptsFilePath = path.join(process.cwd(), 'failed_attempts.json');
+  const attemptsFilePath = ATTEMPTS_FILE_PATH;
 
   // Options pour le verrouillage
   const lockOptions = {
@@ -251,14 +257,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (await checkAuthLock()) {
     // Grace à la RGPD, toute personne peut se connecter sur le site lorsqu'il est dévérouillé sans que je puisse le détecter
     // Ce qui limitera le nombre de tokens disponible pour les élèves (le budget mensuel de dépense alloué à la clé API est fixe)
-    logAttempt(req, ANONYMOUS, 'AutoAuth', true, 'unlocked'); // Même si c'est une auto-authentification, préciser que c'est via verrou
+    logAttempt(ANONYMOUS, true, 'unlocked'); // Même si c'est une auto-authentification, préciser que c'est via verrou
     res.status(200).json({ success: true, message: "Autologin activé via verrou" });
     return;
   } 
 
   // Vérifier si l'IP est dans la liste des IP autorisées et dans la plage horaire autorisée, sans qu'il soit nécessaire de déverrouiller le site
   if (AllowedIps.includes(clientIp) && isAccessAllowed()) {
-    logAttempt(req, ANONYMOUS, 'IP Check', true, 'ip'); // Ne mémorise pas les IP connues des postes-école utilisés par les élèves
+    logAttempt(ANONYMOUS, true, 'ip'); // Ne mémorise pas les IP connues des postes-école utilisés par les élèves
     setAuthLock(30); // Définir une durée de verrouillage par défaut, par exemple 30 minutes
     res.status(200).json({ success: true, message: "Connexion autorisée via IP" });
     return;
@@ -266,7 +272,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Vérifier si l'IP est verrouillée en raison de trop de tentatives échouées
   if (await isIpLocked(clientIp)) {
-    logAttempt(req, clientIp, 'Locked', false, 'ip'); // A prioris c'est l'IP de l'enseignant (moi) qui s'est trompé en tapant le mot de passe
+    logAttempt(clientIp, false, 'ip', 'verrouillee'); // A prioris c'est l'IP de l'enseignant (moi) qui s'est trompé en tapant le mot de passe
     res.status(429).json({ success: false, message: "Trop de tentatives échouées. Veuillez réessayer plus tard." });
     return;
   }
@@ -277,7 +283,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const userPassword = password;
 
     if (SecretPasswords === undefined) {
-      console.error('SECRET_APP_PASSWD n\'est pas défini dans .env');
+      console.error('SECRET_PASSWD n\'est pas défini dans .env');
       res.status(500).json({ success: false, message: 'Erreur de configuration du serveur' });
       return;
     }
@@ -295,7 +301,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    const { password: authPassword, duration: authDuration } = extracted;
+    const { password: authPassword, duration: requestedDuration } = extracted;
+    // Plafonne la durée demandée : un suffixe démesuré ne doit pas ouvrir le site indéfiniment.
+    const authDuration = Math.min(requestedDuration, MaxUnlockMinutes);
+    if (requestedDuration > MaxUnlockMinutes) {
+      console.warn(`Duree de deverrouillage demandee (${requestedDuration} min) ramenee au plafond de ${MaxUnlockMinutes} min.`);
+    }
     const isMatch = SecretPasswords.some(secretPassword => 
       bcrypt.compareSync(authPassword, secretPassword)      
     );
@@ -303,18 +314,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Vérifie si le mot de passe est correct
     if (isMatch) {
       // Applique la durée à la fonction de verrouillage
-      logAttempt(req, clientIp, 'CorrectPwd ' + authDuration, true, 'password');
+      logAttempt(clientIp, true, 'password', `duree=${authDuration}min`);
       setAuthLock(authDuration);
       console.log(`Déverrouillage du site pour ${authDuration} minutes.`);
       res.status(200).json({ success: true, message: "Connexion autorisée" });
     } else {
-      logAttempt(req, clientIp, authPassword, false, 'password');
+      logAttempt(clientIp, false, 'password');
       handleFailedAttempt(clientIp);
       res.status(401).json({ success: false, message: "Mot de passe incorrect" });
     }
   } 
   else if (req.method === 'GET') {
-    logAttempt(req, clientIp, 'GET', false, 'password');
+    logAttempt(clientIp, false, 'password', 'GET');
     res.status(200).json({ authorized: false }); 
   } else {
     res.setHeader('Allow', ['POST', 'GET']);

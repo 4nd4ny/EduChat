@@ -36,10 +36,11 @@ if __name__ == "__main__":
         print(hashed_password)
         
         # (Optionnel) Stocker le hash dans un fichier .env
-        # Vous pouvez ouvrir le fichier .env en mode append et ajouter la ligne suivante :
-        # AUTH_PASSWORD_HASH=hashed_password
+        # Le nom de variable doit correspondre à celui lu par src/utils/env.ts : SECRET_PASSWD
+        # (plusieurs hashs peuvent y coexister, séparés par des virgules).
+        # Attention : avec Docker (env_file), le hash s'écrit tel quel, sans échapper les $.
         with open('.env', 'a') as env_file:
-            env_file.write(f"AUTH_PASSWORD_HASH={hashed_password}\n")
+            env_file.write(f"SECRET_PASSWD={hashed_password}\n")
         
         print("Le mot de passe haché a été stocké dans le fichier .env.")
     except Exception as err:

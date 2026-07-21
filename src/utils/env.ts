@@ -1,9 +1,17 @@
-export const OpenAIApiKey: string = process.env.SECRET_OPENAI_API_KEY ?? '';
-export const AnthropicApiKey: string = process.env.SECRET_ANTHROPIC_API_KEY ?? '';
 export const SecretPasswords: string[] = process.env.SECRET_PASSWD ? process.env.SECRET_PASSWD.split(',').map(pwd => pwd.trim()): [];
 export const AllowedHours: string = process.env.SECRET_ALLOWED_HOURS ?? '[]';
 export const AllowedIps: string[] = process.env.SECRET_ALLOWED_IPS ? process.env.SECRET_ALLOWED_IPS.split(',').map(ip => ip.trim()).filter(ip => isValidIP(ip)): [];
-export const SystemPrompt: string = "You are Claude, a helpful AI assistant created by Anthropic.";
+
+// Répertoire des données persistantes. En production (conteneur Docker) il pointe
+// sur le volume monté ; en développement, sur la racine du projet.
+export const DataDir: string = process.env.DATA_DIR || process.cwd();
+
+// Plafond de la durée de déverrouillage suffixée au mot de passe prof.
+// Évite qu'un suffixe démesuré (ex. « motdepasse99999 ») ouvre le site indéfiniment.
+export const MaxUnlockMinutes: number = (() => {
+  const parsed = parseInt(process.env.SECRET_MAX_UNLOCK_MINUTES ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 600;
+})();
 
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {

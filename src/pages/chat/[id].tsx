@@ -1,5 +1,4 @@
 import ChatMessages from "../../chat/ChatMessages";
-import ChatSidebar from "../../chatSidebar/ChatSidebar";
 import { useRouter } from "next/router";
 import React from "react";
 import { getConversation } from "../../context/History";
@@ -28,8 +27,8 @@ export default function Chat() {
   return (
     <React.Fragment>
       <div className="max-w-screen relative h-screen max-h-screen w-screen overflow-hidden">
+        {/* La sidebar est montée globalement par src/context/Layout.tsx */}
         <ChatMessages />
-        <ChatSidebar />
       </div>
     </React.Fragment>
   );

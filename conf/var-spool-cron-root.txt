@@ -1,1 +1,8 @@
-*/1 * * * * /usr/local/bin/log_to_web.sh
+# Crontab root — modèle.
+#
+# La ligne qui publiait chaque minute le journal Apache sur le web
+# (log_to_web.sh vers /var/www/html/ip-direct/) a été RETIRÉE : le journal
+# public est abandonné (décision client). Sa suppression effective sur
+# l'ancien serveur est planifiée à l'étape 13 du planning.
+#
+# Les crons de sauvegarde de la base SQLite seront ajoutés à l'étape 13.

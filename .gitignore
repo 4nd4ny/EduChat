@@ -1,6 +1,20 @@
 node_modules/
 .next/
+
+# Secrets — ne doivent JAMAIS entrer dans git
 .env
 .env.local
 secret.txt
+
+# Données persistantes (volume Docker en production)
+data/
+*.db
+*.db-journal
+*.sqlite
+
+# État d'authentification écrit à l'exécution
+auth_lock.json
+failed_attempts.json
+auth_log.txt
+
 .DS_Store
