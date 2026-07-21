@@ -1,0 +1,24 @@
+# Secrets — ne doivent JAMAIS entrer dans une image
+.env
+.env.local
+secret.txt
+
+# Données persistantes (vivent dans un volume Docker, pas dans l'image)
+data/
+
+# Artefacts locaux
+node_modules/
+.next/
+*.log
+.DS_Store
+
+# Inutile au build
+.git/
+.gitignore
+planning/
+conf/
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+LICENSE

@@ -24,7 +24,7 @@ Ce dossier contient l'analyse du site existant, les décisions d'architecture (*
 | 10 | [Internationalisation fr/en/it/de + traduction des prompts](10-i18n.md) | 8, 9 | 2 sessions |
 | 11 | [Export/import consolidés et robustesse de l'historique](11-export-import.md) | 8 | 1 session |
 | 12 | [Mise en conformité RGPD/nLPD](12-rgpd.md) | 6, 10 | 1 session |
-| 13 | [Déploiement OVH, DNS et recette du palier v1](13-deploiement-ovh.md) | 11, 12 | 1-2 sessions + actions manuelles OVH |
+| 13 | [Déploiement Docker, Nginx Proxy Manager, DNS et recette v1](13-deploiement-ovh.md) | 11, 12 | 1-2 sessions + actions manuelles OVH/NPM |
 | 14 | [Espace enseignant et réglages de session](14-espace-enseignant.md) | 6, 8, 9 | 1-2 sessions |
 | 15 | [Synchronisation serveur du profil (opt-in)](15-sync-profil.md) | 6, 11 | 1 session |
 
@@ -61,8 +61,13 @@ graph LR
 - **Les élèves n'ont jamais de compte** : tout ce qui exige une identité (publication, administration, réglages de session, sync) passe par les comptes vérifiés par email (promptagogues, enseignants, admins) — jamais par les élèves.
 - **Ne pas réordonner les étapes de sécurité** : la sanitisation (3) doit précéder l'ouverture des publications (7) ; le verrouillage de `/api/completion` (2) doit précéder toute publicité du site ; la page `/rgpd` réécrite (12) doit être en production avant l'ouverture réelle des comptes.
 
-## Actions manuelles hors code (à faire par vous, chez OVH)
+## Actions manuelles hors code (à faire par vous)
 
-- **Email** : créer la boîte `noreply@educh.at` (MX Plan inclus — **pas encore créée**) et poser SPF/DKIM dans la zone DNS. Prérequis bloquant de l'étape 6.
-- **DNS** : pointer l'enregistrement A du domaine vers `91.134.241.141` (zone DNS OVH). Documenté dans l'étape 13.
-- **Serveur** : à l'étape 13, supprimer le cron `log_to_web` et le répertoire `/var/www/html/ip-direct/` (journal public abandonné).
+- **Email** : créer la boîte `noreply@educh.at` (MX Plan OVH inclus — **pas encore créée**) et poser SPF/DKIM dans la zone DNS. Prérequis bloquant de l'étape 6.
+- **DNS** : pointer l'enregistrement A du domaine vers `91.134.241.141` (zone DNS OVH). Étape 13.
+- **Nginx Proxy Manager** : créer le *Proxy Host* `educh.at` → `http://educhat:3000` et demander le certificat Let's Encrypt, **après** la propagation DNS. Étape 13.
+- **Ancien serveur** : décider avec Stéphane de son décommissionnement une fois la bascule validée.
+
+## Le déploiement en une phrase
+
+EduChat tourne en **conteneur Docker** (`Dockerfile`, `docker-compose.yml` à la racine du dépôt) sur `91.134.241.141`, sans publier de port, rejoignant le réseau `proxy-network` où **Nginx Proxy Manager** assure le HTTPS. Mise à jour : `git pull && docker compose up -d --build`. Le dossier `conf/` du dépôt est **obsolète** (ancien serveur Apache/systemd).

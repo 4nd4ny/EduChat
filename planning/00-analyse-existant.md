@@ -4,7 +4,9 @@
 
 ## Vue d'ensemble
 
-EduChat est une application **Next.js 14 (pages router)** en TypeScript/Tailwind, déployée sur un **VPS OVH** (Fedora, Apache en reverse proxy vers `localhost:3000`, service systemd `educh-at.service`, domaine `educh.at`). Il n'y a **aucune base de données** : tout l'état utilisateur vit dans le navigateur, et l'état serveur tient dans trois fichiers JSON/texte à la racine du process.
+EduChat est une application **Next.js 14 (pages router)** en TypeScript/Tailwind. Il n'y a **aucune base de données** : tout l'état utilisateur vit dans le navigateur, et l'état serveur tient dans trois fichiers JSON/texte à la racine du process.
+
+> ⚠️ **Correctif du 21 juillet 2026 — le dossier `conf/` est LEGACY.** Il décrit un VPS **Fedora** avec Apache en reverse proxy et un service systemd. Le serveur cible réel (`91.134.241.141`) est un **Debian 12 sous Docker**, hébergeant déjà Decidim, Kasm Workspaces, Portainer et un **Nginx Proxy Manager** propriétaire des ports 80/443. Voir la décision 11 de [decisions-techniques.md](decisions-techniques.md) et l'[étape 13](13-deploiement-ovh.md). Toutes les mentions d'Apache, de systemd et de `/var/www/html` ci-dessous concernent l'ancienne machine.
 
 Arborescence utile :
 

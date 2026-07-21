@@ -1,63 +1,93 @@
-# Étape 13 — Déploiement OVH, DNS et recette finale
+# Étape 13 — Déploiement Docker, Nginx Proxy Manager, DNS et recette v1
 
-**Dépend de :** Étape 11, Étape 12 · **Estimation :** 1-2 sessions (+ actions manuelles OVH)
+**Dépend de :** Étape 11, Étape 12 · **Estimation :** 1-2 sessions (+ actions manuelles OVH et NPM)
 
 ## Objectif
-Mettre EduChat en production sur le VPS OVH existant (Apache en proxy inverse + service systemd) et valider la totalité du **palier v1** (étapes 1-12) en conditions réelles — les étapes 14 (espace enseignant) et 15 (sync serveur du profil) sont des incréments post-v1 déployables ensuite. L'étape assainit d'abord la configuration serveur (conflit de VirtualHost, certificat, systemd, .env, crons), supprime côté serveur le journal public de logs abandonné, puis déroule une recette complète des 4 parcours (élève, prof, promptagogue, admin) dans les 4 langues, et livre enfin le runbook d'exploitation pour un enseignant seul.
+Mettre EduChat en production sur le serveur Harmonia `91.134.241.141` sous forme de **conteneur Docker** routé par le **Nginx Proxy Manager** déjà en place, basculer le DNS d'`educh.at`, puis valider la totalité du **palier v1** (étapes 1-12) en conditions réelles — les étapes 14 et 15 sont des incréments post-v1. Contrainte dominante : cette machine héberge **d'autres services en production**, le déploiement doit être strictement **additif**.
+
+## ⚠️ État réel du serveur (relevé le 21 juillet 2026)
+
+Le dossier `conf/` du dépôt (Apache, systemd, `/var/www/html`, Fedora, utilisateur `fedora`) décrit **l'ANCIEN serveur** et ne s'applique plus à la cible. Ne pas s'y fier.
+
+La machine cible est un **Debian 12** exécutant **23 conteneurs** :
+
+| Service | Rôle |
+|---|---|
+| **Nginx Proxy Manager** | Détient les ports 80/443, TLS Let's Encrypt, admin sur `127.0.0.1:81` |
+| **Decidim** prod + sandbox | Plateforme Harmonia, en service |
+| **Kasm Workspaces** | ~10 conteneurs (VDI) |
+| **Portainer** | Gestion Docker, `127.0.0.1:9443` |
+
+- Réseau partagé : **`proxy-network`** (y sont déjà `nginx-proxy-manager`, `decidim-app-1`, `decidim_sandbox-app-1`).
+- Projets compose : `/home/debian/docker-home/`.
+- **Disque à 89 %** (22 Go libres sur 197) — Docker y détient ~84 Go récupérables.
+- **Aucun Apache ni nginx sur l'hôte** : tout passe par des conteneurs.
 
 ## Contexte et fichiers concernés
-- `conf/educh.at.conf:20-41` — VirtualHost *:443 avec ProxyPass vers `localhost:3000` ; ses lignes 38-39 réutilisent les certificats Let's Encrypt de `andany.info` au lieu d'un certificat propre à `educh.at`.
-- `conf/ssl.conf:56-218` — second VirtualHost *:443 SANS proxy, qui sert `/var/www/html` en statique : c'est le conflit à trancher, sinon une partie du trafic contourne Next (et pourrait exposer des fichiers).
-- `conf/httpd.conf:149` — `Options Indexes FollowSymLinks` : le listage de répertoires est actif, à désactiver.
-- `conf/educh-at.service:7` — `WorkingDirectory=/var/www/html/educh-at/src` alors que `package.json` est à la racine du projet ; c'est aussi le fichier où injecter `Environment=DATA_DIR=/var/lib/educhat` (décision d'architecture : base SQLite hors racine web).
-- `conf/(dot)env.txt` — modèle du `.env` de production, à compléter avec toutes les variables `SECRET_*` (dont `SECRET_MAX_UNLOCK_MINUTES`, plafond configurable du déverrouillage prof, défaut 600 min).
-- `conf/pwd_crypt.py` — générateur du hash bcrypt du mot de passe prof (corrigé lors d'une étape précédente) ; le mot de passe « gabbagabbahey » est **conservé tel quel** (choix assumé du client, non sensible).
-- `conf/var-spool-cron-root.txt` — crontab existante, modèle pour installer les nouveaux crons (backup SQLite, purges) ; la ligne du journal public (`log_to_web.sh` chaque minute) a été retirée du dépôt à l'étape 1, mais reste à supprimer **sur le serveur** (crontab root, `/usr/local/bin/log_to_web.sh`, répertoire public `/var/www/html/ip-direct/`).
+- `Dockerfile` — image multi-étapes, base `node:20-slim` (bcrypt est un module natif), sortie Next.js `standalone`.
+- `next.config.js` — `output: 'standalone'` (+ bloc i18n activé à l'étape 10).
+- `docker-compose.yml` — service `educhat` sur `proxy-network`, **sans publication de port**, volume `educhat-data:/data`, `mem_limit`, rotation des logs.
+- `.dockerignore` — exclut `.env`, `secret.txt`, `data/`, `node_modules/`, `.next/`.
+- `.env` — **créé à la main sur le serveur uniquement**, permissions `600`, jamais commité.
+- `src/pages/api/auth.ts` — écrit encore dans `process.cwd()` : la refactorisation `DATA_DIR` (étapes 1 et 4) est un **prérequis bloquant**, sinon toutes les données sont perdues à chaque redéploiement.
+- `conf/` — **legacy** : à archiver ; ne décrit plus la production.
 - `README.md` — accueillera le runbook d'exploitation.
 
 ## Tâches
-1. Trancher le conflit des DEUX VirtualHost *:443 : celui de `conf/educh.at.conf:20-41` (avec proxy vers Next) et celui de `conf/ssl.conf:56-218` (sans proxy, servant `/var/www/html` en statique). Neutraliser le vhost sans proxy pour que TOUT le trafic passe par Next, et désactiver `Options Indexes` (`conf/httpd.conf:149`).
-2. Émettre un certificat Let's Encrypt couvrant explicitement `educh.at` (aujourd'hui, ce sont les certificats `andany.info` qui sont réutilisés, `conf/educh.at.conf:38-39`).
-3. Clarifier le `WorkingDirectory` systemd (`conf/educh-at.service:7` pointe sur `.../src` alors que `package.json` est à la racine) ; vérifier les droits d'écriture de l'utilisateur `fedora` sur `DATA_DIR` ; adapter le `ProxyTimeout` Apache aux longues complétions.
-4. Compléter le `.env` de production : hash bcrypt du mot de passe prof « gabbagabbahey » (conservé, généré par `conf/pwd_crypt.py` corrigé), `SECRET_SMTP_*`, `SECRET_ADMIN_EMAILS`, `SECRET_TOKEN_KEY`, `SECRET_ALLOWED_IPS`, `SECRET_ALLOWED_HOURS` (amorçage/secours — la résolution IP → établissement se fait en base, étape 9), `SECRET_MAX_UNLOCK_MINUTES` (défaut 600) ; installer les crons (backup SQLite, purges).
-5. Supprimer effectivement côté serveur le journal public de logs (abandonné, retiré du dépôt à l'étape 1) : ligne `log_to_web.sh` de la crontab root, script `/usr/local/bin/log_to_web.sh`, répertoire public `/var/www/html/ip-direct/`.
-6. Documenter les actions manuelles côté client : zone DNS OVH → `91.134.241.141` (exigence 17), création de la boîte `noreply@educh.at` — elle n'existe **pas encore** : prérequis bloquant pour le SMTP de l'étape 6 — plus enregistrements SPF/DKIM ; en option (exigence 18), ajout des clés RESPIRE dans le `.env` via le mécanisme multi-clés existant.
-7. Dérouler la recette complète : auto-login depuis une IP école (résolue en base établissements, env en secours) en plage horaire / verrou hors plage / mot de passe prof à durée configurable ; cycle complet d'un prompt (`draft` + URL secrète → `pending` → approbation → `published` au catalogue) ; chat socratique dans les 4 langues ; export/import de profil inter-navigateurs ; suppression par un admin ; restauration RÉELLE d'un backup SQLite sur une copie ; `curl` externe de `/api/completion` sans déverrouillage → 401.
-8. Rédiger le runbook dans le README : sauvegarde/restauration, ajout d'un admin, gestion d'un établissement (IPs, quota, clé active), procédure de changement du mot de passe prof (si souhaité un jour) et rotation de `SECRET_TOKEN_KEY`.
+1. **Prérequis bloquants** : `DATA_DIR` effectif partout (plus aucun `process.cwd()` dans `src/`), `/api/completion` authentifié (étape 2), `/rgpd` réécrite (étape 12). Sans ces trois points, pas de mise en ligne publique.
+2. **Espace disque** : décider avec Stéphane d'un nettoyage (`docker builder prune` libère ~9 Go sans risque ; images inutilisées ~74 Go de plus). **Ne rien supprimer unilatéralement** sur une machine partagée.
+3. **Transfert du code** : `git clone` dans `/home/debian/docker-home/educhat/` (convention des autres projets).
+4. **Créer le `.env` sur le serveur** (`chmod 600`) : hash bcrypt du mot de passe prof « gabbagabbahey » (**conservé tel quel**, choix assumé du client, généré par `conf/pwd_crypt.py`), les clés API des 6 fournisseurs, `SECRET_SMTP_*`, `SECRET_ADMIN_EMAILS`, `SECRET_TOKEN_KEY`, `SECRET_ALLOWED_IPS` / `SECRET_ALLOWED_HOURS` (amorçage/secours — la résolution IP → établissement se fait en base, étape 9), `SECRET_MAX_UNLOCK_MINUTES` (défaut 600), `DATA_DIR=/data`.
+5. **Construire et démarrer** : `docker compose up -d --build`, puis `docker compose logs -f` ; vérifier `docker ps` et l'appartenance à `proxy-network`.
+6. **Test interne AVANT exposition** : depuis un conteneur du réseau, `curl http://educhat:3000` doit répondre. Rien n'est public à ce stade.
+7. **Basculer le DNS** chez OVH : enregistrement A d'`educh.at` (et `www`) vers `91.134.241.141`, TTL abaissé à 300 s au préalable, suppression de tout AAAA pointant vers l'ancienne machine.
+8. **Créer le Proxy Host dans NPM** (action manuelle de l'utilisateur, via tunnel SSH) : `educh.at` + `www.educh.at` → `http://educhat:3000`, puis certificat Let's Encrypt **une fois le DNS propagé** (la validation l'exige).
+9. **Sauvegardes** : intégrer le volume `educhat-data` au dispositif existant (le serveur exécute déjà `postgres-backup-local` pour Decidim) + copie hors VPS.
+10. **Décommissionner l'ancien serveur** : une fois `educh.at` servi par la nouvelle machine et validé, décider avec Stéphane du sort du VPS Fedora (arrêt, ou conservation en secours). Y supprimer le journal public abandonné (crontab root `log_to_web.sh`, `/var/www/html/ip-direct/`) s'il tourne encore. Archiver `conf/` dans le dépôt.
+11. **Recette fonctionnelle complète** : auto-login depuis une IP école en plage horaire / verrou hors plage / mot de passe prof à durée configurable ; cycle complet d'un prompt (`draft` + URL secrète → `pending` → approbation → `published`) ; chat socratique dans les 4 langues ; export/import de profil inter-navigateurs ; suppression par un admin ; restauration RÉELLE d'un backup SQLite sur une copie ; `curl` externe de `/api/completion` sans déverrouillage → 401.
+12. **Runbook dans le README** : sauvegarde/restauration, mise à jour (`git pull && docker compose up -d --build`), ajout d'un admin, gestion d'un établissement (IPs, quota, clé active), rotation de `SECRET_TOKEN_KEY`, procédure de retour arrière.
 
 ## Livrables
-- Production fonctionnelle sur educh.at (palier v1, étapes 1-12)
-- Journal public de logs supprimé du serveur, boîte `noreply@educh.at` opérationnelle (SPF/DKIM)
-- Checklist de recette passée à 100 %
-- Runbook d'exploitation
+- Conteneur `educhat` en service, routé en HTTPS par NPM, sans impact sur Decidim ni Kasm.
+- `educh.at` résolvant vers `91.134.241.141` avec un certificat à son nom.
+- Volume `educhat-data` sauvegardé (dont une copie hors VPS).
+- Dépôt nettoyé de la configuration serveur obsolète, runbook rédigé.
 
 ## Vérification
-- Reboot du VPS → le service repart seul, avec la base de données intacte.
-- Les 4 parcours (élève, prof, promptagogue, admin) passent en production.
-- Le backup SQLite restauré est identique à l'original.
-- Aucun accès statique ne contourne Next (le vhost sans proxy est neutralisé).
-- Plus aucune trace du journal public : pas de cron `log_to_web`, `https://educh.at/ip-direct/` ne répond plus.
-- Un email de code envoyé depuis `noreply@educh.at` arrive en boîte de réception (SPF/DKIM passés).
+- `https://educh.at` répond avec un certificat **au nom d'`educh.at`** (et non plus celui d'`andany.info`).
+- `docker ps` : `educhat` en `Up`, **aucun port publié sur l'hôte**.
+- **Decidim et Kasm restent joignables et sains** pendant et après le déploiement.
+- Le **déverrouillage par mot de passe fonctionne dans le conteneur** — preuve que le binaire natif de bcrypt a bien été embarqué par le traçage de Next.js.
+- Après `docker compose down && docker compose up -d`, la base SQLite et les compteurs d'authentification **survivent** (le volume fonctionne).
+- `df -h /` n'a pas franchi 95 %.
+- `curl https://educh.at/api/completion` sans déverrouillage → 401.
+- Recette des 4 parcours (élève, prof, promptagogue, admin) complète dans les 4 langues.
 
 ## Prompt à copier-coller dans Claude Code
 ```text
-Contexte : EduChat est un chatbot éducatif Next.js 14 (pages-router, TypeScript, Yarn), développé par un enseignant seul assisté par IA, déployé sur un VPS OVH (Fedora, Apache en proxy inverse + service systemd, utilisateur fedora, IP 91.134.241.141, domaine educh.at). Décisions d'architecture à respecter : base SQLite (better-sqlite3) dans DATA_DIR HORS racine web (/var/lib/educhat/ en prod, injecté par Environment= dans le service systemd) ; comptes vérifiés par email sans mot de passe (promptagogues, enseignants, admins — les élèves n'ont JAMAIS de compte) ; établissements gérés en base (IPs, quotas de tokens, clé API active), les env SECRET_ALLOWED_IPS/HOURS restant un amorçage/secours ; emails par SMTP authentifié OVH via nodemailer (SECRET_SMTP_*) ; jetons signés HMAC-SHA256 avec SECRET_TOKEN_KEY, sans cookie ; admins dans SECRET_ADMIN_EMAILS ; i18n natif Next (fr/en/it/de). Cette étape déploie le palier v1 (étapes 1-12) ; les étapes 14-15 sont des incréments post-v1.
+Contexte : EduChat est un chatbot éducatif Next.js 14 (pages-router, TypeScript), développé par un enseignant seul assisté par IA. Je réalise l'étape 13 : mise en production du palier v1.
 
-Commence par lire planning/00-analyse-existant.md et planning/decisions-techniques.md, puis les fiches des étapes 11 et 12 (planning/11-*.md et planning/12-*.md), dont cette étape dépend.
+Commence par lire planning/00-analyse-existant.md, planning/decisions-techniques.md, les fiches des étapes 11 et 12, puis planning/13-deploiement-ovh.md en entier.
 
-Objectif de cette étape 13 : mise en production sur le VPS existant, recette finale, runbook.
+ARCHITECTURE RÉELLE (vérifiée sur la machine — ne PAS se fier au dossier conf/ du dépôt, qui décrit l'ANCIEN serveur Fedora/Apache et n'est plus valable) :
+- Cible : Debian 12 à 91.134.241.141, accès SSH par l'alias `educhat` (utilisateur debian).
+- La machine héberge DÉJÀ en production : Decidim (prod + sandbox), Kasm Workspaces, Portainer. Tout déploiement doit être strictement ADDITIF : ne jamais toucher à leurs conteneurs, réseaux, volumes ou configurations.
+- Les ports 80/443 appartiennent à Nginx Proxy Manager (projet compose dans /home/debian/docker-home/nginx-proxy-manager, admin sur 127.0.0.1:81).
+- Le conteneur educhat ne publie AUCUN port : il rejoint le réseau externe `proxy-network` et NPM le joint par son nom d'hôte, exactement comme decidim-app-1.
+- Disque à 89 % : ne lance AUCUN nettoyage Docker sans accord explicite de l'utilisateur ET de Stéphane, l'administrateur du serveur.
+
+Les fichiers Dockerfile, next.config.js, docker-compose.yml et .dockerignore existent déjà à la racine du dépôt : relis-les avant toute modification.
 
 Tâches :
-1. Apache : deux VirtualHost *:443 coexistent — conf/educh.at.conf:20-41 (avec ProxyPass vers localhost:3000) et conf/ssl.conf:56-218 (SANS proxy, servant /var/www/html en statique). Neutralise le vhost sans proxy pour que TOUT le trafic passe par Next, et désactive Options Indexes (conf/httpd.conf:149).
-2. Certificat : conf/educh.at.conf:38-39 réutilise les certificats andany.info. Prépare l'émission d'un certificat Let's Encrypt couvrant explicitement educh.at (et www.educh.at) et mets à jour le vhost.
-3. systemd : conf/educh-at.service:7 pointe WorkingDirectory sur /var/www/html/educh-at/src alors que package.json est à la racine du projet — corrige. Ajoute Environment=DATA_DIR=/var/lib/educhat, documente la création du répertoire et les droits d'écriture de l'utilisateur fedora dessus, et ajoute un ProxyTimeout Apache adapté aux longues complétions en streaming.
-4. .env de production : complète le modèle conf/(dot)env.txt et documente les valeurs à poser sur le VPS : hash bcrypt du mot de passe prof « gabbagabbahey » généré par conf/pwd_crypt.py (mot de passe CONSERVÉ tel quel, choix assumé du client — ne recommande pas de le changer), SECRET_SMTP_HOST/PORT/USER/PASS/FROM, SECRET_ADMIN_EMAILS, SECRET_TOKEN_KEY, SECRET_ALLOWED_IPS et SECRET_ALLOWED_HOURS (simple amorçage/secours : la résolution IP → établissement se fait en base), SECRET_MAX_UNLOCK_MINUTES (plafond configurable du déverrouillage prof, défaut 600). Installe les crons (backup SQLite via sqlite3 .backup, purges) sur le modèle de conf/var-spool-cron-root.txt.
-5. Journal public de logs (abandonné, déjà retiré du dépôt à l'étape 1) : supprime-le effectivement côté serveur — ligne log_to_web.sh de la crontab root, script /usr/local/bin/log_to_web.sh, répertoire public /var/www/html/ip-direct/.
-6. Documente les actions manuelles côté client : zone DNS OVH → 91.134.241.141, création de la boîte noreply@educh.at (elle N'EXISTE PAS ENCORE : prérequis bloquant pour l'envoi des codes email), enregistrements SPF/DKIM ; en option, ajout des clés RESPIRE dans le .env (mécanisme multi-clés existant).
-7. Rédige la checklist de recette et déroule-la en production : auto-login depuis IP école (résolue en base établissements, env en secours) en plage horaire, verrou hors plage, mot de passe prof à durée configurable (SECRET_MAX_UNLOCK_MINUTES) ; cycle complet d'un prompt : draft testable via son URL secrète, soumission en pending, approbation, publication au catalogue ; chat socratique dans les 4 langues ; export/import de profil entre deux navigateurs ; suppression par un admin ; restauration RÉELLE d'un backup SQLite sur une copie de la base ; curl externe de /api/completion sans déverrouillage → 401.
-8. Runbook dans README.md : sauvegarde/restauration, ajout d'un admin, gestion d'un établissement (IPs, quota, clé active), procédure de changement du mot de passe prof (si souhaité un jour) et rotation de SECRET_TOKEN_KEY.
+1. Vérifie les prérequis bloquants : plus aucun process.cwd() dans src/ (DATA_DIR effectif, étapes 1 et 4), /api/completion authentifié (étape 2), page /rgpd à jour (étape 12). Si l'un manque, ARRÊTE-TOI et signale-le.
+2. Prépare la procédure de déploiement : clone dans /home/debian/docker-home/educhat/, création du .env sur le serveur en permissions 600 (jamais commité, jamais affiché), puis docker compose up -d --build.
+3. Avant toute exposition publique, teste en interne : depuis un conteneur de proxy-network, curl http://educhat:3000 doit répondre.
+4. Rédige pour l'utilisateur la marche à suivre MANUELLE qu'il exécutera lui-même : bascule DNS chez OVH (A vers 91.134.241.141, TTL 300, suppression des AAAA obsolètes) PUIS création du Proxy Host dans NPM avec certificat Let's Encrypt — dans cet ordre, la validation du certificat exigeant que le DNS soit déjà propagé.
+5. Intègre le volume educhat-data aux sauvegardes et documente une copie hors VPS.
+6. Archive le dossier conf/ (obsolète) et écris le runbook dans le README : mise à jour, sauvegarde/restauration, ajout d'un admin, gestion d'un établissement, rotation de SECRET_TOKEN_KEY, retour arrière.
+7. Déroule la recette : verrou/déverrouillage, cycle complet d'un prompt (draft + URL secrète → pending → publié), chat socratique dans les 4 langues, export/import inter-navigateurs, suppression admin, restauration réelle d'un backup, curl externe de /api/completion → 401.
 
-Critères d'acceptation : après reboot du VPS, le service repart seul avec la base intacte ; les 4 parcours (élève, prof, promptagogue, admin) passent en production ; le backup restauré est identique à l'original ; aucun accès statique ne contourne Next ; plus aucune trace du journal public (cron et /ip-direct/ supprimés) ; un email de code depuis noreply@educh.at arrive en boîte de réception.
+Critères d'acceptation : https://educh.at répond avec un certificat à son nom ; docker ps montre educhat en Up sans port publié ; Decidim et Kasm intacts ; le déverrouillage par mot de passe fonctionne dans le conteneur (preuve que bcrypt natif est embarqué) ; après docker compose down puis up -d, la base SQLite et les compteurs d'auth survivent ; df -h / sous 95 %.
 
-Termine par : yarn build sans erreur, vérification manuelle du comportement, puis un commit git avec un message descriptif en français. INTERDIT de commiter .env, secret.txt, data/ ou tout autre secret.
+RÈGLE ABSOLUE : toute commande destructive ou affectant un service tiers (docker system prune, redémarrage ou modification de NPM, de Decidim, de Kasm) doit être proposée à l'utilisateur et attendre son accord explicite. Ne commite jamais .env, secret.txt ni data/. Termine par yarn build, la vérification manuelle, puis un commit git avec un message descriptif en français.
 ```

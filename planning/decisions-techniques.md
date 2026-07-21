@@ -4,10 +4,11 @@
 
 ## 1. Persistance serveur : SQLite (better-sqlite3) dans `DATA_DIR`, hors racine web
 
-- Un fichier SQLite unique via `better-sqlite3`, dans un répertoire défini par `DATA_DIR` (défaut `./data/` en dev, `/var/lib/educhat/` en prod via `Environment=` dans `conf/educh-at.service`).
+- Un fichier SQLite unique via `better-sqlite3`, dans un répertoire défini par `DATA_DIR` (défaut `./data/` en dev, **`/data` en prod — un volume Docker monté**, cf. décision 11).
 - **Pourquoi** : compteurs incrémentés à chaque complétion (le pattern fichiers JSON + proper-lockfile ne tient pas sans races), tris multi-critères du catalogue, quotas et facturation par établissement = des requêtes. MySQL OVH serait un service de plus à administrer. `better-sqlite3` est synchrone, ACID, sans démon, sauvegardable par `sqlite3 .backup` dans le cron existant.
-- **Impératif** : la base vit **hors** `/var/www/html` (un des deux VirtualHost sert ce répertoire en statique avec `Options Indexes`).
-- **Conséquence** : `/api/completion` passe du runtime edge au runtime **Node**. Mono-instance assumée (déploiement systemd réel).
+- **Impératif** : la base ne doit jamais être servie par le web. En conteneur, elle vit dans un **volume dédié** (`educhat-data:/data`), hors de l'image et hors de toute racine web.
+- **Conséquence** : `/api/completion` passe du runtime edge au runtime **Node**. Mono-instance assumée (un seul conteneur).
+- ⚠️ **La refactorisation `DATA_DIR` devient obligatoire** : `auth.ts` écrit aujourd'hui `auth_lock.json`, `failed_attempts.json` et `auth_log.txt` dans `process.cwd()`. Dans un conteneur, tout ce qui n'est pas dans le volume **disparaît à chaque redéploiement**.
 - **Schéma v2** :
   - `users(email PK, name, verified_at, is_promptagogue, is_teacher, etablissement_id NULL, sync_optin, quota_bytes_used)`
   - `etablissements(id PK, name, ips, respire, token_quota_monthly, active_provider, billing_email, created_at)`
@@ -77,6 +78,19 @@ Les **établissements** sont l'entité de gestion centrale (« clients »), admi
 ## 9. Synchronisation serveur du profil (opt-in)
 
 Pour les comptes vérifiés qui l'activent (`sync_optin`) : l'équivalent de la mémoire du navigateur (conversations, favoris, réglages) est sauvegardé sur le serveur (`profiles.data`, format = export de l'étape 11) via `GET/PUT /api/profile` authentifié par jeton — pour basculer d'un navigateur à l'autre sans friction. Fusion « le plus récent gagne », suppression à la demande. **Jamais pour les élèves** (pas de compte).
+
+## 11. Déploiement : conteneur Docker derrière Nginx Proxy Manager
+
+*Décision prise le 21 juillet 2026 après relevé de l'état réel du serveur cible — elle annule l'hypothèse « Apache + systemd » des versions précédentes.*
+
+La cible est **`91.134.241.141`**, un Debian 12 qui héberge déjà **23 conteneurs en production** : Decidim (prod + sandbox), Kasm Workspaces, Portainer, et **Nginx Proxy Manager** qui détient les ports 80/443. Le dossier `conf/` du dépôt (Apache, systemd, `/var/www/html`, Fedora) décrit **l'ancien serveur** et est désormais **legacy**.
+
+- EduChat est livré en **image Docker** (`Dockerfile` multi-étapes, base `node:20-slim` à cause du module natif `bcrypt`, sortie Next.js `standalone`).
+- Le conteneur **ne publie aucun port** : il rejoint le réseau externe **`proxy-network`** et NPM le joint par son nom d'hôte `educhat` — le motif déjà utilisé par `decidim-app-1`. Zéro risque de conflit de port, zéro modification de l'existant.
+- **TLS et routage** : entièrement gérés par NPM (Proxy Host + certificat Let's Encrypt). Plus de certbot, plus de VirtualHost, plus d'unité systemd.
+- **Persistance** : volume `educhat-data:/data`, avec `DATA_DIR=/data`.
+- **Garde-fous** (machine partagée, disque à 89 %) : `mem_limit: 1g`, rotation des logs, et **aucun nettoyage Docker sans accord explicite** de l'utilisateur et de Stéphane, l'administrateur.
+- **Mise à jour** : `git pull && docker compose up -d --build`.
 
 ## 10. RGPD (réécriture de la page `/rgpd`, étape 12)
 

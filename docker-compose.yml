@@ -1,0 +1,47 @@
+# EduChat — déploiement sur le serveur Harmonia (91.134.241.141).
+#
+# Ce serveur héberge déjà Decidim (production + sandbox), Kasm Workspaces et
+# Portainer. Les ports 80 et 443 appartiennent à Nginx Proxy Manager, qui assure
+# le routage HTTPS et les certificats Let's Encrypt.
+#
+# Conséquence : ce conteneur ne publie AUCUN port sur l'hôte. Il rejoint le
+# réseau partagé `proxy-network` (déjà existant), où NPM le joint par son nom
+# d'hôte `educhat` — exactement comme le fait déjà `decidim-app-1`.
+
+services:
+  educhat:
+    build: .
+    image: educhat:latest
+    container_name: educhat
+    restart: always
+
+    # Fichier présent uniquement sur le serveur, jamais dans git ni dans l'image.
+    env_file: .env
+
+    environment:
+      # Emplacement des données persistantes. Prérequis : le code doit écrire ici
+      # plutôt que dans process.cwd() (refactorisation DATA_DIR, étapes 1 et 4).
+      - DATA_DIR=/data
+      - TZ=Europe/Zurich
+
+    volumes:
+      - educhat-data:/data
+
+    networks:
+      - proxy-network
+
+    # Garde-fous : la machine est partagée avec des services en production
+    # et son disque est occupé à ~89 %.
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  proxy-network:
+    external: true
+
+volumes:
+  educhat-data:
