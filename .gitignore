@@ -4,6 +4,8 @@ node_modules/
 # Secrets — ne doivent JAMAIS entrer dans git
 .env
 .env.local
+.env.bak
+*.env
 secret.txt
 
 # Données persistantes (volume Docker en production)

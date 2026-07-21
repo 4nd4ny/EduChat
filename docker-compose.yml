@@ -16,7 +16,18 @@ services:
     restart: always
 
     # Fichier présent uniquement sur le serveur, jamais dans git ni dans l'image.
-    env_file: .env
+    #
+    # `format: raw` est INDISPENSABLE : sans lui, Compose interprète les séquences
+    # $xxx du fichier comme des variables et les remplace par du vide. Un hash
+    # bcrypt ($2b$10$...) y perd silencieusement des dizaines de caractères, et le
+    # mot de passe prof cesse de fonctionner sans le moindre message d'erreur.
+    #
+    # Le fichier s'appelle educhat.env et NON .env : un fichier nommé « .env »
+    # posé à côté du docker-compose.yml est en plus auto-chargé par Compose pour
+    # interpoler le compose lui-même, ce qui ajoute une seconde source du problème.
+    env_file:
+      - path: educhat.env
+        format: raw
 
     environment:
       # Emplacement des données persistantes. Prérequis : le code doit écrire ici

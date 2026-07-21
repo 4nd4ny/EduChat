@@ -1,6 +1,8 @@
 # Secrets — ne doivent JAMAIS entrer dans une image
 .env
 .env.local
+.env.bak
+*.env
 secret.txt
 
 # Données persistantes (vivent dans un volume Docker, pas dans l'image)
