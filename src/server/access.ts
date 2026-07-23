@@ -12,28 +12,44 @@ import lockfile from 'proper-lockfile';
 import { isIP } from 'net';
 import { DateTime } from 'luxon';
 import type { NextApiRequest } from 'next';
-import { AllowedHours, AllowedIps, DataDir } from '../utils/env';
+import { AllowedHours, AllowedIps, DataDir, ProxyToken, TrustedProxyIps } from '../utils/env';
 
 export const LOCK_FILE_PATH = path.join(DataDir, 'auth_lock.json');
 const RATE_FILE_PATH = path.join(DataDir, 'rate_limit.json');
 
 /**
+ * Le pair TCP immédiat est-il un proxy de confiance ? C'est LA condition pour
+ * accorder foi à l'en-tête X-Real-IP : sans elle, n'importe quel voisin du
+ * réseau Docker joignant le conteneur en direct pourrait forger l'IP d'une
+ * école et voler son budget (défaut relevé en revue).
+ */
+function isTrustedProxy(req: NextApiRequest): boolean {
+  // Secret partagé posé par le proxy (recommandé : insensible aux changements d'IP).
+  if (ProxyToken) return req.headers['x-proxy-token'] === ProxyToken;
+  // Ou liste blanche d'IP socket de proxys.
+  if (TrustedProxyIps.length) {
+    const peer = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+    return TrustedProxyIps.includes(peer);
+  }
+  // Aucun contrôle configuré : comportement historique, NON durci.
+  return true;
+}
+
+/**
  * Adresse IP réelle du client — CONTRÔLE DE COHÉRENCE anti-usurpation.
  *
- * L'IP identifie l'établissement (accès, quotas, facturation) : elle ne doit
- * pas pouvoir être forgée. Or l'en-tête X-Forwarded-For est fourni par le
- * CLIENT : notre reverse proxy (Nginx Proxy Manager) y AJOUTE l'adresse réelle
- * sans effacer ce que le client a mis en premier — s'y fier permettrait à
- * n'importe qui de se faire passer pour une école et de consommer son budget.
- *
- * On ne fait donc confiance qu'à X-Real-IP, que NPM ÉCRASE systématiquement
- * avec l'adresse de la connexion, puis à l'adresse socket (accès direct en
- * développement). Jamais à X-Forwarded-For.
+ * On n'honore l'en-tête X-Real-IP (posé par le reverse proxy) QUE si la
+ * connexion vient d'un proxy de confiance ; sinon on retombe sur l'adresse
+ * socket réelle. X-Forwarded-For (fourni par le client) n'est jamais utilisé.
+ * Une requête directe forgeant X-Real-IP est ainsi ramenée à son IP socket
+ * (une IP Docker interne, qui ne correspond à aucune école).
  */
 export function getClientIp(req: NextApiRequest): string {
-  const real = req.headers['x-real-ip'];
-  if (typeof real === 'string' && isIP(real)) return real;
   const socketIp = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  if (isTrustedProxy(req)) {
+    const real = req.headers['x-real-ip'];
+    if (typeof real === 'string' && isIP(real)) return real;
+  }
   return isIP(socketIp) ? socketIp : 'unknown';
 }
 

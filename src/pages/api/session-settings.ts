@@ -45,20 +45,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Écriture : dans la foulée d'un déverrouillage (le mot de passe de salle EST
   // la preuve enseignante — modèle de confiance de la classe), ou avec un
-  // compte enseignant vérifié (rôle relu en base).
+  // compte enseignant vérifié (rôle ET rattachement relus en base).
   const auth = requireAuth(req);
   const lockExpiry = await getAuthLockExpiry();
-  let isTeacher = false;
+  let teacherEtabId: number | null = null;
   if (auth) {
-    const user = getDb().prepare('SELECT is_teacher FROM users WHERE email = ?').get(auth.email) as
-      { is_teacher: number } | undefined;
-    isTeacher = !!user?.is_teacher;
+    const user = getDb().prepare('SELECT is_teacher, etablissement_id FROM users WHERE email = ?')
+      .get(auth.email) as { is_teacher: number; etablissement_id: number | null } | undefined;
+    if (user?.is_teacher) teacherEtabId = user.etablissement_id;
   }
-  if (!lockExpiry && !isTeacher) {
+  if (!lockExpiry && teacherEtabId === null) {
     return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   }
-  if (!etablissementId) {
-    // Les réglages sont PAR établissement : une IP hors base n'en a pas.
+  // La CIBLE de l'écriture est l'établissement DU PROF (son rattachement, relu
+  // en base) — jamais l'IP seule : un prof ne peut donc pas, en forgeant une IP,
+  // pousser des réglages à une autre école. Le déverrouillage par mot de passe
+  // (sans compte), lui, agit sur l'établissement de l'IP de la salle.
+  const targetEtabId = teacherEtabId ?? etablissementId;
+  if (!targetEtabId) {
     return res.status(400).json({ error: { code: 'ERR_NO_ETABLISSEMENT' } });
   }
 
@@ -78,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     VALUES (@id, @promptId, @webSearch, @email, @expires)
     ON CONFLICT(etablissement_id) DO UPDATE SET
       default_prompt_id = @promptId, web_search = @webSearch, set_by_email = @email, expires_at = @expires
-  `).run({ id: etablissementId, promptId, webSearch, email: auth?.email ?? null, expires: expiresAt });
+  `).run({ id: targetEtabId, promptId, webSearch, email: auth?.email ?? null, expires: expiresAt });
 
   res.status(200).json({ ok: true, expiresAt });
 }

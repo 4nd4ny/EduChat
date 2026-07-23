@@ -133,6 +133,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const usedServerKey = !personalKey;
   const etab = usedServerKey ? resolveEtablissementByIp(clientIp) : null;
   const etablissementId = etab?.id ?? null;
+  // Pseau du quota par élève : le clientId anonyme s'il est valide, SINON l'IP
+  // elle-même — de sorte qu'omettre ou trafiquer le clientId ne contourne pas
+  // le quota (il rejoint alors le pot commun de l'IP) plutôt que de l'annuler.
+  const studentBucket = etab ? (clientId || `ip:${clientIp}`) : "";
 
   // Réglages de session actifs de l'établissement (étape 14) : override de la
   // recherche web + attribution de la consommation à l'enseignant qui a ouvert
@@ -165,11 +169,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
     // Quota QUOTIDIEN PAR ÉLÈVE (0 = illimité, jour UTC), défini par le
-    // responsable d'établissement. L'« élève » est un navigateur anonyme
-    // (clientId aléatoire) : contournable en vidant le stockage, assumé comme
-    // suffisant dans le modèle de confiance d'une classe.
-    if (etab && etab.quota_per_student_daily > 0 && clientId) {
-      if (studentDayUsage(etab.id, clientId) >= etab.quota_per_student_daily) {
+    // responsable. L'« élève » est un navigateur anonyme (studentBucket) :
+    // contournable en vidant le stockage ou en tournant l'identifiant, assumé
+    // comme « assez bon » dans le modèle de confiance d'une classe — le plafond
+    // MENSUEL reste le vrai garde-fou budgétaire (à définir non nul).
+    if (etab && etab.quota_per_student_daily > 0) {
+      if (studentDayUsage(etab.id, studentBucket) >= etab.quota_per_student_daily) {
         return res.status(429).json({ error: { code: 'ERR_QUOTA_ELEVE' } });
       }
     }
@@ -260,7 +265,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           db.prepare(`
             INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage, clientId);
+          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage, studentBucket);
         }
       })();
     } catch (statsError) {

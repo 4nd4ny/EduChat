@@ -16,6 +16,14 @@ export type EtabRow = {
 
 export type HourSlot = { day: number; start: string; end: string }; // day 0 = dimanche
 
+/** Un « HH:MM » horloge valide (00-23 : 00-59) — pas seulement deux chiffres. */
+export function isValidClock(value: string): boolean {
+  const m = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return false;
+  const h = Number(m[1]), min = Number(m[2]);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+}
+
 export function resolveEtablissementByIp(ip: string): EtabRow | null {
   if (!ip || ip === 'unknown') return null;
   const rows = getDb().prepare('SELECT * FROM etablissements').all() as EtabRow[];
@@ -35,7 +43,7 @@ export function parseHours(json: string): HourSlot[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(slot =>
       slot && Number.isInteger(slot.day) && slot.day >= 0 && slot.day <= 6
-      && /^\d{2}:\d{2}$/.test(slot.start) && /^\d{2}:\d{2}$/.test(slot.end));
+      && isValidClock(slot.start) && isValidClock(slot.end) && slot.start < slot.end);
   } catch {
     return [];
   }

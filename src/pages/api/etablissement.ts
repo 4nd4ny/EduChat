@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
 import { requireAuth } from '../../server/token';
 import { getClientIp, isRateLimited } from '../../server/access';
-import { getEtablissementById, monthUsage, monthUsageByProvider, parseHours, HourSlot } from '../../server/etablissements';
+import { getEtablissementById, monthUsage, monthUsageByProvider, parseHours, isValidClock, HourSlot } from '../../server/etablissements';
 import { ERR } from '../../shared/providers';
 
 // Espace du RESPONSABLE d'établissement (un enseignant rattaché).
@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const start = String(slot?.start ?? '');
     const end = String(slot?.end ?? '');
     if (!Number.isInteger(day) || day < 0 || day > 6
-      || !/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end) || start >= end) {
+      || !isValidClock(start) || !isValidClock(end) || start >= end) {
       return res.status(400).json({ error: { code: 'ERR_HOURS_INVALID' } });
     }
     hours.push({ day, start, end });

@@ -27,6 +27,19 @@ export const SmtpConfig = {
 // clé de repli PRÉVISIBLE est utilisée : ne jamais s'en servir en production.
 export const TokenKey: string = process.env.SECRET_TOKEN_KEY || 'dev-only-insecure-key';
 
+// Contrôle de cohérence anti-usurpation d'IP. L'IP identifie l'établissement
+// (accès, quotas, facture) : on ne peut faire confiance à l'en-tête X-Real-IP
+// que s'il vient VRAIMENT du reverse proxy, pas d'un voisin sur le réseau Docker
+// qui joindrait le conteneur en direct. Deux mécanismes, au choix :
+//  - SECRET_PROXY_TOKEN : un secret que le proxy ajoute en en-tête X-Proxy-Token
+//    (robuste aux changements d'IP — recommandé) ;
+//  - TRUSTED_PROXY_IPS : liste d'IP socket de proxys de confiance.
+// Si AUCUN n'est configuré : comportement historique (X-Real-IP honoré), NON
+// durci — à n'utiliser qu'en développement ou derrière un proxy maîtrisé.
+export const ProxyToken: string = process.env.SECRET_PROXY_TOKEN || '';
+export const TrustedProxyIps: string[] = (process.env.TRUSTED_PROXY_IPS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
 // Administrateurs, définis en dur côté serveur (exigence n°9).
 export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS || 'blanvillain@harmonia.education')
   .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
