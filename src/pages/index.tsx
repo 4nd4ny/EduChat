@@ -2,12 +2,13 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useMemo, useState } from "react";
-import { MdSearch, MdStar, MdStarBorder, MdSchool, MdPlayArrow } from "react-icons/md";
+import { MdSearch, MdStar, MdStarBorder, MdSchool, MdPlayArrow, MdChatBubbleOutline } from "react-icons/md";
 import { useAnthropic } from "../context/AnthropicProvider";
 import { getFavorites, toggleFavorite } from "../utils/favorites";
 import { formatTokens } from "../utils/formatTokens";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../i18n/LanguageSwitcher";
+import DemoChat from "../chat/DemoChat";
 
 type Card = {
   name: string; authorName: string; language: string; description: string;
@@ -29,6 +30,9 @@ export default function Catalogue() {
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  // Tuteur ouvert en démo inline (null = fermé). « Essayer » ouvre la démo.
+  const [demo, setDemo] = useState<string | null>(null);
+  const demoRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => setFavorites(getFavorites()), []);
 
@@ -50,9 +54,16 @@ export default function Catalogue() {
     return [...fav, ...rest];
   }, [cards, favorites]);
 
-  const tryPrompt = (name: string) => {
+  // « Utiliser » (et « Chat libre ») : ouvre le vrai chat, avec réglages et historique.
+  const usePrompt = (name: string) => {
     setPromptName(name);
     router.push(name ? `/chat?tuteur=${encodeURIComponent(name)}` : "/chat");
+  };
+
+  // « Essayer » : ouvre la démo inline sous l'en-tête et y fait défiler.
+  const openDemo = (name: string) => {
+    setDemo(name);
+    requestAnimationFrame(() => demoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   return (
@@ -63,7 +74,7 @@ export default function Catalogue() {
         <h1 className="text-4xl font-bold">EduChat</h1>
         <p className="text-lg opacity-80">{t("home.tagline")}</p>
         <nav className="mt-2 flex flex-wrap items-center justify-center gap-3 text-sm">
-          <button onClick={() => tryPrompt("")}
+          <button onClick={() => usePrompt("")}
             className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
             {t("home.freeChat")}
           </button>
@@ -84,6 +95,11 @@ export default function Catalogue() {
           <LanguageSwitcher />
         </nav>
       </header>
+
+      {/* Démo inline : « Essayer » un tuteur ouvre ce panneau ici même. */}
+      <div ref={demoRef} className="scroll-mt-4">
+        {demo && <DemoChat promptName={demo} onClose={() => setDemo(null)} />}
+      </div>
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
         <label className="relative flex-grow">
@@ -133,10 +149,14 @@ export default function Catalogue() {
                 <span>{formatTokens(card.tokensTotal)}</span>
                 <span>{card.ratingAvg !== null ? `★ ${card.ratingAvg} (${card.ratingCount})` : t("home.notRated")}</span>
               </div>
-              <div className="mt-1 flex gap-2">
-                <button onClick={() => tryPrompt(card.name)}
+              <div className="mt-1 flex flex-wrap gap-2">
+                <button onClick={() => openDemo(card.name)}
                   className="flex items-center gap-1 rounded bg-[#DC6521] px-3 py-1.5 text-sm font-bold hover:opacity-90">
                   <MdPlayArrow /> {t("home.try")}
+                </button>
+                <button onClick={() => usePrompt(card.name)}
+                  className="flex items-center gap-1 rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">
+                  <MdChatBubbleOutline /> {t("home.use")}
                 </button>
                 <Link href={`/p/${encodeURIComponent(card.name)}`}
                   className="rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">

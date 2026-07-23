@@ -52,7 +52,7 @@ export default function ChatInput() {
               <option value="low">{t("chat.input.reasoning.low")}</option><option value="medium">{t("chat.input.reasoning.medium")}</option><option value="high">{t("chat.input.reasoning.high")}</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1">{t("chat.input.apiKey")} <span className="font-normal opacity-70">{t("chat.input.apiKeyOptional")}</span>
+          <label className="flex flex-col gap-1">{t("chat.input.apiKey")}
             <input type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={t("chat.input.apiKeyPlaceholder")} aria-label={t("chat.input.apiKey")} />
           </label>
         </div>
