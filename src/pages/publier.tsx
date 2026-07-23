@@ -102,7 +102,8 @@ export default function PublierPage() {
       <p className="mt-2 text-sm opacity-80">
         Votre prompt naît « en construction » : vous le testez dans le chat, vous partagez son
         lien secret à des collègues pour avis, puis vous le soumettez. Il paraîtra au catalogue
-        après validation. Le texte des tuteurs publiés est public — l'école est gratuite.
+        après validation. Le texte des tuteurs publiés est public — l'école est gratuite.{" "}
+        <Link href="/tutoriel#promptagogues" className="underline">Guide détaillé</Link>.
       </p>
 
       <div className="mt-4 rounded border border-white/10 bg-secondary p-3 text-sm">
