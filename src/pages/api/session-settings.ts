@@ -4,6 +4,7 @@ import { getClientIp, getAuthLockExpiry, isRateLimited } from '../../server/acce
 import { requireAuth } from '../../server/token';
 import { MaxUnlockMinutes } from '../../utils/env';
 import { ERR } from '../../shared/providers';
+import { resolveEtablissementByIp } from '../../server/etablissements';
 
 // Réglages de session posés par l'enseignant au déverrouillage (étape 14) :
 // tuteur par défaut + recherche web on/off pour les élèves de SON établissement
@@ -12,17 +13,9 @@ import { ERR } from '../../shared/providers';
 // « Déployer sur une classe » (pivot v3), concrètement : le prof choisit le
 // tuteur, tous les élèves de l'IP le reçoivent pré-sélectionné.
 
-function resolveEtablissementId(ip: string): number | null {
-  const rows = getDb().prepare('SELECT id, ips FROM etablissements').all() as Array<{ id: number; ips: string }>;
-  for (const row of rows) {
-    if (row.ips.split(',').map(s => s.trim()).includes(ip)) return row.id;
-  }
-  return null;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const ip = getClientIp(req);
-  const etablissementId = resolveEtablissementId(ip);
+  const etablissementId = resolveEtablissementByIp(ip)?.id ?? null;
 
   // ---- GET : les réglages ACTIFS de l'établissement de l'appelant -----------
   // Public (les élèves en héritent), sans aucune donnée personnelle.

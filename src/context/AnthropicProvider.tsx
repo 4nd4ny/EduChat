@@ -5,6 +5,7 @@ import { Conversation, getHistory, clearHistory, storeConversation, History, del
 
 import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
 import { translate } from "../i18n/useT";
+import { getClientId } from "../utils/clientId";
 import { fr as frDict } from "../i18n/dictionaries";
 
 export { providerDefaults };
@@ -144,6 +145,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
           promptName: promptName || undefined,
           promptVersion: promptVersion || undefined,
           shareToken: shareToken || undefined,
+          clientId: getClientId() || undefined,
           messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
       const data = await response.json();
       if (!response.ok) {

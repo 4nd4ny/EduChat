@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
 import { getDb, PromptRow } from "../../server/db";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
+import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import {
   ERR,
   isProviderId,
@@ -82,16 +83,6 @@ function resolveSystemPrompt(promptName: string, promptVersion: number, shareTok
   return { row, system: row.body };
 }
 
-/** IP → établissement (facturation). Les IP sont déclarées en base (étape 9) ;
- *  SECRET_ALLOWED_IPS reste l'amorçage : IP connue mais absente de la base → null. */
-function resolveEtablissementId(ip: string): number | null {
-  const rows = getDb().prepare('SELECT id, ips FROM etablissements').all() as Array<{ id: number; ips: string }>;
-  for (const row of rows) {
-    if (row.ips.split(',').map(s => s.trim()).includes(ip)) return row.id;
-  }
-  return null;
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -110,6 +101,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const promptName = String(body.promptName ?? "").slice(0, 64);
   const promptVersion = Number.isInteger(body.promptVersion) ? Number(body.promptVersion) : 0;
   const shareToken = String(body.shareToken ?? "").slice(0, 64);
+  // Identifiant ANONYME de navigateur (uuid aléatoire côté client) : support du
+  // quota quotidien par élève — pseudonyme, jamais relié à une identité.
+  const clientId = /^[a-f0-9-]{8,64}$/i.test(String(body.clientId ?? "")) ? String(body.clientId) : "";
 
   if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -137,7 +131,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const personalKey = String(body.apiKey || "").trim();
   let apiKey = personalKey;
   const usedServerKey = !personalKey;
-  const etablissementId = usedServerKey ? resolveEtablissementId(clientIp) : null;
+  const etab = usedServerKey ? resolveEtablissementByIp(clientIp) : null;
+  const etablissementId = etab?.id ?? null;
 
   // Réglages de session actifs de l'établissement (étape 14) : override de la
   // recherche web + attribution de la consommation à l'enseignant qui a ouvert
@@ -157,21 +152,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!(await mayUseServerKeys(clientIp))) {
       return res.status(401).json({ error: { code: ERR.LOCKED } });
     }
-    // Quota mensuel de l'établissement (défini par l'admin, étape 9) : la clé
-    // interne cesse de répondre quand le budget du mois est épuisé. Quota 0 =
-    // illimité. Mois en UTC, remise à zéro automatique au 1er.
-    if (etablissementId) {
-      const etab = getDb().prepare('SELECT token_quota_monthly FROM etablissements WHERE id = ?')
-        .get(etablissementId) as { token_quota_monthly: number } | undefined;
-      if (etab && etab.token_quota_monthly > 0) {
-        const now = new Date();
-        const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-        const used = (getDb().prepare(
-          'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE etablissement_id = ? AND ts >= ?')
-          .get(etablissementId, monthStart) as { total: number }).total;
-        if (used >= etab.token_quota_monthly) {
-          return res.status(429).json({ error: { code: 'ERR_QUOTA_ETABLISSEMENT' } });
-        }
+    // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC) : la clé
+    // interne cesse de répondre quand le budget est épuisé.
+    if (etab && etab.token_quota_monthly > 0) {
+      const now = new Date();
+      const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+      const used = (getDb().prepare(
+        'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE etablissement_id = ? AND ts >= ?')
+        .get(etab.id, monthStart) as { total: number }).total;
+      if (used >= etab.token_quota_monthly) {
+        return res.status(429).json({ error: { code: 'ERR_QUOTA_ETABLISSEMENT' } });
+      }
+    }
+    // Quota QUOTIDIEN PAR ÉLÈVE (0 = illimité, jour UTC), défini par le
+    // responsable d'établissement. L'« élève » est un navigateur anonyme
+    // (clientId aléatoire) : contournable en vidant le stockage, assumé comme
+    // suffisant dans le modèle de confiance d'une classe.
+    if (etab && etab.quota_per_student_daily > 0 && clientId) {
+      if (studentDayUsage(etab.id, clientId) >= etab.quota_per_student_daily) {
+        return res.status(429).json({ error: { code: 'ERR_QUOTA_ELEVE' } });
       }
     }
     apiKey = String(developerKeys[provider] || "").trim();
@@ -259,9 +258,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
         if (usedServerKey) {
           db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage);
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage, clientId);
         }
       })();
     } catch (statsError) {

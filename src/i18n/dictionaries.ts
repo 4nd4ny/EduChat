@@ -88,6 +88,7 @@ export const fr = {
   'err.ERR_EMPTY_CONVERSATION': 'La conversation est vide.',
   'err.ERR_UPSTREAM': "Le fournisseur d'IA n'a pas répondu correctement.",
   'err.ERR_QUOTA_ETABLISSEMENT': 'Le quota mensuel de tokens de votre établissement est épuisé. Contactez votre enseignant, ou utilisez votre clé personnelle.',
+  'err.ERR_QUOTA_ELEVE': "Votre quota personnel du jour est épuisé pour cet établissement. Réessayez demain, demandez à votre enseignant, ou utilisez votre clé personnelle.",
   'err.ERR_PROMPT_UNKNOWN': "Ce tuteur n'existe pas ou n'est plus publié.",
   'err.fallback': 'La réponse a échoué.',
 } as const;
@@ -171,6 +172,7 @@ export const en: Record<TranslationKey, string> = {
   'err.ERR_EMPTY_CONVERSATION': 'The conversation is empty.',
   'err.ERR_UPSTREAM': 'The AI provider did not answer correctly.',
   'err.ERR_QUOTA_ETABLISSEMENT': "Your school's monthly token quota is exhausted. Contact your teacher, or use your personal key.",
+  'err.ERR_QUOTA_ELEVE': "Your personal daily quota for this school is used up. Try again tomorrow, ask your teacher, or use your personal key.",
   'err.ERR_PROMPT_UNKNOWN': 'This tutor does not exist or is no longer published.',
   'err.fallback': 'The request failed.',
 };
@@ -252,6 +254,7 @@ export const it: Record<TranslationKey, string> = {
   'err.ERR_EMPTY_CONVERSATION': 'La conversazione è vuota.',
   'err.ERR_UPSTREAM': 'Il fornitore di IA non ha risposto correttamente.',
   'err.ERR_QUOTA_ETABLISSEMENT': 'La quota mensile di token del tuo istituto è esaurita. Contatta il tuo insegnante o usa la tua chiave personale.',
+  'err.ERR_QUOTA_ELEVE': 'La tua quota personale giornaliera per questo istituto è esaurita. Riprova domani, chiedi al tuo insegnante o usa la tua chiave personale.',
   'err.ERR_PROMPT_UNKNOWN': 'Questo tutor non esiste o non è più pubblicato.',
   'err.fallback': 'La richiesta non è riuscita.',
 };
@@ -333,6 +336,7 @@ export const de: Record<TranslationKey, string> = {
   'err.ERR_EMPTY_CONVERSATION': 'Das Gespräch ist leer.',
   'err.ERR_UPSTREAM': 'Der KI-Anbieter hat nicht korrekt geantwortet.',
   'err.ERR_QUOTA_ETABLISSEMENT': 'Das monatliche Token-Kontingent Ihrer Schule ist aufgebraucht. Wenden Sie sich an Ihre Lehrperson oder nutzen Sie Ihren eigenen Schlüssel.',
+  'err.ERR_QUOTA_ELEVE': 'Ihr persönliches Tageskontingent für diese Schule ist aufgebraucht. Versuchen Sie es morgen wieder, fragen Sie Ihre Lehrperson oder nutzen Sie Ihren eigenen Schlüssel.',
   'err.ERR_PROMPT_UNKNOWN': 'Dieser Tutor existiert nicht oder ist nicht mehr veröffentlicht.',
   'err.fallback': 'Die Anfrage ist fehlgeschlagen.',
 };

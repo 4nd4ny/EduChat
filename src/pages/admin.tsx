@@ -43,7 +43,7 @@ export default function AdminPage() {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   });
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", billingEmail: "" });
+  const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -85,11 +85,12 @@ export default function AdminPage() {
       body: JSON.stringify({
         id: form.id || undefined, name: form.name, ips: form.ips,
         respire: form.respire, tokenQuotaMonthly: Number(form.quota) || 0,
+        quotaPerStudentDaily: Number(form.perStudent) || 0,
         billingEmail: form.billingEmail,
       }),
     });
     if (!response.ok) { setMessage("Échec d'enregistrement de l'établissement."); return; }
-    setForm({ id: 0, name: "", ips: "", respire: false, quota: "", billingEmail: "" });
+    setForm({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
     reload();
   };
 
@@ -185,6 +186,7 @@ export default function AdminPage() {
       {/* ---- Établissements ---- */}
       <section className="mt-10">
         <h2 className="text-lg font-bold">Établissements (clients)</h2>
+        <p className="mt-1 text-xs opacity-60">Horaires, quota par élève et plafond mensuel sont aussi modifiables par le responsable rattaché depuis sa page « Mon établissement » (/etablissement).</p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {etabs.map(e => (
             <li key={e.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
@@ -193,7 +195,7 @@ export default function AdminPage() {
               {!!e.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">RESPIRE — gratuit</span>}
               <span className="opacity-60">quota : {e.token_quota_monthly > 0 ? formatTokens(e.token_quota_monthly) + "/mois" : "illimité"}</span>
               <span className="flex-grow" />
-              <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), billingEmail: e.billing_email })}
+              <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String((e as any).quota_per_student_daily || ""), billingEmail: e.billing_email })}
                 className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">Modifier</button>
             </li>
           ))}
@@ -205,6 +207,8 @@ export default function AdminPage() {
             placeholder="IPs, séparées par des virgules" className="rounded bg-tertiary p-2" />
           <input value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })}
             placeholder="Quota mensuel de tokens (vide = illimité)" inputMode="numeric" className="rounded bg-tertiary p-2" />
+          <input value={form.perStudent} onChange={e => setForm({ ...form, perStudent: e.target.value })}
+            placeholder="Quota quotidien par élève (vide = illimité)" inputMode="numeric" className="rounded bg-tertiary p-2" />
           <input value={form.billingEmail} onChange={e => setForm({ ...form, billingEmail: e.target.value })}
             placeholder="Email de facturation" type="email" className="rounded bg-tertiary p-2" />
           <label className="flex items-center gap-2">

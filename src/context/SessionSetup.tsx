@@ -72,6 +72,10 @@ export default function SessionSetup({ onDone }: Props) {
           </button>
         </div>
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
+        <p className="mt-4 border-t border-white/10 pt-3 text-xs opacity-60">
+          Responsable de l'établissement ? Réglez horaires et budgets sur{" "}
+          <a href="/etablissement" className="underline">votre page dédiée</a>.
+        </p>
       </div>
     </div>
   );

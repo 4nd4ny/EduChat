@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS etablissements (
   ips                 TEXT NOT NULL DEFAULT '',
   respire             INTEGER NOT NULL DEFAULT 0,
   token_quota_monthly INTEGER NOT NULL DEFAULT 0,
+  quota_per_student_daily INTEGER NOT NULL DEFAULT 0,
+  hours               TEXT NOT NULL DEFAULT '',
   active_provider     TEXT NOT NULL DEFAULT '',
   billing_email       TEXT NOT NULL DEFAULT '',
   created_at          INTEGER NOT NULL
@@ -106,7 +108,8 @@ CREATE TABLE IF NOT EXISTS usage_log (
   provider         TEXT NOT NULL,
   model            TEXT NOT NULL DEFAULT '',
   tokens           INTEGER NOT NULL DEFAULT 0,
-  used_server_key  INTEGER NOT NULL DEFAULT 0
+  used_server_key  INTEGER NOT NULL DEFAULT 0,
+  client_id        TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_log(ts);
 CREATE INDEX IF NOT EXISTS idx_usage_ip ON usage_log(ip);
@@ -216,6 +219,13 @@ export function getDb(): Database.Database {
   for (const alter of [
     "ALTER TABLE email_codes ADD COLUMN send_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE email_codes ADD COLUMN window_start INTEGER NOT NULL DEFAULT 0",
+    // Libre-service des établissements : horaires d'accès (JSON [{day,start,end}],
+    // day 0=dimanche) et quota QUOTIDIEN de tokens par élève (0 = illimité).
+    "ALTER TABLE etablissements ADD COLUMN hours TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE etablissements ADD COLUMN quota_per_student_daily INTEGER NOT NULL DEFAULT 0",
+    // Identifiant ANONYME de navigateur (uuid aléatoire, aucune identité) :
+    // le support du quota par élève — pseudonyme, jamais relié à une personne.
+    "ALTER TABLE usage_log ADD COLUMN client_id TEXT NOT NULL DEFAULT ''",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

@@ -9,7 +9,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import lockfile from 'proper-lockfile';
-import requestIp from 'request-ip';
 import { isIP } from 'net';
 import { DateTime } from 'luxon';
 import type { NextApiRequest } from 'next';
@@ -18,10 +17,24 @@ import { AllowedHours, AllowedIps, DataDir } from '../utils/env';
 export const LOCK_FILE_PATH = path.join(DataDir, 'auth_lock.json');
 const RATE_FILE_PATH = path.join(DataDir, 'rate_limit.json');
 
-/** Adresse IP réelle du client, validée. */
+/**
+ * Adresse IP réelle du client — CONTRÔLE DE COHÉRENCE anti-usurpation.
+ *
+ * L'IP identifie l'établissement (accès, quotas, facturation) : elle ne doit
+ * pas pouvoir être forgée. Or l'en-tête X-Forwarded-For est fourni par le
+ * CLIENT : notre reverse proxy (Nginx Proxy Manager) y AJOUTE l'adresse réelle
+ * sans effacer ce que le client a mis en premier — s'y fier permettrait à
+ * n'importe qui de se faire passer pour une école et de consommer son budget.
+ *
+ * On ne fait donc confiance qu'à X-Real-IP, que NPM ÉCRASE systématiquement
+ * avec l'adresse de la connexion, puis à l'adresse socket (accès direct en
+ * développement). Jamais à X-Forwarded-For.
+ */
 export function getClientIp(req: NextApiRequest): string {
-  const ip = requestIp.getClientIp(req) || 'unknown';
-  return isIP(ip) ? ip : 'unknown';
+  const real = req.headers['x-real-ip'];
+  if (typeof real === 'string' && isIP(real)) return real;
+  const socketIp = (req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  return isIP(socketIp) ? socketIp : 'unknown';
 }
 
 /** Échéance du verrou global (ms epoch), ou 0 si le site est verrouillé. */
@@ -88,9 +101,20 @@ export function isKnownIp(ip: string): boolean {
  * Les clés API du serveur peuvent-elles être dépensées pour cette requête ?
  * Vrai si le site est déverrouillé, ou si l'appel vient d'une IP d'établissement
  * pendant une plage horaire autorisée.
+ *
+ * Horaires : chaque établissement définit désormais LES SIENS en base (page
+ * /etablissement) ; un établissement sans horaires propres retombe sur les
+ * horaires globaux du serveur, et les IP hors base (amorçage SECRET_ALLOWED_IPS)
+ * restent régies par ces horaires globaux.
  */
 export async function mayUseServerKeys(ip: string): Promise<boolean> {
   if (await checkAuthLock()) return true;
+  const { resolveEtablissementByIp, parseHours, isWithinSchedule } = await import('./etablissements');
+  const etab = resolveEtablissementByIp(ip);
+  if (etab) {
+    const own = parseHours(etab.hours);
+    return own.length > 0 ? isWithinSchedule(own) : isAccessAllowed();
+  }
   return isKnownIp(ip) && isAccessAllowed();
 }
 

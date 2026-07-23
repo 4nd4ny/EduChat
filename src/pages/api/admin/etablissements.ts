@@ -23,19 +23,20 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const ips = String(req.body?.ips ?? '').split(',').map(s => s.trim()).filter(Boolean).join(',');
     const respire = req.body?.respire ? 1 : 0;
     const quota = Math.max(0, Number(req.body?.tokenQuotaMonthly) || 0);
+    const perStudent = Math.max(0, Number(req.body?.quotaPerStudentDaily) || 0);
     const activeProvider = PROVIDER_IDS.includes(req.body?.activeProvider) ? req.body.activeProvider : '';
     const billingEmail = String(req.body?.billingEmail ?? '').trim().slice(0, 255);
     if (!name) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
 
     if (id) {
-      db.prepare('UPDATE etablissements SET name=?, ips=?, respire=?, token_quota_monthly=?, active_provider=?, billing_email=? WHERE id=?')
-        .run(name, ips, respire, quota, activeProvider, billingEmail, id);
+      db.prepare('UPDATE etablissements SET name=?, ips=?, respire=?, token_quota_monthly=?, quota_per_student_daily=?, active_provider=?, billing_email=? WHERE id=?')
+        .run(name, ips, respire, quota, perStudent, activeProvider, billingEmail, id);
       return res.status(200).json({ ok: true, id });
     }
     const info = db.prepare(`
-      INSERT INTO etablissements (name, ips, respire, token_quota_monthly, active_provider, billing_email, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(name, ips, respire, quota, activeProvider, billingEmail, Date.now());
+      INSERT INTO etablissements (name, ips, respire, token_quota_monthly, quota_per_student_daily, active_provider, billing_email, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, ips, respire, quota, perStudent, activeProvider, billingEmail, Date.now());
     return res.status(201).json({ ok: true, id: Number(info.lastInsertRowid) });
   }
 

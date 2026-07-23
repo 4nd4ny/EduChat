@@ -47,9 +47,10 @@ const BRANCHES: Branch[] = [
   {
     label: "Établissement", color: "#BA68C8", x: 450, y: 455, anchor: "#etablissements",
     leaves: [
-      { label: "Accès par IP + horaires", anchor: "#etablissements" },
-      { label: "Clé interne financée", anchor: "#etablissements" },
-      { label: "Quota mensuel", anchor: "#etablissements" },
+      { label: "Horaires en libre-service", anchor: "#etablissements" },
+      { label: "Quota par élève", anchor: "#etablissements" },
+      { label: "Budget mensuel", anchor: "#etablissements" },
+      { label: "Parcours (schémas)", anchor: "#flux" },
     ],
   },
   {
@@ -297,13 +298,22 @@ export default function TutorielPage() {
         </ul>
       </Section>
 
-      <Section id="etablissements" title="Établissements — accès et facturation">
+      <Section id="etablissements" title="Établissements — accès, quotas, facturation">
+        <p>Un établissement est notre <b>client</b> : il peut apporter ses propres clés d'IA, mais en pratique la plupart nous confient la gestion. L'administration le déclare (nom, <b>adresses IP</b>, statut <b>RESPIRE</b> gratuit ou facturé, email de facturation) ; ensuite, un enseignant désigné <b>responsable</b> en pilote le quotidien.</p>
+        <p><b>En libre-service sur <Link className="underline" href="/etablissement">/etablissement</Link></b> (par le responsable rattaché) :</p>
         <ul className="list-inside list-disc space-y-1">
-          <li>Un établissement client est déclaré par l'administration avec ses <b>adresses IP</b>, son éventuel statut <b>RESPIRE</b> (gratuit), son <b>quota mensuel de tokens</b> et son email de facturation.</li>
-          <li>Depuis ces IP, aux <b>horaires convenus</b>, le site s'ouvre sans mot de passe et la <b>clé interne</b> de la plateforme répond aux élèves.</li>
-          <li>Chaque réponse sur clé interne est journalisée : <b>IP, fournisseur d'IA, modèle, tokens</b> — c'est la base de la facture mensuelle. Quand le quota du mois est épuisé, la clé interne s'arrête (les clés personnelles continuent de fonctionner).</li>
-          <li>Les usages en clé personnelle ne sont <b>jamais</b> journalisés avec une IP.</li>
+          <li><b>Horaires d'accès libre</b>, propres à l'établissement : des créneaux jour + heures, éditables visuellement. Hors créneau, l'accès gratuit par le réseau est fermé (un enseignant peut toujours ouvrir une session par mot de passe).</li>
+          <li><b>Quota quotidien par élève</b> : empêche qu'un élève épuise le budget commun. Remis à zéro chaque jour.</li>
+          <li><b>Plafond mensuel</b> de l'établissement : au-delà, la clé interne se met en pause jusqu'au mois suivant.</li>
+          <li>Le responsable voit sa <b>consommation du mois</b> par fournisseur, mais ne touche ni aux IP (identité de l'école) ni à la facturation — décisions administratives.</li>
         </ul>
+        <p>Chaque réponse sur clé interne est journalisée (IP d'établissement, fournisseur, modèle, tokens, élève anonyme) : base de la facture. Les usages en clé <b>personnelle</b> ne sont jamais journalisés avec une IP. <b>Voir les <Link className="underline" href="/flux">parcours détaillés en schémas</Link>.</b></p>
+      </Section>
+
+      <Section id="flux" title="Parcours en un coup d'œil">
+        <p>Les trois cas d'utilisation liés à un établissement — <b>responsable</b>, <b>enseignant en classe</b>, <b>élève</b> — sont documentés en diagrammes de flux simples :</p>
+        <p><Link href="/flux" className="inline-block rounded bg-[#DC6521] px-4 py-2 font-bold text-white hover:opacity-90">Ouvrir les diagrammes de flux</Link></p>
+        <p className="text-xs opacity-60">Règle commune aux trois : l'IP sert à <b>reconnaître</b> l'établissement (accès, quotas, facture), jamais à <b>autoriser une gestion</b> — celle-ci exige toujours un compte vérifié dont le rattachement est relu en base (protection contre l'usurpation d'IP).</p>
       </Section>
 
       <Section id="admin" title="Administration">
@@ -326,8 +336,8 @@ export default function TutorielPage() {
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, clé API personnelle, favoris, notes données</td><td className="pr-2"><b>Votre navigateur</b></td><td>Jamais sur le serveur (la clé personnelle ne quitte même pas la mémoire de la page). Export/import libres ; sync serveur uniquement si vous l'activez.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Tuteurs socratiques</td><td className="pr-2">Base de données</td><td>Texte intégral, versions successives, statut, compteurs anonymes (usages, tokens générés, somme et nombre des notes).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Compte promptagogue / enseignant</td><td className="pr-2">Base de données</td><td>Nom public, email (jamais affiché), rôles, option de synchronisation. <b>Aucun mot de passe n'existe.</b></td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Établissements</td><td className="pr-2">Base de données</td><td>Nom, adresses IP, statut RESPIRE, quota mensuel, email de facturation. Les <b>horaires d'accès</b> sont pour l'instant une configuration serveur globale (pas encore par établissement).</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Consommation de la clé interne</td><td className="pr-2">Base de données</td><td>Par requête : date, IP d'établissement, fournisseur, modèle, tokens, enseignant de session le cas échéant. Les montants sont en <b>tokens par fournisseur</b> — le tarif au token est appliqué par le gestionnaire au moment de facturer.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Établissements</td><td className="pr-2">Base de données</td><td>Nom, adresses IP, statut RESPIRE, <b>horaires d'accès propres</b>, <b>quota quotidien par élève</b>, plafond mensuel, email de facturation. Horaires et quotas sont modifiables par le responsable rattaché.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Consommation de la clé interne</td><td className="pr-2">Base de données</td><td>Par requête : date, IP d'établissement, fournisseur, modèle, tokens, identifiant anonyme d'élève (pour le quota), enseignant de session le cas échéant. Les montants sont en <b>tokens par fournisseur</b> — le tarif au token est appliqué au moment de facturer.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profil synchronisé (option)</td><td className="pr-2">Base de données</td><td>Copie de votre profil de navigateur, supprimable à tout moment depuis /verifier.</td></tr>
             </tbody>
           </table>
@@ -345,6 +355,8 @@ export default function TutorielPage() {
               <tr className="border-b border-white/5"><td className="py-1 pr-2">/p/[nom]</td><td className="pr-2">Tout le monde</td><td>Fiche publique d'un tuteur (prompt intégral, notes, versions)</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/chat">/chat</Link></td><td className="pr-2">Tout le monde</td><td>Chat en clé personnelle, avec ou sans tuteur</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/school">/school</Link></td><td className="pr-2">Écoles</td><td>Chat sur clé interne, derrière le déverrouillage enseignant</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/etablissement">/etablissement</Link></td><td className="pr-2">Responsable d'établissement</td><td>Horaires, quotas et consommation en libre-service</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/flux">/flux</Link></td><td className="pr-2">Tout le monde</td><td>Diagrammes de flux des parcours établissement</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/publier">/publier</Link></td><td className="pr-2">Promptagogues</td><td>Créer un tuteur (gabarit guidé, variantes)</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2">/p/essai/[lien]</td><td className="pr-2">Promptagogues + invités</td><td>Atelier d'un brouillon : lire, éditer, tester, soumettre</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/verifier">/verifier</Link></td><td className="pr-2">Auteurs, enseignants, admins</td><td>Identification par code email, sans mot de passe</td></tr>
