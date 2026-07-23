@@ -13,6 +13,24 @@ export const MaxUnlockMinutes: number = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 600;
 })();
 
+// SMTP OVH pour les codes de vérification (boîte noreply@educh.at).
+// Si SECRET_SMTP_HOST est absent (dev), le code est journalisé côté serveur.
+export const SmtpConfig = {
+  host: process.env.SECRET_SMTP_HOST || '',
+  port: parseInt(process.env.SECRET_SMTP_PORT || '465', 10),
+  user: process.env.SECRET_SMTP_USER || '',
+  pass: process.env.SECRET_SMTP_PASS || '',
+  from: process.env.SECRET_SMTP_FROM || 'EduChat <noreply@educh.at>',
+};
+
+// Clé de signature des jetons de compte (HMAC-SHA256). En dev sans .env, une
+// clé de repli PRÉVISIBLE est utilisée : ne jamais s'en servir en production.
+export const TokenKey: string = process.env.SECRET_TOKEN_KEY || 'dev-only-insecure-key';
+
+// Administrateurs, définis en dur côté serveur (exigence n°9).
+export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS || 'blanvillain@harmonia.education')
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(25[0-5]|2[0-4]\d|[01]?\d\d?)\.((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){2}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/;

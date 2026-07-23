@@ -84,11 +84,13 @@ CREATE TABLE IF NOT EXISTS prompt_translations (
 );
 
 CREATE TABLE IF NOT EXISTS email_codes (
-  email      TEXT PRIMARY KEY,
-  name       TEXT NOT NULL DEFAULT '',
-  code_hash  TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  attempts   INTEGER NOT NULL DEFAULT 0
+  email        TEXT PRIMARY KEY,
+  name         TEXT NOT NULL DEFAULT '',
+  code_hash    TEXT NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  send_count   INTEGER NOT NULL DEFAULT 0,
+  window_start INTEGER NOT NULL DEFAULT 0
 );
 
 -- Consommation de la clé interne, par IP d'établissement : socle de la
@@ -210,6 +212,13 @@ export function getDb(): Database.Database {
   db.pragma('journal_mode = WAL');       // lectures concurrentes sans blocage
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  // Migrations additives : ignorées si la colonne existe déjà.
+  for (const alter of [
+    "ALTER TABLE email_codes ADD COLUMN send_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE email_codes ADD COLUMN window_start INTEGER NOT NULL DEFAULT 0",
+  ]) {
+    try { db.exec(alter); } catch { /* colonne déjà présente */ }
+  }
   seedIfEmpty(db);
   instance = db;
   return db;
