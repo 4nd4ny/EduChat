@@ -26,6 +26,11 @@
 body {
   font-family: 'iAWriter', monospace;
   font-size: 110%;
+  /* Fond et couleur par défaut du thème sombre : les pages publiques
+     (catalogue, fiches, publier...) vivent hors de la coquille du chat, qui
+     posait seule ses fonds jusqu'ici — sans ceci, texte blanc sur fond blanc. */
+  background-color: rgb(var(--bg-primary));
+  color: rgb(var(--text-primary));
 }
 
 .katex {
