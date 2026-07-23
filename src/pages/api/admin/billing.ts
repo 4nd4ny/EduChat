@@ -42,6 +42,27 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     ip: string; provider: string; requests: number; tokens: number;
   }>;
 
+  // Bilan par ENSEIGNANT (attribution via les réglages de session, étape 14).
+  const teachers = getDb().prepare(`
+    SELECT u.teacher_email AS teacherEmail,
+           COALESCE(e.name, '(IP hors base)') AS etablissement,
+           u.provider AS provider, COUNT(*) AS requests, SUM(u.tokens) AS tokens
+    FROM usage_log u
+    LEFT JOIN etablissements e ON e.id = u.etablissement_id
+    WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1 AND u.teacher_email IS NOT NULL
+    GROUP BY u.teacher_email, u.etablissement_id, u.provider
+    ORDER BY u.teacher_email, u.provider
+  `).all(start, end) as Array<{ teacherEmail: string; etablissement: string; provider: string; requests: number; tokens: number }>;
+
+  if (req.query.format === 'csv' && req.query.by === 'teacher') {
+    const header = 'periode;enseignant;etablissement;fournisseur;requetes;tokens';
+    const lines = teachers.map(r =>
+      `${year}-${String(month).padStart(2, '0')};${r.teacherEmail};"${r.etablissement.replace(/"/g, '""')}";${r.provider};${r.requests};${r.tokens}`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="educhat-facturation-enseignants-${year}-${String(month).padStart(2, '0')}.csv"`);
+    return res.status(200).send([header, ...lines].join('\n'));
+  }
+
   if (req.query.format === 'csv') {
     const header = 'periode;etablissement;gratuit_respire;ip;fournisseur;requetes;tokens';
     const lines = rows.map(r =>
@@ -51,5 +72,5 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(200).send([header, ...lines].join('\n'));
   }
 
-  res.status(200).json({ year, month, rows });
+  res.status(200).json({ year, month, rows, teachers });
 }

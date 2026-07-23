@@ -24,6 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Tolérant à la saisie : « 123-456 », « 123 456 » et « 123456 » sont équivalents.
   const code = String(req.body?.code ?? '').replace(/[\s-]/g, '');
   const syncOptin = req.body?.syncOptin ? 1 : 0;
+  const isTeacher = req.body?.isTeacher ? 1 : 0;
 
   if (!email || !/^\d{6}$/.test(code)) {
     return res.status(400).json({ error: { code: 'ERR_CODE_INVALID' } });
@@ -50,12 +51,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const now = Date.now();
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
+    // is_teacher se DEMANDE ici ; le rattachement à un établissement, lui,
+    // n'est effectif qu'une fois posé par un admin (étape 14).
     db.prepare(`
-      INSERT INTO users (email, name, verified_at, is_promptagogue, sync_optin)
-      VALUES (@email, @name, @now, 1, @optin)
+      INSERT INTO users (email, name, verified_at, is_promptagogue, is_teacher, sync_optin)
+      VALUES (@email, @name, @now, 1, @teacher, @optin)
       ON CONFLICT(email) DO UPDATE SET
-        name = @name, verified_at = @now, is_promptagogue = 1, sync_optin = @optin
-    `).run({ email, name: row.name, now, optin: syncOptin });
+        name = @name, verified_at = @now, is_promptagogue = 1,
+        is_teacher = MAX(is_teacher, @teacher), sync_optin = @optin
+    `).run({ email, name: row.name, now, teacher: isTeacher, optin: syncOptin });
   });
   tx();
 

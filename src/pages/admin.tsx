@@ -18,6 +18,14 @@ type BillingRow = {
   etablissement: string; respire: number; ip: string; provider: string;
   requests: number; tokens: number;
 };
+type TeacherBillingRow = {
+  teacherEmail: string; etablissement: string; provider: string;
+  requests: number; tokens: number;
+};
+type AdminUser = {
+  email: string; name: string; isPromptagogue: number; isTeacher: number;
+  etablissementId: number | null; etablissementName: string | null;
+};
 
 // Administration : modération des prompts, gestion des établissements
 // (« clients »), facturation mensuelle de la clé interne. L'accès est
@@ -28,6 +36,8 @@ export default function AdminPage() {
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
   const [etabs, setEtabs] = useState<Etab[]>([]);
   const [billing, setBilling] = useState<BillingRow[]>([]);
+  const [teacherBilling, setTeacherBilling] = useState<TeacherBillingRow[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -44,9 +54,13 @@ export default function AdminPage() {
       .catch(() => setDenied(true));
     fetch("/api/admin/etablissements", { headers: authHeaders() })
       .then(r => r.json()).then(data => setEtabs(data.etablissements ?? [])).catch(() => {});
+    fetch("/api/admin/users", { headers: authHeaders() })
+      .then(r => r.json()).then(data => setUsers(data.users ?? [])).catch(() => {});
     const [y, m] = period.split("-").map(Number);
     fetch(`/api/admin/billing?year=${y}&month=${m}`, { headers: authHeaders() })
-      .then(r => r.json()).then(data => setBilling(data.rows ?? [])).catch(() => {});
+      .then(r => r.json())
+      .then(data => { setBilling(data.rows ?? []); setTeacherBilling(data.teachers ?? []); })
+      .catch(() => {});
   }, [period]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -203,6 +217,39 @@ export default function AdminPage() {
         </form>
       </section>
 
+      {/* ---- Enseignants ---- */}
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Enseignants (rattachement aux établissements)</h2>
+        {users.filter(u => u.isTeacher).length === 0 ? (
+          <p className="mt-2 text-sm opacity-60">Aucun compte enseignant pour l'instant.</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1 text-sm">
+            {users.filter(u => u.isTeacher).map(u => (
+              <li key={u.email} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
+                <b>{u.name || u.email}</b>
+                <span className="opacity-60">{u.email}</span>
+                <span className="flex-grow" />
+                <select
+                  value={u.etablissementId ?? ""}
+                  onChange={async e => {
+                    await fetch("/api/admin/users", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...authHeaders() },
+                      body: JSON.stringify({ email: u.email, etablissementId: e.target.value || null }),
+                    });
+                    reload();
+                  }}
+                  className="rounded bg-tertiary p-1 text-xs"
+                >
+                  <option value="">— aucun établissement —</option>
+                  {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
+                </select>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* ---- Facturation ---- */}
       <section className="mt-10">
         <div className="flex flex-wrap items-center gap-3">
@@ -234,6 +281,28 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {teacherBilling.length > 0 && (
+          <>
+            <h3 className="mt-6 font-bold">Par enseignant (sessions de classe)</h3>
+            <table className="mt-2 w-full text-left text-sm">
+              <thead className="text-xs uppercase opacity-60">
+                <tr><th className="py-1">Enseignant</th><th>Établissement</th><th>Fournisseur</th>
+                  <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
+              </thead>
+              <tbody>
+                {teacherBilling.map((row, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    <td className="py-1">{row.teacherEmail}</td>
+                    <td>{row.etablissement}</td>
+                    <td>{row.provider}</td>
+                    <td className="text-right">{row.requests}</td>
+                    <td className="text-right">{row.tokens.toLocaleString("fr-CH")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         )}
         <p className="mt-2 text-xs opacity-50">
           Montants exprimés en tokens par fournisseur — le tarif appliqué à la facture reste à votre main.

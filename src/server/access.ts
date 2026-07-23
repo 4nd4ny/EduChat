@@ -24,6 +24,18 @@ export function getClientIp(req: NextApiRequest): string {
   return isIP(ip) ? ip : 'unknown';
 }
 
+/** Échéance du verrou global (ms epoch), ou 0 si le site est verrouillé. */
+export async function getAuthLockExpiry(): Promise<number> {
+  try {
+    const exists = await fs.access(LOCK_FILE_PATH).then(() => true).catch(() => false);
+    if (!exists) return 0;
+    const lockData = JSON.parse(await fs.readFile(LOCK_FILE_PATH, 'utf8'));
+    return Date.now() < lockData.timestamp ? lockData.timestamp : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Le site est-il actuellement déverrouillé (verrou global posé par /api/auth) ? */
 export async function checkAuthLock(): Promise<boolean> {
   try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, KeyboardEvent, ReactNode } from 'react';
-// import { DateTime } from 'luxon'; 
+import SessionSetup from './SessionSetup';
 
 interface ProtectedPageProps {
   children: ReactNode;
@@ -10,6 +10,10 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [clientIp, setClientIp] = useState<string>(''); // Ajouter l'état pour stocker l'IP
+  // Réglages de session : proposés UNIQUEMENT à la personne qui vient de
+  // déverrouiller par mot de passe (l'enseignant), pas aux visiteurs qui
+  // arrivent site déjà ouvert ni aux postes en auto-login par IP.
+  const [showSetup, setShowSetup] = useState(false);
   // const [isIpAllowed, setIsIpAllowed] = useState(false); // Pour stocker l'état de l'IP
 
   useEffect(() => {
@@ -53,6 +57,7 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
       const data = await response.json();
       if (data.success) {
         setIsAuthorized(true);
+        setShowSetup(true);
       } else {
         alert('Mot de passe incorrect');
       }
@@ -73,6 +78,7 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
   }
 
   if (isAuthorized) {
+    if (showSetup) return <SessionSetup onDone={() => setShowSetup(false)} />;
     return <>{children}</>;
   }
 

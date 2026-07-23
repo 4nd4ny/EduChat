@@ -18,6 +18,7 @@ export default function VerifierPage() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [syncOptin, setSyncOptin] = useState(false);
+  const [isTeacher, setIsTeacher] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const account = typeof window !== "undefined" ? getAccount() : null;
@@ -61,7 +62,7 @@ export default function VerifierPage() {
     setBusy(true); setError("");
     const response = await fetch("/api/verify/confirm", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code, syncOptin }),
+      body: JSON.stringify({ email, code, syncOptin, isTeacher }),
     });
     const data = await response.json().catch(() => ({}));
     setBusy(false);
@@ -129,6 +130,10 @@ export default function VerifierPage() {
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={syncOptin} onChange={e => setSyncOptin(e.target.checked)} />
             {t("verify.sync")}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={isTeacher} onChange={e => setIsTeacher(e.target.checked)} />
+            Je suis enseignant·e — je souhaite gérer des sessions de classe (rattachement à un établissement validé par l'admin)
           </label>
           <button type="submit" disabled={busy}
             className="mt-2 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">

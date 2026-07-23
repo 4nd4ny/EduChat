@@ -128,9 +128,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Recherche web : décidée par le PROMPTAGOGUE pour un tuteur (champ
   // web_search, désactivé par défaut — économie de tokens) ; activée pour le
-  // chat libre (comportement historique). L'override par session prof
-  // arrivera à l'étape 14.
-  const webSearch = promptRow ? !!promptRow.web_search : true;
+  // chat libre. Le réglage de session posé par l'enseignant (étape 14) peut la
+  // FORCER À OFF pour tout son établissement — jamais la forcer à on.
+  let webSearch = promptRow ? !!promptRow.web_search : true;
 
   // Règle d'accès : clé personnelle toujours acceptée ; clés serveur seulement
   // si déverrouillé OU IP d'établissement en plage horaire. Aucun repli.
@@ -138,6 +138,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   let apiKey = personalKey;
   const usedServerKey = !personalKey;
   const etablissementId = usedServerKey ? resolveEtablissementId(clientIp) : null;
+
+  // Réglages de session actifs de l'établissement (étape 14) : override de la
+  // recherche web + attribution de la consommation à l'enseignant qui a ouvert
+  // la session (bilan mensuel par enseignant).
+  let teacherEmail: string | null = null;
+  if (etablissementId) {
+    const settings = getDb().prepare(
+      'SELECT web_search, set_by_email FROM session_settings WHERE etablissement_id = ? AND expires_at > ?')
+      .get(etablissementId, Date.now()) as { web_search: number; set_by_email: string | null } | undefined;
+    if (settings) {
+      if (!settings.web_search) webSearch = false;
+      teacherEmail = settings.set_by_email;
+    }
+  }
 
   if (!apiKey) {
     if (!(await mayUseServerKeys(clientIp))) {
@@ -246,8 +260,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (usedServerKey) {
           db.prepare(`
             INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key)
-            VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 1)
-          `).run(Date.now(), clientIp, etablissementId, promptRow?.id ?? null, provider, model, tokenUsage);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage);
         }
       })();
     } catch (statsError) {
