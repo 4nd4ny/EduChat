@@ -4,26 +4,12 @@ import { useRouter } from "next/router";
 import { Conversation, getHistory, clearHistory, storeConversation, History, deleteConversationFromHistory, updateConversation } from "./History";
 
 import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
+import { translate } from "../i18n/useT";
+import { fr as frDict } from "../i18n/dictionaries";
 
 export { providerDefaults };
 export type { ProviderId, ReasoningLevel };
 export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; model?: string };
-
-// Traduction des codes d'erreur stables renvoyés par les API.
-// À l'arrivée de l'i18n (étape 10), cette table déménagera dans les dictionnaires.
-const errorMessages: Record<string, string> = {
-  ERR_METHOD_NOT_ALLOWED: "Méthode non autorisée.",
-  ERR_LOCKED: "La clé de la plateforme est réservée aux établissements (espace /school déverrouillé par un enseignant, ou IP d'école en plage horaire). Saisissez votre clé API personnelle pour continuer ici.",
-  ERR_RATE_LIMIT: "Trop de requêtes en peu de temps. Patientez une minute.",
-  ERR_BODY_TOO_LARGE: "La conversation est trop longue à envoyer.",
-  ERR_PROVIDER_UNSUPPORTED: "Fournisseur non pris en charge.",
-  ERR_MODEL_INVALID: "Nom de modèle invalide.",
-  ERR_NO_API_KEY: "Aucune clé API n'est configurée sur le serveur pour ce fournisseur.",
-  ERR_EMPTY_CONVERSATION: "La conversation est vide.",
-  ERR_UPSTREAM: "Le fournisseur d'IA n'a pas répondu correctement.",
-  ERR_QUOTA_ETABLISSEMENT: "Le quota mensuel de tokens de votre établissement est épuisé. Contactez votre enseignant, ou utilisez votre clé personnelle.",
-  ERR_PROMPT_UNKNOWN: "Ce tuteur n'existe pas ou n'est plus publié.",
-};
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2 Mo
 
@@ -161,8 +147,10 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
           messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
       const data = await response.json();
       if (!response.ok) {
+        // Codes d'erreur stables du serveur, traduits dans la langue courante.
         const code = data?.error?.code as string | undefined;
-        throw new Error((code && errorMessages[code]) || "La réponse a échoué.");
+        const key = code && (frDict as any)[`err.${code}`] ? `err.${code}` : "err.fallback";
+        throw new Error(translate(router.locale, key as any));
       }
       addTokenUsage(Number(data.tokenUsage));
       // Épingle la version du tuteur au premier échange réussi.

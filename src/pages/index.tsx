@@ -6,6 +6,8 @@ import { MdSearch, MdStar, MdStarBorder, MdSchool, MdPlayArrow } from "react-ico
 import { useAnthropic } from "../context/AnthropicProvider";
 import { getFavorites, toggleFavorite } from "../utils/favorites";
 import { formatTokens } from "../utils/formatTokens";
+import { useT } from "../i18n/useT";
+import LanguageSwitcher from "../i18n/LanguageSwitcher";
 
 type Card = {
   name: string; authorName: string; language: string; description: string;
@@ -14,19 +16,13 @@ type Card = {
   ratingAvg: number | null; ratingCount: number;
 };
 
-const SORTS: Array<[string, string]> = [
-  ["score", "Recommandés"],
-  ["uses", "Les plus utilisés"],
-  ["rating", "Les mieux notés"],
-  ["recent", "Les plus récents"],
-  ["tokens", "Tokens générés"],
-  ["name", "Nom A → Z"],
-];
+const SORT_KEYS = ["score", "uses", "rating", "recent", "tokens", "name"] as const;
 
 // Accueil = LE catalogue des prompts socratiques (pivot v3) :
 // le choix du tuteur est au centre de l'expérience.
 export default function Catalogue() {
   const router = useRouter();
+  const t = useT();
   const { setPromptName } = useAnthropic();
   const [cards, setCards] = useState<Card[]>([]);
   const [sort, setSort] = useState("score");
@@ -65,25 +61,24 @@ export default function Catalogue() {
 
       <header className="flex flex-col gap-2 pt-10 pb-6 text-center">
         <h1 className="text-4xl font-bold">EduChat</h1>
-        <p className="text-lg opacity-80">
-          Des tuteurs socratiques pour apprendre en réfléchissant — jamais en recopiant.
-        </p>
+        <p className="text-lg opacity-80">{t("home.tagline")}</p>
         <nav className="mt-2 flex flex-wrap items-center justify-center gap-3 text-sm">
           <button onClick={() => tryPrompt("")}
             className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            Chat libre (clé personnelle)
+            {t("home.freeChat")}
           </button>
           <Link href="/school"
             className="flex items-center gap-2 rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            <MdSchool /> Espace établissement
+            <MdSchool /> {t("home.school")}
           </Link>
           <Link href="/publier"
             className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-            Proposer un tuteur
+            {t("home.propose")}
           </Link>
           <Link href="/rgpd" className="px-2 py-2 text-xs opacity-60 hover:opacity-100">
-            Confidentialité
+            {t("common.privacy")}
           </Link>
+          <LanguageSwitcher />
         </nav>
       </header>
 
@@ -93,23 +88,23 @@ export default function Catalogue() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Rechercher un tuteur (nom, description...)"
+            placeholder={t("home.search")}
             className="w-full rounded bg-tertiary py-2 pl-10 pr-3 outline-none"
-            aria-label="Rechercher un tuteur"
+            aria-label={t("home.search")}
           />
         </label>
         <label className="flex items-center gap-2 text-sm">
-          <span className="opacity-70">Trier :</span>
+          <span className="opacity-70">{t("home.sort")}</span>
           <select value={sort} onChange={e => setSort(e.target.value)} className="rounded bg-tertiary p-2">
-            {SORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {SORT_KEYS.map(value => <option key={value} value={value}>{t(`home.sort.${value}` as any)}</option>)}
           </select>
         </label>
       </div>
 
       {loading ? (
-        <p className="py-12 text-center opacity-60">Chargement du catalogue…</p>
+        <p className="py-12 text-center opacity-60">{t("common.loading")}</p>
       ) : ordered.length === 0 ? (
-        <p className="py-12 text-center opacity-60">Aucun tuteur ne correspond à cette recherche.</p>
+        <p className="py-12 text-center opacity-60">{t("home.empty")}</p>
       ) : (
         <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {ordered.map(card => (
@@ -120,7 +115,7 @@ export default function Catalogue() {
                   className="text-xl font-bold hover:underline">{card.name}</Link>
                 <button
                   onClick={() => setFavorites(toggleFavorite(card.name))}
-                  aria-label={favorites.includes(card.name) ? "Retirer des favoris" : "Mettre en favori"}
+                  aria-label={favorites.includes(card.name) ? t("home.favRemove") : t("home.favAdd")}
                   className="text-2xl text-yellow-400"
                 >
                   {favorites.includes(card.name) ? <MdStar /> : <MdStarBorder />}
@@ -128,21 +123,21 @@ export default function Catalogue() {
               </div>
               <p className="flex-grow text-sm opacity-80">{card.description}</p>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs opacity-70">
-                <span>par {card.authorName}</span>
+                <span>{t("home.by")} {card.authorName}</span>
                 <span className="uppercase">{card.language}</span>
                 <span>v{card.version}</span>
-                <span>{card.usageCount} usage{card.usageCount > 1 ? "s" : ""}</span>
+                <span>{card.usageCount} {t("home.uses")}</span>
                 <span>{formatTokens(card.tokensTotal)}</span>
-                <span>{card.ratingAvg !== null ? `★ ${card.ratingAvg} (${card.ratingCount})` : "pas encore noté"}</span>
+                <span>{card.ratingAvg !== null ? `★ ${card.ratingAvg} (${card.ratingCount})` : t("home.notRated")}</span>
               </div>
               <div className="mt-1 flex gap-2">
                 <button onClick={() => tryPrompt(card.name)}
                   className="flex items-center gap-1 rounded bg-[#DC6521] px-3 py-1.5 text-sm font-bold hover:opacity-90">
-                  <MdPlayArrow /> Essayer
+                  <MdPlayArrow /> {t("home.try")}
                 </button>
                 <Link href={`/p/${encodeURIComponent(card.name)}`}
                   className="rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">
-                  Voir la fiche
+                  {t("home.view")}
                 </Link>
               </div>
             </li>
@@ -150,10 +145,7 @@ export default function Catalogue() {
         </ul>
       )}
 
-      <footer className="mt-12 text-center text-xs opacity-50">
-        Les conversations restent dans votre navigateur. Seuls les prompts socratiques
-        publiés et les compteurs anonymes vivent sur le serveur.
-      </footer>
+      <footer className="mt-12 text-center text-xs opacity-50">{t("home.footer")}</footer>
     </div>
   );
 }

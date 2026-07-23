@@ -6,10 +6,12 @@ import { isProfile, applyProfile, downloadProfile } from "../utils/profile";
 import Conversations from "./Conversations";
 import ButtonContainer from "./ButtonContainer";
 import { useDropzone } from 'react-dropzone';
+import { useT } from "../i18n/useT";
 type Props = {};
 
 export default function ChatSidebar({}: Props) {
   const { resetConversation, clearConversations, importConversation } = useAnthropic();
+  const t = useT();
 
   const handleNewChat = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -75,12 +77,12 @@ export default function ChatSidebar({}: Props) {
             className="flex items-center gap-3 rounded p-3 transition-colors hover:bg-gray-100/10"
           >
             <MdAdd />
-            Nouvelle discussion
+            {t("sidebar.new")}
           </Link>
           <div {...getRootProps()} className={`flex items-center gap-3 rounded p-3 transition-colors hover:bg-gray-100/10 cursor-pointer ${isDragActive ? 'bg-gray-100/20' : ''}`}>
             <input {...getInputProps()} />
             <MdUploadFile />
-            {isDragActive ? "Déposez le fichier" : "Importer une discussion"}
+            {isDragActive ? t("sidebar.drop") : t("sidebar.import")}
           </div>
           {importError && (
             <p role="alert" className="px-3 text-xs text-red-400">{importError}</p>
@@ -92,11 +94,11 @@ export default function ChatSidebar({}: Props) {
         <div className="flex flex-col gap-y-2 border-y border-white/10 py-2">
           <ButtonContainer onClick={() => downloadProfile()}>
             <MdDownload />
-            Exporter tout (profil)
+            {t("sidebar.exportAll")}
           </ButtonContainer>
           <ButtonContainer onClick={clearConversations}>
             <MdDeleteOutline />
-            Tout effacer
+            {t("sidebar.clear")}
           </ButtonContainer>
         </div>
       </div>

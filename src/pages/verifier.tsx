@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
 import { MdArrowBack } from "react-icons/md";
 import { getAccount, storeToken, clearToken } from "../utils/account";
+import { useT } from "../i18n/useT";
 
 // Vérification d'adresse email, sans mot de passe : nom + email → code à deux
 // fois trois chiffres reçu par email → jeton de compte en localStorage.
@@ -11,6 +12,7 @@ import { getAccount, storeToken, clearToken } from "../utils/account";
 // le fragment n'atteint jamais le serveur ni aucun journal.
 export default function VerifierPage() {
   const router = useRouter();
+  const t = useT();
   const [step, setStep] = useState<"request" | "confirm" | "done">("request");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -80,11 +82,8 @@ export default function VerifierPage() {
         </Link>
       </nav>
 
-      <h1 className="text-2xl font-bold">Vérifier mon adresse email</h1>
-      <p className="mt-2 text-sm opacity-80">
-        Aucun mot de passe : un simple code reçu par email vous identifie comme
-        auteur (« promptagogue »). Nécessaire uniquement pour publier des prompts.
-      </p>
+      <h1 className="text-2xl font-bold">{t("verify.title")}</h1>
+      <p className="mt-2 text-sm opacity-80">{t("verify.intro")}</p>
 
       {account && step !== "done" && (
         <p className="mt-4 rounded border border-white/10 bg-secondary p-3 text-sm">
@@ -97,17 +96,17 @@ export default function VerifierPage() {
 
       {step === "request" && (
         <form onSubmit={request} className="mt-6 flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">Votre nom (public, affiché comme auteur)
+          <label className="flex flex-col gap-1 text-sm">{t("verify.name")}
             <input value={name} onChange={e => setName(e.target.value)} required maxLength={80}
               className="rounded bg-tertiary p-2" autoComplete="name" />
           </label>
-          <label className="flex flex-col gap-1 text-sm">Votre email (jamais affiché publiquement)
+          <label className="flex flex-col gap-1 text-sm">{t("verify.email")}
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
               className="rounded bg-tertiary p-2" autoComplete="email" />
           </label>
           <button type="submit" disabled={busy}
             className="mt-2 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">
-            {busy ? "Envoi…" : "Recevoir mon code"}
+            {busy ? "…" : t("verify.getCode")}
           </button>
         </form>
       )}
@@ -123,21 +122,21 @@ export default function VerifierPage() {
                 className="rounded bg-tertiary p-2" autoComplete="email" />
             </label>
           )}
-          <label className="flex flex-col gap-1 text-sm">Code reçu
+          <label className="flex flex-col gap-1 text-sm">{t("verify.code")}
             <input value={code} onChange={e => setCode(e.target.value)} required placeholder="123-456"
               inputMode="numeric" className="rounded bg-tertiary p-2 text-center text-xl tracking-widest" />
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={syncOptin} onChange={e => setSyncOptin(e.target.checked)} />
-            Synchroniser mon profil entre navigateurs (option, stocké sur le serveur)
+            {t("verify.sync")}
           </label>
           <button type="submit" disabled={busy}
             className="mt-2 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">
-            {busy ? "Vérification…" : "Confirmer"}
+            {busy ? "…" : t("verify.confirm")}
           </button>
           <button type="button" onClick={() => { setStep("request"); setCode(""); }}
             className="text-sm underline opacity-70">
-            Redemander un code
+            {t("verify.resend")}
           </button>
         </form>
       )}
@@ -148,7 +147,7 @@ export default function VerifierPage() {
             Adresse vérifiée — bienvenue{name ? `, ${name}` : ""} ! Vous pouvez maintenant publier des prompts socratiques.
           </p>
           <Link href="/publier" className="rounded bg-[#DC6521] px-4 py-2 text-center font-bold hover:opacity-90">
-            Publier un prompt
+            {t("verify.publish")}
           </Link>
           <Link href="/" className="text-center text-sm underline opacity-70">Retour au catalogue</Link>
         </div>
