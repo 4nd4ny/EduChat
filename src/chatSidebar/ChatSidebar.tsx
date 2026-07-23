@@ -1,8 +1,10 @@
 import Link from "next/link";
 import React, { useCallback }  from "react";
-import { MdAdd, MdDeleteOutline, MdDownload, MdUploadFile } from "react-icons/md";
+import { MdAdd, MdDeleteOutline, MdDownload, MdSync, MdUploadFile } from "react-icons/md";
 import { MAX_IMPORT_BYTES, useAnthropic } from "../context/AnthropicProvider";
 import { isProfile, applyProfile, downloadProfile } from "../utils/profile";
+import { syncProfile } from "../utils/profileSync";
+import { getAccount } from "../utils/account";
 import Conversations from "./Conversations";
 import ButtonContainer from "./ButtonContainer";
 import { useDropzone } from 'react-dropzone';
@@ -12,6 +14,22 @@ type Props = {};
 export default function ChatSidebar({}: Props) {
   const { resetConversation, clearConversations, importConversation } = useAnthropic();
   const t = useT();
+  const [syncMessage, setSyncMessage] = React.useState("");
+  const hasAccount = typeof window !== "undefined" && !!getAccount();
+
+  const handleSync = async () => {
+    setSyncMessage("…");
+    const result = await syncProfile();
+    if (result.ok) {
+      setSyncMessage(result.mergedConversations > 0
+        ? `Synchronisé (+${result.mergedConversations} conversation(s))` : "Synchronisé ✓");
+      if (result.mergedConversations > 0) setTimeout(() => window.location.reload(), 800);
+    } else {
+      setSyncMessage(result.reason === "optout"
+        ? "Option de synchronisation non activée (re-vérifiez votre email en la cochant)."
+        : result.reason === "auth" ? "Identifiez-vous d'abord sur /verifier." : "Échec de synchronisation.");
+    }
+  };
 
   const handleNewChat = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -96,6 +114,13 @@ export default function ChatSidebar({}: Props) {
             <MdDownload />
             {t("sidebar.exportAll")}
           </ButtonContainer>
+          {hasAccount && (
+            <ButtonContainer onClick={handleSync}>
+              <MdSync />
+              Synchroniser (serveur)
+            </ButtonContainer>
+          )}
+          {syncMessage && <p className="px-3 text-xs opacity-70">{syncMessage}</p>}
           <ButtonContainer onClick={clearConversations}>
             <MdDeleteOutline />
             {t("sidebar.clear")}

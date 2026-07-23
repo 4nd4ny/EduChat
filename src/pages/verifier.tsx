@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
 import { MdArrowBack } from "react-icons/md";
 import { getAccount, storeToken, clearToken } from "../utils/account";
+import { deleteServerProfile, syncProfile } from "../utils/profileSync";
 import { useT } from "../i18n/useT";
 
 // Vérification d'adresse email, sans mot de passe : nom + email → code à deux
@@ -72,6 +73,9 @@ export default function VerifierPage() {
     }
     storeToken(data.token);
     setStep("done");
+    // Connexion réussie : si l'option est active, on synchronise dans la foulée
+    // (récupère le profil d'un autre navigateur, puis pousse l'état fusionné).
+    if (syncOptin) void syncProfile();
   };
 
   return (
@@ -155,6 +159,15 @@ export default function VerifierPage() {
             {t("verify.publish")}
           </Link>
           <Link href="/" className="text-center text-sm underline opacity-70">Retour au catalogue</Link>
+          <button
+            onClick={async () => {
+              if (window.confirm("Supprimer définitivement votre profil synchronisé du serveur ? (Vos données locales sont conservées.)")) {
+                alert((await deleteServerProfile()) ? "Profil serveur supprimé." : "Échec de la suppression.");
+              }
+            }}
+            className="text-center text-xs underline opacity-50 hover:opacity-100">
+            Supprimer mon profil synchronisé du serveur
+          </button>
         </div>
       )}
 
