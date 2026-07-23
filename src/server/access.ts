@@ -83,10 +83,12 @@ export async function mayUseServerKeys(ip: string): Promise<boolean> {
 }
 
 /**
- * Limitation de débit par IP, sur le modèle de failed_attempts.json
- * (proper-lockfile). Retourne true si la requête doit être REFUSÉE.
+ * Limitation de débit par IP ET par périmètre fonctionnel, sur le modèle de
+ * failed_attempts.json (proper-lockfile). Le périmètre (`scope`) évite qu'une
+ * navigation normale — chat + notes + publication — épuise un compteur commun.
+ * Retourne true si la requête doit être REFUSÉE.
  */
-export async function isRateLimited(ip: string, maxPerMinute = 30): Promise<boolean> {
+export async function isRateLimited(ip: string, maxPerMinute = 30, scope = 'global'): Promise<boolean> {
   const windowMs = 60_000;
   const now = Date.now();
   let release: (() => Promise<void>) | null = null;
@@ -112,14 +114,15 @@ export async function isRateLimited(ip: string, maxPerMinute = 30): Promise<bool
       if (now - data[key].windowStart > windowMs) delete data[key];
     }
 
-    const entry = data[ip];
+    const key = `${scope}|${ip}`;
+    const entry = data[key];
     if (!entry || now - entry.windowStart > windowMs) {
-      data[ip] = { count: 1, windowStart: now };
+      data[key] = { count: 1, windowStart: now };
     } else {
       entry.count += 1;
     }
 
-    const limited = data[ip].count > maxPerMinute;
+    const limited = data[key].count > maxPerMinute;
     await fs.writeFile(RATE_FILE_PATH, JSON.stringify(data), 'utf8');
     return limited;
   } catch (error) {

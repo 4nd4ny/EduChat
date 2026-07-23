@@ -1,15 +1,77 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { listPublished } from '../../../server/prompts';
+import crypto from 'crypto';
+import { getDb } from '../../../server/db';
+import {
+  listPublished, isValidPromptName, getByName,
+  MAX_PROMPT_BYTES, MAX_USER_BYTES,
+} from '../../../server/prompts';
+import { requireAuth } from '../../../server/token';
+import { getClientIp, isRateLimited } from '../../../server/access';
 import { ERR } from '../../../shared/providers';
 
-// Catalogue public des prompts socratiques publiés.
-// GET /api/prompts?sort=score|uses|rating|recent|updated|tokens|name&q=recherche
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', ['GET']);
+export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
+
+// GET  /api/prompts — catalogue public trié en base.
+// POST /api/prompts — créer un BROUILLON (« en construction ») :
+//   - signé (Authorization: Bearer) : rattaché à l'auteur, soumis à son quota de 1 Mo ;
+//   - anonyme : possible (décision client), la validation admin sera le seul filtre,
+//     et seul l'admin pourra le supprimer. L'URL secrète renvoyée est alors
+//     l'unique « clé » du proposant pour tester et soumettre son brouillon.
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'GET') {
+    const sort = String(req.query.sort ?? 'score').slice(0, 16);
+    const q = String(req.query.q ?? '').slice(0, 64).trim();
+    return res.status(200).json({ prompts: listPublished(sort, q) });
+  }
+
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', ['GET', 'POST']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
   }
-  const sort = String(req.query.sort ?? 'score').slice(0, 16);
-  const q = String(req.query.q ?? '').slice(0, 64).trim();
-  res.status(200).json({ prompts: listPublished(sort, q) });
+
+  const ip = getClientIp(req);
+  if (await isRateLimited(ip, 10, 'publish')) {
+    return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
+  }
+
+  const auth = requireAuth(req);
+  const name = String(req.body?.name ?? '').trim();
+  const description = String(req.body?.description ?? '').trim().slice(0, 500);
+  const language = ['fr', 'en', 'it', 'de'].includes(req.body?.language) ? req.body.language : 'fr';
+  const body = String(req.body?.body ?? '');
+  const webSearch = req.body?.webSearch ? 1 : 0;
+  const sizeBytes = Buffer.byteLength(body, 'utf8');
+
+  if (!isValidPromptName(name)) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
+  if (getByName(name)) return res.status(409).json({ error: { code: 'ERR_NAME_TAKEN' } });
+  if (sizeBytes < 40) return res.status(400).json({ error: { code: 'ERR_BODY_TOO_SHORT' } });
+  if (sizeBytes > MAX_PROMPT_BYTES) return res.status(413).json({ error: { code: 'ERR_BODY_TOO_LARGE' } });
+
+  const db = getDb();
+
+  // Quota par utilisateur (1 Mo) — pour les auteurs identifiés uniquement :
+  // l'anonyme n'a pas de compte, la modération a priori est son garde-fou.
+  if (auth) {
+    const used = (db.prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM prompts WHERE author_email = ?')
+      .get(auth.email) as { total: number }).total;
+    if (used + sizeBytes > MAX_USER_BYTES) {
+      return res.status(413).json({ error: { code: 'ERR_QUOTA_USER' } });
+    }
+  }
+
+  const now = Date.now();
+  const shareToken = crypto.randomBytes(16).toString('hex');
+  const info = db.prepare(`
+    INSERT INTO prompts (name, author_email, author_name, language, description, body, version,
+                         status, share_token, web_search, created_at, updated_at, size_bytes)
+    VALUES (@name, @email, @authorName, @language, @description, @body, 1,
+            'draft', @shareToken, @webSearch, @now, @now, @sizeBytes)
+  `).run({
+    name, email: auth?.email ?? null, authorName: auth?.name ?? '',
+    language, description, body, shareToken, webSearch, now, sizeBytes,
+  });
+  db.prepare('INSERT INTO prompt_versions (prompt_id, version, body, created_at) VALUES (?, 1, ?, ?)')
+    .run(info.lastInsertRowid, body, now);
+
+  res.status(201).json({ name, shareToken, status: 'draft' });
 }

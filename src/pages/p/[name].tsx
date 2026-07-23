@@ -111,6 +111,10 @@ export default function PromptPage() {
             className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
             <MdContentCopy /> {copied ? "Lien copié !" : "Recommander (copier le lien)"}
           </button>
+          <Link href={`/publier?variante=${encodeURIComponent(detail.name)}`}
+            className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
+            Proposer une variante
+          </Link>
         </div>
 
         <div className="flex items-center gap-2 pt-2 text-sm">

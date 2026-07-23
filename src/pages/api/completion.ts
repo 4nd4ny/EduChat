@@ -64,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const clientIp = getClientIp(req);
 
   // Limitation de débit par IP (30 requêtes/minute) avant tout traitement coûteux.
-  if (await isRateLimited(clientIp)) {
+  if (await isRateLimited(clientIp, 30, 'completion')) {
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
   }
 

@@ -77,6 +77,10 @@ export default function Catalogue() {
             className="flex items-center gap-2 rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
             <MdSchool /> Espace établissement
           </Link>
+          <Link href="/publier"
+            className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+            Proposer un tuteur
+          </Link>
           <Link href="/rgpd" className="px-2 py-2 text-xs opacity-60 hover:opacity-100">
             Confidentialité
           </Link>

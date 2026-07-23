@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const ip = getClientIp(req);
-  if (await isRateLimited(ip, 10)) {
+  if (await isRateLimited(ip, 10, 'confirm')) {
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
   }
 

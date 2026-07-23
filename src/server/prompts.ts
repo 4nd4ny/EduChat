@@ -62,6 +62,19 @@ export function getPublishedByName(name: string): PromptRow | undefined {
     .get(name) as PromptRow | undefined;
 }
 
+export function getByName(name: string): PromptRow | undefined {
+  return getDb().prepare('SELECT * FROM prompts WHERE name = ?').get(name) as PromptRow | undefined;
+}
+
+export function getByShareToken(token: string): PromptRow | undefined {
+  if (!/^[a-f0-9]{24,64}$/.test(token)) return undefined;
+  return getDb().prepare('SELECT * FROM prompts WHERE share_token = ?').get(token) as PromptRow | undefined;
+}
+
+// Quotas d'upload (exigences n°8) : 256 Ko par prompt, 1 Mo par utilisateur.
+export const MAX_PROMPT_BYTES = 256 * 1024;
+export const MAX_USER_BYTES = 1024 * 1024;
+
 export function isValidPromptName(name: unknown): name is string {
   if (typeof name !== 'string') return false;
   const trimmed = name.trim();

@@ -24,7 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const ip = getClientIp(req);
-  if (await isRateLimited(ip, 5)) {
+  if (await isRateLimited(ip, 5, 'verify')) {
     // Même réponse que le succès : indistincte.
     return res.status(200).json({ ok: true });
   }
