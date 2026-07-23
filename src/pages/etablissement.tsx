@@ -108,6 +108,7 @@ export default function EtablissementPage() {
       </nav>
 
       <h1 className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {etab.name}</h1>
+      <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">Guide des établissements</Link> — accès élèves, quotas, facturation, parcours.</p>
       <p className="mt-1 text-sm opacity-70">
         Vous êtes responsable de cet établissement. Vos élèves accèdent gratuitement à EduChat
         depuis {etab.ips ? "vos adresses réseau" : "le réseau de l'école"}, aux horaires et
