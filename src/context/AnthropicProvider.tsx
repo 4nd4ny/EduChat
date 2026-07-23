@@ -157,7 +157,9 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
       addTokenUsage(Number(data.tokenUsage));
       // Épingle la version du tuteur au premier échange réussi.
       if (data.promptVersion && !promptVersion) setPromptVersion(Number(data.promptVersion));
-      setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
+      const usedProvider = (data.provider && providerDefaults[data.provider as ProviderId]) ? (data.provider as ProviderId) : provider;
+      const label = providerDefaults[usedProvider].label + (data.free ? " (gratuit)" : "");
+      setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: data.reply, model: label }]);
     } catch (exception: any) {
       const message = exception?.message || "Erreur inconnue.";
       setError(message); setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);

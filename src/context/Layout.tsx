@@ -67,8 +67,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <React.Fragment>
       <Head>
         <title>{`EduChat${totalTokens ? ` ${totalTokens}` : ''}`}</title>
-        <meta name="description" content="ChatGPT for Education - Provided by Chamblandes" />
+        <meta name="description" content="EduChat — des tuteurs socratiques pour apprendre en réfléchissant." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Favicon « E » blanc sur fond orange (SVG, honoré par les navigateurs
+            actuels) ; l'.ico historique reste en repli pour les très anciens. */}
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="alternate icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/favicon.svg" />
+        <meta name="theme-color" content="#DC6521" />
       </Head>
 
       {hasChatSidebar ? (

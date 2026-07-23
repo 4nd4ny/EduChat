@@ -3,6 +3,7 @@ import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/acces
 import { getDb, PromptRow } from "../../server/db";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
+import { FreeProvider, FreeModel } from "../../utils/env";
 import {
   ERR,
   isProviderId,
@@ -126,60 +127,75 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // FORCER À OFF pour tout son établissement — jamais la forcer à on.
   let webSearch = promptRow ? !!promptRow.web_search : true;
 
-  // Règle d'accès : clé personnelle toujours acceptée ; clés serveur seulement
-  // si déverrouillé OU IP d'établissement en plage horaire. Aucun repli.
+  // Règle d'accès, par ordre de priorité :
+  //  1. clé personnelle (BYOK) → toujours acceptée, avec le fournisseur/modèle du client ;
+  //  2. site déverrouillé OU IP d'établissement en plage horaire → clé interne
+  //     du fournisseur choisi, soumise aux quotas (facturée, journalisée avec l'IP) ;
+  //  3. REPLI GRATUIT public → fournisseur + modèle gratuits configurés
+  //     (SECRET_FREE_PROVIDER / SECRET_FREE_MODEL), avec la clé serveur de ce
+  //     fournisseur : le site « marche un peu » sans rien saisir. JAMAIS journalisé
+  //     avec l'IP (pas d'établissement, pas de donnée personnelle) ;
+  //  4. sinon → verrouillé (401).
   const personalKey = String(body.apiKey || "").trim();
   let apiKey = personalKey;
-  const usedServerKey = !personalKey;
-  const etab = usedServerKey ? resolveEtablissementByIp(clientIp) : null;
-  const etablissementId = etab?.id ?? null;
-  // Pseau du quota par élève : le clientId anonyme s'il est valide, SINON l'IP
-  // elle-même — de sorte qu'omettre ou trafiquer le clientId ne contourne pas
-  // le quota (il rejoint alors le pot commun de l'IP) plutôt que de l'annuler.
-  const studentBucket = etab ? (clientId || `ip:${clientIp}`) : "";
-
-  // Réglages de session actifs de l'établissement (étape 14) : override de la
-  // recherche web + attribution de la consommation à l'enseignant qui a ouvert
-  // la session (bilan mensuel par enseignant).
+  let effProvider: ProviderId = provider;   // fournisseur RÉELLEMENT utilisé
+  let effModel = model;                      // modèle RÉELLEMENT utilisé
+  let usedServerKey = false;                 // clé interne (établissement/déverrouillé) → journal + IP
+  let usedFreeKey = false;                   // clé gratuite publique → journal sans IP
+  let etablissementId: number | null = null;
+  let studentBucket = "";
   let teacherEmail: string | null = null;
-  if (etablissementId) {
-    const settings = getDb().prepare(
-      'SELECT web_search, set_by_email FROM session_settings WHERE etablissement_id = ? AND expires_at > ?')
-      .get(etablissementId, Date.now()) as { web_search: number; set_by_email: string | null } | undefined;
-    if (settings) {
-      if (!settings.web_search) webSearch = false;
-      teacherEmail = settings.set_by_email;
-    }
-  }
 
-  if (!apiKey) {
-    if (!(await mayUseServerKeys(clientIp))) {
+  if (!personalKey) {
+    const etab = resolveEtablissementByIp(clientIp);
+    etablissementId = etab?.id ?? null;
+    // Pot du quota par élève : clientId anonyme si valide, SINON l'IP — omettre
+    // ou trafiquer le clientId rejoint le pot commun de l'IP, sans annuler le quota.
+    studentBucket = etab ? (clientId || `ip:${clientIp}`) : "";
+
+    // Réglages de session actifs (étape 14) : override recherche web + attribution enseignant.
+    if (etablissementId) {
+      const settings = getDb().prepare(
+        'SELECT web_search, set_by_email FROM session_settings WHERE etablissement_id = ? AND expires_at > ?')
+        .get(etablissementId, Date.now()) as { web_search: number; set_by_email: string | null } | undefined;
+      if (settings) {
+        if (!settings.web_search) webSearch = false;
+        teacherEmail = settings.set_by_email;
+      }
+    }
+
+    if (await mayUseServerKeys(clientIp)) {
+      usedServerKey = true;
+      // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC).
+      if (etab && etab.token_quota_monthly > 0) {
+        const now = new Date();
+        const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+        const used = (getDb().prepare(
+          'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE etablissement_id = ? AND ts >= ?')
+          .get(etab.id, monthStart) as { total: number }).total;
+        if (used >= etab.token_quota_monthly) {
+          return res.status(429).json({ error: { code: 'ERR_QUOTA_ETABLISSEMENT' } });
+        }
+      }
+      // Quota QUOTIDIEN PAR ÉLÈVE (0 = illimité, jour UTC).
+      if (etab && etab.quota_per_student_daily > 0) {
+        if (studentDayUsage(etab.id, studentBucket) >= etab.quota_per_student_daily) {
+          return res.status(429).json({ error: { code: 'ERR_QUOTA_ELEVE' } });
+        }
+      }
+      apiKey = String(developerKeys[provider] || "").trim();
+      if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
+    } else if (isProviderId(FreeProvider) && String(developerKeys[FreeProvider as ProviderId] || "").trim()) {
+      // Repli gratuit public : on IMPOSE le fournisseur et le modèle gratuits,
+      // quel que soit le choix du client (qui n'a pas fourni de clé).
+      usedFreeKey = true;
+      effProvider = FreeProvider as ProviderId;
+      effModel = (FreeModel || providerDefaults[effProvider].model).slice(0, 128);
+      webSearch = false; // le petit modèle gratuit ne fait pas de recherche web
+      apiKey = String(developerKeys[effProvider] || "").trim();
+    } else {
       return res.status(401).json({ error: { code: ERR.LOCKED } });
     }
-    // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC) : la clé
-    // interne cesse de répondre quand le budget est épuisé.
-    if (etab && etab.token_quota_monthly > 0) {
-      const now = new Date();
-      const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-      const used = (getDb().prepare(
-        'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE etablissement_id = ? AND ts >= ?')
-        .get(etab.id, monthStart) as { total: number }).total;
-      if (used >= etab.token_quota_monthly) {
-        return res.status(429).json({ error: { code: 'ERR_QUOTA_ETABLISSEMENT' } });
-      }
-    }
-    // Quota QUOTIDIEN PAR ÉLÈVE (0 = illimité, jour UTC), défini par le
-    // responsable. L'« élève » est un navigateur anonyme (studentBucket) :
-    // contournable en vidant le stockage ou en tournant l'identifiant, assumé
-    // comme « assez bon » dans le modèle de confiance d'une classe — le plafond
-    // MENSUEL reste le vrai garde-fou budgétaire (à définir non nul).
-    if (etab && etab.quota_per_student_daily > 0) {
-      if (studentDayUsage(etab.id, studentBucket) >= etab.quota_per_student_daily) {
-        return res.status(429).json({ error: { code: 'ERR_QUOTA_ELEVE' } });
-      }
-    }
-    apiKey = String(developerKeys[provider] || "").trim();
-    if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
   }
 
   const cleanMessages = messages
@@ -194,45 +210,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     let data: any;
 
-    if (provider === "openai" || provider === "grok") {
-      data = await requestJson(provider === "openai" ? "https://api.openai.com/v1/responses" : "https://api.x.ai/v1/responses", {
+    if (effProvider === "openai" || effProvider === "grok") {
+      data = await requestJson(effProvider === "openai" ? "https://api.openai.com/v1/responses" : "https://api.x.ai/v1/responses", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model,
+          model: effModel,
           input: withSystem,
           reasoning: { effort: reasoning },
-          ...(webSearch ? { tools: [{ type: provider === "openai" ? "web_search_preview" : "web_search" }] } : {}),
+          ...(webSearch ? { tools: [{ type: effProvider === "openai" ? "web_search_preview" : "web_search" }] } : {}),
         }),
       });
-    } else if (provider === "anthropic") {
+    } else if (effProvider === "anthropic") {
       const budgets: Record<ReasoningLevel, number> = { low: 1024, medium: 4096, high: 8192 };
       data = await requestJson("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "content-type": "application/json" },
         body: JSON.stringify({
-          model, messages: cleanMessages, max_tokens: Math.max(4096, budgets[reasoning] + 2048),
+          model: effModel, messages: cleanMessages, max_tokens: Math.max(4096, budgets[reasoning] + 2048),
           ...(system ? { system } : {}),
           thinking: { type: "enabled", budget_tokens: budgets[reasoning] },
           ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search" }] } : {}),
         }),
       });
-    } else if (provider === "gemini") {
+    } else if (effProvider === "gemini") {
       data = await requestJson("https://generativelanguage.googleapis.com/v1beta/interactions", {
         method: "POST",
         headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model, input: withSystem,
+          model: effModel, input: withSystem,
           ...(webSearch ? { tools: [{ type: "google_search" }] } : {}),
           reasoning: { effort: reasoning },
         }),
       });
-    } else if (provider === "openrouter") {
+    } else if (effProvider === "openrouter") {
       data = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model, messages: withSystem, reasoning: { effort: reasoning },
+          model: effModel, messages: withSystem, reasoning: { effort: reasoning },
           ...(webSearch ? { tools: [{ type: "openrouter:web_search" }] } : {}),
         }),
       });
@@ -241,7 +257,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model, inputs: withSystem,
+          model: effModel, inputs: withSystem,
           ...(webSearch ? { tools: [{ type: "web_search" }] } : {}),
           completion_args: { temperature: reasoning === "low" ? 0.2 : 0.5 },
         }),
@@ -262,10 +278,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             .run(tokenUsage, promptRow.id);
         }
         if (usedServerKey) {
+          // Clé interne : journalisée AVEC l'IP d'établissement (facturation).
           db.prepare(`
             INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, provider, model, tokenUsage, studentBucket);
+          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, effProvider, effModel, tokenUsage, studentBucket);
+        } else if (usedFreeKey) {
+          // Clé gratuite publique : journalisée SANS IP ni établissement (suivi
+          // du budget gratuit uniquement, aucune donnée personnelle).
+          db.prepare(`
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
+            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, 1, '')
+          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage);
         }
       })();
     } catch (statsError) {
@@ -276,6 +300,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       reply: textFromResponse(data),
       tokenUsage,
+      provider: effProvider,
+      free: usedFreeKey,
       ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
     });
   } catch (error: any) {

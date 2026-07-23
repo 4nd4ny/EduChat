@@ -44,6 +44,14 @@ export const TrustedProxyIps: string[] = (process.env.TRUSTED_PROXY_IPS || '')
 export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS || 'blanvillain@harmonia.education')
   .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
+// Repli GRATUIT public : quand aucune clé personnelle n'est saisie et que la
+// session n'est pas déverrouillée, le site répond quand même via ce fournisseur
+// et ce modèle gratuits, en utilisant la clé serveur de ce fournisseur
+// (typiquement SECRET_OPENROUTER_API_KEY, plafonnée chez le fournisseur).
+// Vide = pas de repli (comportement verrouillé historique).
+export const FreeProvider: string = (process.env.SECRET_FREE_PROVIDER || '').trim();
+export const FreeModel: string = (process.env.SECRET_FREE_MODEL || '').trim();
+
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(25[0-5]|2[0-4]\d|[01]?\d\d?)\.((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){2}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
