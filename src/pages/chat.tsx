@@ -7,16 +7,23 @@ import { useAnthropic } from "../context/AnthropicProvider";
 // Le tuteur choisi au catalogue arrive par ?tuteur=Nom (ou via le contexte).
 export default function ChatPage() {
   const router = useRouter();
-  const { promptName, setPromptName, clearConversation } = useAnthropic();
+  const { promptName, setPromptName, shareToken, setShareToken, clearConversation } = useAnthropic();
 
   useEffect(() => {
     if (!router.isReady) return;
     const fromQuery = typeof router.query.tuteur === "string" ? router.query.tuteur : "";
-    if (fromQuery && fromQuery !== promptName) {
+    const essai = typeof router.query.essai === "string" ? router.query.essai : "";
+    if (essai && essai !== shareToken) {
+      // Test d'un brouillon via son URL secrète : le serveur résout le prompt
+      // par jeton, le nom affiché reste celui du brouillon.
+      setPromptName("");
+      setShareToken(essai);
+      clearConversation();
+    } else if (fromQuery && fromQuery !== promptName) {
       setPromptName(fromQuery);
       clearConversation(); // un nouveau tuteur = une nouvelle conversation
     }
-  }, [router.isReady, router.query.tuteur]);
+  }, [router.isReady, router.query.tuteur, router.query.essai]);
 
   return <ChatMessages />;
 }

@@ -9,6 +9,10 @@ export type Conversation = {
   createdAt: number; // Unix timestamp
   lastMessage: number; // Unix timestamp
   messages: ChatMessage[];
+  // Tuteur socratique de la conversation : le nom ET la version, figée au
+  // premier échange — une conversation ne change JAMAIS de version toute seule.
+  promptName?: string;
+  promptVersion?: number;
 };
 
 export type History = Record<string, Conversation>;

@@ -70,6 +70,8 @@ type Context = {
   provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
   apiKey: string; setApiKey: (value: string) => void; reasoning: ReasoningLevel; setReasoning: (value: ReasoningLevel) => void;
   promptName: string; setPromptName: (value: string) => void;
+  promptVersion: number; switchPromptVersion: (version: number) => void;
+  shareToken: string; setShareToken: (value: string) => void;
   conversationId: string; conversationName: string; updateConversationName: (id: string, name: string) => void;
   generateTitle: () => void; loadConversation: (id: string, conversation: Conversation) => void; importConversation: (jsonData: any) => void;
   resetConversation: () => void; deleteConversation: (id: string) => void; deleteMessagesFromIndex: (index: number) => void;
@@ -82,6 +84,8 @@ const ChatContext = React.createContext<Context>({
   provider: "anthropic", setProvider: noop as any, model: providerDefaults.anthropic.model, setModel: noop as any,
   apiKey: "", setApiKey: noop as any, reasoning: "medium", setReasoning: noop as any,
   promptName: "", setPromptName: noop as any,
+  promptVersion: 0, switchPromptVersion: noop as any,
+  shareToken: "", setShareToken: noop as any,
   conversationId: "", conversationName: "", updateConversationName: noop as any, generateTitle: noop,
   loadConversation: noop as any, importConversation: noop as any, resetConversation: noop, deleteConversation: noop as any,
   deleteMessagesFromIndex: noop as any, clearConversation: noop, conversations: {}, clearConversations: noop, error: "",
@@ -96,7 +100,21 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const [apiKey, setApiKey] = useState("");
   const [reasoning, setReasoning] = useState<ReasoningLevel>("medium");
   // Tuteur socratique actif — le CŒUR de l'expérience (pivot v3). Vide = chat libre.
-  const [promptName, setPromptName] = useState("");
+  const [promptName, setPromptNameState] = useState("");
+  // Version épinglée par la conversation (0 = version courante au 1er échange).
+  const [promptVersion, setPromptVersion] = useState(0);
+  // URL secrète d'un brouillon en cours de test (étape 7).
+  const [shareToken, setShareToken] = useState("");
+
+  // Changer de tuteur remet la version et le mode essai à zéro.
+  const setPromptName = useCallback((value: string) => {
+    setPromptNameState(value);
+    setPromptVersion(0);
+    setShareToken("");
+  }, []);
+
+  // Bascule de version : action EXPLICITE de l'utilisateur (décision n°9).
+  const switchPromptVersion = useCallback((version: number) => setPromptVersion(version), []);
   const [conversationId, setConversationId] = useState("");
   const [conversationName, setConversationName] = useState("...");
   const [conversations, setConversations] = useState<History>({});
@@ -105,7 +123,10 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   useEffect(() => setConversations(getHistory()), []);
   useEffect(() => {
     if (!messages.length) return;
-    const conversation: Conversation = { name: conversationName || "...", createdAt: Date.now(), lastMessage: Date.now(), messages: messages as any };
+    const conversation: Conversation = {
+      name: conversationName || "...", createdAt: Date.now(), lastMessage: Date.now(), messages: messages as any,
+      ...(promptName ? { promptName, promptVersion } : {}),
+    };
     const id = storeConversation(conversationId, conversation);
     setConversationId(id); setConversations(previous => ({ ...previous, [id]: conversation }));
     if (router.pathname === "/chat" || router.pathname === "/school") router.push(`/chat/${id}`);
@@ -126,19 +147,26 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     setLoading(true); setError("");
     try {
       const response = await fetch("/api/completion", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, model, apiKey, reasoning, promptName: promptName || undefined, messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
+        body: JSON.stringify({
+          provider, model, apiKey, reasoning,
+          promptName: promptName || undefined,
+          promptVersion: promptVersion || undefined,
+          shareToken: shareToken || undefined,
+          messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
       const data = await response.json();
       if (!response.ok) {
         const code = data?.error?.code as string | undefined;
         throw new Error((code && errorMessages[code]) || "La réponse a échoué.");
       }
       addTokenUsage(Number(data.tokenUsage));
+      // Épingle la version du tuteur au premier échange réussi.
+      if (data.promptVersion && !promptVersion) setPromptVersion(Number(data.promptVersion));
       setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: data.reply, model: providerDefaults[provider].label }]);
     } catch (exception: any) {
       const message = exception?.message || "Erreur inconnue.";
       setError(message); setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
     } finally { setLoading(false); }
-  }, [provider, model, apiKey, reasoning, promptName]);
+  }, [provider, model, apiKey, reasoning, promptName, promptVersion, shareToken]);
 
   const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user") => {
     const value = content.trim(); if (!value) return;
@@ -149,7 +177,10 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const clearConversation = useCallback(() => { setMessages([]); setConversationId(""); }, []);
   const deleteConversation = useCallback((id: string) => { deleteConversationFromHistory(id); setConversations(previous => { const { [id]: _, ...rest } = previous; return rest; }); if (id === conversationId) clearConversation(); }, [conversationId, clearConversation]);
   const clearConversations = useCallback(() => { clearHistory(); setMessages([]); setConversationId(""); setConversations({}); router.push("/"); }, [router]);
-  const loadConversation = useCallback((id: string, conversation: Conversation) => { setConversationId(id); setConversationName(conversation.name); setMessages(conversation.messages as any); }, []);
+  const loadConversation = useCallback((id: string, conversation: Conversation) => {
+    setConversationId(id); setConversationName(conversation.name); setMessages(conversation.messages as any);
+    setPromptNameState(conversation.promptName || ""); setPromptVersion(conversation.promptVersion || 0); setShareToken("");
+  }, []);
   const importConversation = useCallback((jsonData: any) => {
     try {
       const messages = parseImportedMessages(jsonData);
@@ -166,7 +197,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     }
   }, [loadConversation, router]);
 
-  const value = useMemo(() => ({ loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, promptName, setPromptName, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
+  const value = useMemo(() => ({ loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 

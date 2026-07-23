@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
+import { getDb, PromptRow } from "../../server/db";
+import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import {
   ERR,
   isProviderId,
@@ -11,8 +13,8 @@ import {
 
 type Message = { role: "user" | "assistant"; content: string };
 
-// Runtime Node (et non edge) : indispensable pour lire auth_lock.json sur le
-// disque avant de dépenser les clés du serveur, et requis par SQLite à l'étape 4.
+// Runtime Node (et non edge) : indispensable pour lire auth_lock.json et la
+// base SQLite avant de dépenser les clés du serveur.
 export const config = {
   api: { bodyParser: { sizeLimit: "100kb" } },
 };
@@ -55,6 +57,41 @@ async function requestJson(url: string, init: RequestInit) {
   return data;
 }
 
+/**
+ * Résout le tuteur socratique demandé, côté serveur exclusivement :
+ * - par NOM : prompts publiés uniquement, dans la VERSION mémorisée par la
+ *   conversation (bascule de version toujours explicite — décision n°9) ;
+ * - par URL SECRÈTE (shareToken) : brouillons « en construction », pour le
+ *   flux de test de l'étape 7 ; jamais les pending/retired par nom.
+ */
+function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string):
+  { row: PromptRow; system: string } | 'unknown' | null {
+  if (shareToken) {
+    const row = getByShareToken(shareToken);
+    if (!row) return 'unknown';
+    return { row, system: row.body };
+  }
+  if (!promptName) return null;
+  const row = getPublishedByName(promptName);
+  if (!row) return 'unknown';
+  if (promptVersion > 0 && promptVersion !== row.version) {
+    const old = getDb().prepare('SELECT body FROM prompt_versions WHERE prompt_id = ? AND version = ?')
+      .get(row.id, promptVersion) as { body: string } | undefined;
+    if (old) return { row, system: old.body };
+  }
+  return { row, system: row.body };
+}
+
+/** IP → établissement (facturation). Les IP sont déclarées en base (étape 9) ;
+ *  SECRET_ALLOWED_IPS reste l'amorçage : IP connue mais absente de la base → null. */
+function resolveEtablissementId(ip: string): number | null {
+  const rows = getDb().prepare('SELECT id, ips FROM etablissements').all() as Array<{ id: number; ips: string }>;
+  for (const row of rows) {
+    if (row.ips.split(',').map(s => s.trim()).includes(ip)) return row.id;
+  }
+  return null;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -62,8 +99,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const clientIp = getClientIp(req);
-
-  // Limitation de débit par IP (30 requêtes/minute) avant tout traitement coûteux.
   if (await isRateLimited(clientIp, 30, 'completion')) {
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
   }
@@ -72,43 +107,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const provider = body.provider;
   const messages = body.messages as Message[];
   const reasoning: ReasoningLevel = isReasoningLevel(body.reasoning) ? body.reasoning : "medium";
+  const promptName = String(body.promptName ?? "").slice(0, 64);
+  const promptVersion = Number.isInteger(body.promptVersion) ? Number(body.promptVersion) : 0;
+  const shareToken = String(body.shareToken ?? "").slice(0, 64);
 
-  if (!isProviderId(provider)) {
-    return res.status(400).json({ error: { code: ERR.PROVIDER } });
-  }
+  if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: { code: ERR.EMPTY } });
   }
 
   const model = String(body.model || providerDefaults[provider].model).trim();
-  if (!model || model.length > 128) {
-    return res.status(400).json({ error: { code: ERR.MODEL } });
-  }
+  if (!model || model.length > 128) return res.status(400).json({ error: { code: ERR.MODEL } });
 
-  // Règle d'accès : une clé personnelle (BYOK) est TOUJOURS acceptée. Sinon, les
-  // clés du serveur ne sont servies que si le site est déverrouillé, ou depuis une
-  // IP d'établissement pendant une plage horaire autorisée. Aucun repli silencieux
-  // de l'une vers l'autre.
+  // Tuteur socratique : résolu et injecté CÔTÉ SERVEUR — le texte du prompt ne
+  // transite jamais par le client pendant le chat.
+  const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken);
+  if (resolved === 'unknown') return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
+  const system = resolved?.system ?? "";
+  const promptRow = resolved?.row ?? null;
+
+  // Recherche web : décidée par le PROMPTAGOGUE pour un tuteur (champ
+  // web_search, désactivé par défaut — économie de tokens) ; activée pour le
+  // chat libre (comportement historique). L'override par session prof
+  // arrivera à l'étape 14.
+  const webSearch = promptRow ? !!promptRow.web_search : true;
+
+  // Règle d'accès : clé personnelle toujours acceptée ; clés serveur seulement
+  // si déverrouillé OU IP d'établissement en plage horaire. Aucun repli.
   const personalKey = String(body.apiKey || "").trim();
   let apiKey = personalKey;
+  const usedServerKey = !personalKey;
 
   if (!apiKey) {
     if (!(await mayUseServerKeys(clientIp))) {
       return res.status(401).json({ error: { code: ERR.LOCKED } });
     }
     apiKey = String(developerKeys[provider] || "").trim();
-    if (!apiKey) {
-      return res.status(503).json({ error: { code: ERR.NO_KEY } });
-    }
+    if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
   }
 
   const cleanMessages = messages
     .filter(m => m && (m.role === "user" || m.role === "assistant"))
     .map(({ role, content }) => ({ role, content: String(content) }));
+  if (!cleanMessages.length) return res.status(400).json({ error: { code: ERR.EMPTY } });
 
-  if (!cleanMessages.length) {
-    return res.status(400).json({ error: { code: ERR.EMPTY } });
-  }
+  // Pour les API à liste de messages, le prompt système est un message system
+  // en tête ; Anthropic a son champ `system` dédié.
+  const withSystem = system ? [{ role: "system", content: system }, ...cleanMessages] : cleanMessages;
 
   try {
     let data: any;
@@ -119,9 +164,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
-          input: cleanMessages,
+          input: withSystem,
           reasoning: { effort: reasoning },
-          tools: [{ type: provider === "openai" ? "web_search_preview" : "web_search" }],
+          ...(webSearch ? { tools: [{ type: provider === "openai" ? "web_search_preview" : "web_search" }] } : {}),
         }),
       });
     } else if (provider === "anthropic") {
@@ -131,34 +176,73 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "content-type": "application/json" },
         body: JSON.stringify({
           model, messages: cleanMessages, max_tokens: Math.max(4096, budgets[reasoning] + 2048),
+          ...(system ? { system } : {}),
           thinking: { type: "enabled", budget_tokens: budgets[reasoning] },
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search" }] } : {}),
         }),
       });
     } else if (provider === "gemini") {
       data = await requestJson("https://generativelanguage.googleapis.com/v1beta/interactions", {
         method: "POST",
         headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, input: cleanMessages, tools: [{ type: "google_search" }], reasoning: { effort: reasoning } }),
+        body: JSON.stringify({
+          model, input: withSystem,
+          ...(webSearch ? { tools: [{ type: "google_search" }] } : {}),
+          reasoning: { effort: reasoning },
+        }),
       });
     } else if (provider === "openrouter") {
       data = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: cleanMessages, reasoning: { effort: reasoning }, tools: [{ type: "openrouter:web_search" }] }),
+        body: JSON.stringify({
+          model, messages: withSystem, reasoning: { effort: reasoning },
+          ...(webSearch ? { tools: [{ type: "openrouter:web_search" }] } : {}),
+        }),
       });
     } else {
       data = await requestJson("https://api.mistral.ai/v1/conversations", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, inputs: cleanMessages, tools: [{ type: "web_search" }], completion_args: { temperature: reasoning === "low" ? 0.2 : 0.5 } }),
+        body: JSON.stringify({
+          model, inputs: withSystem,
+          ...(webSearch ? { tools: [{ type: "web_search" }] } : {}),
+          completion_args: { temperature: reasoning === "low" ? 0.2 : 0.5 },
+        }),
       });
     }
 
-    return res.status(200).json({ reply: textFromResponse(data), tokenUsage: usageFromResponse(data) });
+    const tokenUsage = usageFromResponse(data);
+
+    // Statistiques — uniquement après une complétion RÉUSSIE :
+    // compteurs publics du tuteur + journal de consommation. Le journal ne
+    // porte l'IP que pour la clé INTERNE (donnée de facturation d'un
+    // établissement scolaire) — jamais pour les clés personnelles.
+    try {
+      const db = getDb();
+      db.transaction(() => {
+        if (promptRow) {
+          db.prepare('UPDATE prompts SET usage_count = usage_count + 1, tokens_total = tokens_total + ? WHERE id = ?')
+            .run(tokenUsage, promptRow.id);
+        }
+        if (usedServerKey) {
+          db.prepare(`
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key)
+            VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 1)
+          `).run(Date.now(), clientIp, resolveEtablissementId(clientIp), promptRow?.id ?? null, provider, model, tokenUsage);
+        }
+      })();
+    } catch (statsError) {
+      console.error('Statistiques non enregistrées :', statsError);
+      // La réponse de chat n'est jamais sacrifiée pour une statistique.
+    }
+
+    return res.status(200).json({
+      reply: textFromResponse(data),
+      tokenUsage,
+      ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
+    });
   } catch (error: any) {
-    // Le détail du fournisseur est journalisé côté serveur, jamais renvoyé tel quel
-    // au client (il peut contenir des informations d'infrastructure).
     console.error(`Erreur du fournisseur ${provider} :`, error?.message);
     return res.status(502).json({ error: { code: ERR.UPSTREAM } });
   }

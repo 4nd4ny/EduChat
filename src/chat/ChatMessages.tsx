@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import ChatInput from "./ChatInput";
 import ChatMessage from "./ChatMessage";
 import ChatPlaceholder from "./ChatPlaceholder";
+import TutorBanner from "./TutorBanner";
 import { useAnthropic } from "../context/AnthropicProvider";
 
 export default function ChatMessages() {
@@ -79,6 +80,7 @@ export default function ChatMessages() {
 
   return (
     <div className="flex h-full w-full flex-col items-stretch md:pl-[320px]">
+      <TutorBanner />
       <div
         className="relative flex-1 flex-col items-stretch overflow-auto border-b bg-tertiary pb-[10rem] scrollbar scrollbar-w-3 scrollbar-thumb-[rgb(var(--bg-primary))] scrollbar-track-[rgb(var(--bg-secondary))] scrollbar-thumb-rounded-full"
         ref={messageContainer}
