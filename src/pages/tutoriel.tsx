@@ -81,6 +81,9 @@ function Mindmap() {
         theme: MindElixir.DARK_THEME,     // s'accorde au thème sombre du site
       });
       instance.init({ nodeData });
+      // Ajuste le zoom pour que TOUTE la carte tienne dans le cadre, centrée
+      // (sinon l'ouverture n'affiche que les branches d'un côté).
+      requestAnimationFrame(() => { try { instance.scaleFit(); } catch { /* rendu pas prêt */ } });
       // Clic sur un nœud → navigation.
       instance.bus.addListener("selectNewNode", (node: any) => {
         const target = targets[node?.id];
