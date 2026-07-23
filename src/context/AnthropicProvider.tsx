@@ -21,6 +21,8 @@ const errorMessages: Record<string, string> = {
   ERR_NO_API_KEY: "Aucune clé API n'est configurée sur le serveur pour ce fournisseur.",
   ERR_EMPTY_CONVERSATION: "La conversation est vide.",
   ERR_UPSTREAM: "Le fournisseur d'IA n'a pas répondu correctement.",
+  ERR_QUOTA_ETABLISSEMENT: "Le quota mensuel de tokens de votre établissement est épuisé. Contactez votre enseignant, ou utilisez votre clé personnelle.",
+  ERR_PROMPT_UNKNOWN: "Ce tuteur n'existe pas ou n'est plus publié.",
 };
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2 Mo

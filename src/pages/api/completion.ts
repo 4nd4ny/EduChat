@@ -137,10 +137,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const personalKey = String(body.apiKey || "").trim();
   let apiKey = personalKey;
   const usedServerKey = !personalKey;
+  const etablissementId = usedServerKey ? resolveEtablissementId(clientIp) : null;
 
   if (!apiKey) {
     if (!(await mayUseServerKeys(clientIp))) {
       return res.status(401).json({ error: { code: ERR.LOCKED } });
+    }
+    // Quota mensuel de l'établissement (défini par l'admin, étape 9) : la clé
+    // interne cesse de répondre quand le budget du mois est épuisé. Quota 0 =
+    // illimité. Mois en UTC, remise à zéro automatique au 1er.
+    if (etablissementId) {
+      const etab = getDb().prepare('SELECT token_quota_monthly FROM etablissements WHERE id = ?')
+        .get(etablissementId) as { token_quota_monthly: number } | undefined;
+      if (etab && etab.token_quota_monthly > 0) {
+        const now = new Date();
+        const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+        const used = (getDb().prepare(
+          'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE etablissement_id = ? AND ts >= ?')
+          .get(etablissementId, monthStart) as { total: number }).total;
+        if (used >= etab.token_quota_monthly) {
+          return res.status(429).json({ error: { code: 'ERR_QUOTA_ETABLISSEMENT' } });
+        }
+      }
     }
     apiKey = String(developerKeys[provider] || "").trim();
     if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
@@ -229,7 +247,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           db.prepare(`
             INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key)
             VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 1)
-          `).run(Date.now(), clientIp, resolveEtablissementId(clientIp), promptRow?.id ?? null, provider, model, tokenUsage);
+          `).run(Date.now(), clientIp, etablissementId, promptRow?.id ?? null, provider, model, tokenUsage);
         }
       })();
     } catch (statsError) {
