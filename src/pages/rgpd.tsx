@@ -1,36 +1,182 @@
+import Head from "next/head";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import React from "react";
-import { NextPage } from "next";
-import { TbHome } from "react-icons/tb";
+import { MdArrowBack } from "react-icons/md";
 
-const rgpd: NextPage = () => {
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-          <div className="text-layer text-xs p-8 rounded-lg overflow-auto max-h-screen">
-            <h1><big>Politique de Confidentialité</big></h1>
-            <br/>
-            <p><strong>Respect du RGPD et de la nLPD</strong><br/>
-            Je me suis engagé à respecter le <a href="https://www.cnil.fr/fr/reglement-europeen-protection-donnees" target="_blank" rel="noopener noreferrer" className="text-blue-500">Règlement Général sur la Protection des Données (RGPD)</a> et la <a href="https://www.kmu.admin.ch/kmu/fr/home/faits-et-tendances/digitalisation/protection-des-donnees/nouvelle-loi-sur-la-protection-des-donnees-nlpd.html" target="_blank" rel="noopener noreferrer" className="text-blue-500">nouvelle Loi pour la Protection des Données (nLPD)</a>. Pour cela, j'ai pris des mesures pour garantir l'anonymat de vos visites sur ce site. Voici les actions que j'ai mises en place.</p>
-            <br/>
-            <p><strong>1. Pas d'historique de vos conversations</strong><br/>
-            Je ne conserve aucune trace de vos interactions. Vos conversations avec ChatGPT ne sont pas enregistrées sur le serveur. Elles ne sont conservées que dans la mémoire du navigateur que vous avez utilisé pour vous connecter sur le site. Pensez à les exporter avant de fermer votre navigateur. Une mise à jour de votre poste de travail pourrait les supprimer.</p>
-            <br/>
-            <p><strong>2. Pas de collecte d'adresses IP</strong><br/>
-            Votre adresse IP (un identifiant unique de votre connexion à Internet) est nécessaire pour que chaque page web que vous consultez sur Internet soit acheminée jusqu'à votre navigateur. Par défaut, tous les serveurs web enregistrent votre adresse IP lorsque vous consultez une ressource en ligne. J'ai désactivé cette fonctionnalité sur le serveur. Cela signifie que je ne stocke pas votre adresse IP dans les journaux de navigation rendant ainsi vos visites anonymes.<br/>
-            <br/>  
-            Voici <a href="http://167.114.159.114/httpd.conf" target="_blank" rel="noopener noreferrer" className="text-blue-500">le fichier de configuration du serveur</a> (cherchez 'anonymized') et <a href="http://167.114.159.114/educh-at.log" target="_blank" rel="noopener noreferrer" className="text-blue-500">un extrait dynamique des logs générés</a> grâce à cette configuration. Cet ajustement permet de protéger la confidentialité de votre adresse IP qui est la même pour tous les postes-écoles. Le seul contrôle qui est réalisé est donc de vérifier que vous vous connectez bien depuis l'école. Vous pouvez vérifier auprès des <a href="https://github.com/4nd4ny/EduChat/" target="_blank" rel="noopener noreferrer" className="text-blue-500">sources de ce projet </a>. La seule adresse IP collectée, que je conserve pendant un temps limité à des fins de sécurité, est la mienne lorsque je saisis le mot de passe pour déverrouiller le site. Or, comme c'est moi qui aie développé le site, il est fort probable que je sois en accord avec les conditions d'usage que suis présentement en train de rédiger.</p>
-            <br/>
-            <p><strong>3. Pas de cookies d'authentification et donc pas d'accès protégé possible en dehors de l'école</strong><br/>
-            Pour garantir votre anonymat et respecter pleinement les exigences du RGPD, je n’utilise aucun cookie sur ce site. Les cookies sont de petits fichiers qui vous évitent de saisir un mot de passe à chaque changement de page web sur un même site. Sans cookies, il m'est impossible de vous donner accès à ce site en dehors de l'école, même si vous vous connectez avec le wifi depuis l'école avant de rentrer chez vous. En tant qu'enseignant bénévole vous offrant ce service gratuitement financé sur mes fonds propres, je n'ai en effet pas les moyens de pouvoir assurer le respect du RGPD si j'utilisais un cookie d'authentification, chose qui est obligatoire si je décidais de vous donner accès à Claude Anthropic en dehors de l'école.<br/>
-            <br/>
-            Il faudrait en effet que je puisse alors garantir de pouvoir vous donner accès à toutes les données privées anonymes que le serveur aurait pu collecter pour que vous puissiez l'utiliser (c'est-à-dire l'équivalent d'un nombre aléatoire qui n'est pas associé à votre nom), ce qui représente trop de travail puisque je n'ai aucun moyen de savoir quel nombre aléatoire vous aurez été attribué et qu'il faudrait que j'enquête au près des gens qui s'occupent du réseau de l'état pour recouper les informations de nos différents logs. Ce travail, disproportionné en temps par rapport au service offert et à mes moyens financiers limités pour un service gratuit, rend donc impossible votre usage de ce site en dehors de l'école.<br/>
-            <br/> 
-            Ces restrictions sont mises en place pour assurer que vos données de navigation restent entièrement protégées et anonymes lorsque vous utilisez ce site depuis un poste-école, ou avec votre téléphone portable depuis le wifi de l'école. Du fait de la RGPD, vous ne pouvez pas utiliser gratuitement les meilleurs modèles d'intelligence artificielle des sociétés Anthropic et OpenAI chez vous. Vous devez prendre des abonnements à vos frais non remboursés par l'école. Faites attention cependant, contrairement à EduChat, les données que vous soumettez à Anthropic et OpenAI via leur interface web ne sont pas anonymes et peuvent être conservées pour entrainer les générations futures d'IA.</p>
-            <div className="flex p-8 justify-center items-center">
-                <p><a href="/"><TbHome size={48} /></a></p>
-            </div>
-          </div>
-        </div>
-    );
+// Politique de confidentialité — réécrite pour la réalité v3 (étape 12) :
+// site public en clé personnelle, espace établissement /school en clé interne
+// facturée par IP, comptes email pour les seuls auteurs et administrateurs,
+// JAMAIS de compte élève. Contenu disponible dans les quatre langues du site.
+
+type Section = { title: string; body: string[] };
+type Content = { title: string; intro: string; sections: Section[] };
+
+const CONTENT: Record<string, Content> = {
+  fr: {
+    title: "Confidentialité (RGPD / nLPD)",
+    intro: "EduChat est conçu pour fonctionner avec le minimum absolu de données personnelles. Cette page décrit exactement ce qui est stocké, où, et pourquoi.",
+    sections: [
+      {
+        title: "Les élèves n'ont jamais de compte",
+        body: [
+          "Aucune inscription, aucun identifiant, aucun mot de passe n'est demandé aux élèves. Sur le site public, chacun utilise sa propre clé API ; via l'espace établissement (/school), l'accès est ouvert par un enseignant (mot de passe de session) ou automatiquement depuis l'adresse IP de l'établissement pendant les plages horaires convenues.",
+          "Vos conversations sont stockées UNIQUEMENT dans votre navigateur (localStorage). Elles ne transitent par le serveur que le temps d'obtenir la réponse du fournisseur d'IA, et n'y sont jamais conservées. Videz les données de votre navigateur et elles disparaissent — pensez à les exporter avant.",
+        ],
+      },
+      {
+        title: "Les clés API personnelles",
+        body: [
+          "La clé API que vous saisissez reste dans la mémoire vive de la page (jamais dans le stockage du navigateur, jamais en base de données). Elle transite chiffrée (HTTPS) vers le serveur à chaque requête, qui la relaie au fournisseur d'IA sans la conserver.",
+        ],
+      },
+      {
+        title: "Ce que le serveur stocke",
+        body: [
+          "1. Les prompts socratiques publiés, avec leurs compteurs anonymes (usages, tokens, notes) — aucun lien avec un individu.",
+          "2. Les comptes des AUTEURS et administrateurs uniquement : nom public et adresse email, vérifiée par un code à usage unique. Aucun mot de passe n'existe.",
+          "3. Pour la facturation de la clé interne : la consommation par adresse IP d'ÉTABLISSEMENT (adresse d'une école, pas d'une personne), avec fournisseur et volume de tokens. Les usages en clé personnelle ne sont jamais journalisés avec votre IP.",
+          "4. Si vous l'activez explicitement (option de synchronisation), une copie de votre profil (conversations, favoris) — supprimable à tout moment.",
+        ],
+      },
+      {
+        title: "Vos droits",
+        body: [
+          "Export : votre profil complet se télécharge en un clic depuis l'historique. Suppression : un auteur peut supprimer ses prompts ; la suppression d'un compte (et du profil synchronisé) s'obtient par simple demande à l'administrateur : blanvillain@harmonia.education.",
+          "Le code du site est public et auditable. Aucun cookie n'est utilisé, aucune donnée n'est cédée à des tiers — les messages envoyés aux fournisseurs d'IA sont soumis à leurs politiques respectives.",
+        ],
+      },
+    ],
+  },
+  en: {
+    title: "Privacy (GDPR)",
+    intro: "EduChat is designed to run on the absolute minimum of personal data. This page describes exactly what is stored, where, and why.",
+    sections: [
+      {
+        title: "Students never have accounts",
+        body: [
+          "No sign-up, no username, no password is ever asked of students. On the public site, everyone uses their own API key; through the school area (/school), access is opened by a teacher (session password) or automatically from the school's IP address during agreed hours.",
+          "Your conversations are stored ONLY in your browser (localStorage). They pass through the server just long enough to get the AI provider's answer and are never kept there. Clear your browser data and they are gone — export them first.",
+        ],
+      },
+      {
+        title: "Personal API keys",
+        body: [
+          "The API key you type stays in the page's memory (never in browser storage, never in a database). It travels encrypted (HTTPS) to the server with each request, which relays it to the AI provider without keeping it.",
+        ],
+      },
+      {
+        title: "What the server stores",
+        body: [
+          "1. Published Socratic prompts, with anonymous counters (uses, tokens, ratings) — no link to any individual.",
+          "2. Accounts for AUTHORS and administrators only: public name and email address, verified by a single-use code. No passwords exist.",
+          "3. For internal-key billing: consumption per SCHOOL IP address (a school's address, not a person's), with provider and token volume. Personal-key usage is never logged with your IP.",
+          "4. If you explicitly enable it (sync option), a copy of your profile (conversations, favourites) — deletable at any time.",
+        ],
+      },
+      {
+        title: "Your rights",
+        body: [
+          "Export: your full profile downloads in one click from the history panel. Deletion: authors can delete their prompts; account (and synced profile) deletion is available on request to the administrator: blanvillain@harmonia.education.",
+          "The site's code is public and auditable. No cookies are used, no data is sold or shared — messages sent to AI providers are subject to their respective policies.",
+        ],
+      },
+    ],
+  },
+  it: {
+    title: "Privacy (GDPR)",
+    intro: "EduChat è progettato per funzionare con il minimo assoluto di dati personali. Questa pagina descrive esattamente cosa viene memorizzato, dove e perché.",
+    sections: [
+      {
+        title: "Gli studenti non hanno mai un account",
+        body: [
+          "Nessuna registrazione, nessun identificativo, nessuna password viene richiesta agli studenti. Sul sito pubblico ognuno usa la propria chiave API; nell'area istituti (/school), l'accesso è aperto da un insegnante (password di sessione) o automaticamente dall'indirizzo IP della scuola negli orari concordati.",
+          "Le conversazioni sono memorizzate SOLO nel tuo browser (localStorage). Transitano dal server solo il tempo di ottenere la risposta del fornitore di IA e non vi vengono mai conservate. Se cancelli i dati del browser scompaiono — esportale prima.",
+        ],
+      },
+      {
+        title: "Le chiavi API personali",
+        body: [
+          "La chiave API che digiti resta nella memoria della pagina (mai nello storage del browser, mai in un database). Viaggia cifrata (HTTPS) verso il server a ogni richiesta, che la inoltra al fornitore di IA senza conservarla.",
+        ],
+      },
+      {
+        title: "Cosa memorizza il server",
+        body: [
+          "1. I prompt socratici pubblicati, con contatori anonimi (usi, token, valutazioni) — nessun legame con una persona.",
+          "2. Gli account dei soli AUTORI e amministratori: nome pubblico e indirizzo email, verificato con un codice monouso. Non esistono password.",
+          "3. Per la fatturazione della chiave interna: il consumo per indirizzo IP dell'ISTITUTO (l'indirizzo di una scuola, non di una persona), con fornitore e volume di token. Gli usi con chiave personale non vengono mai registrati con il tuo IP.",
+          "4. Se la attivi esplicitamente (opzione di sincronizzazione), una copia del tuo profilo (conversazioni, preferiti) — eliminabile in qualsiasi momento.",
+        ],
+      },
+      {
+        title: "I tuoi diritti",
+        body: [
+          "Esportazione: il profilo completo si scarica con un clic dallo storico. Cancellazione: un autore può eliminare i propri prompt; la cancellazione dell'account (e del profilo sincronizzato) si ottiene su semplice richiesta all'amministratore: blanvillain@harmonia.education.",
+          "Il codice del sito è pubblico e verificabile. Nessun cookie, nessuna cessione di dati a terzi — i messaggi inviati ai fornitori di IA sono soggetti alle loro rispettive politiche.",
+        ],
+      },
+    ],
+  },
+  de: {
+    title: "Datenschutz (DSGVO)",
+    intro: "EduChat ist so konzipiert, dass es mit einem absoluten Minimum an personenbezogenen Daten auskommt. Diese Seite beschreibt genau, was wo und warum gespeichert wird.",
+    sections: [
+      {
+        title: "Schülerinnen und Schüler haben nie ein Konto",
+        body: [
+          "Keine Registrierung, kein Benutzername, kein Passwort wird von Lernenden verlangt. Auf der öffentlichen Website nutzt jede Person ihren eigenen API-Schlüssel; im Schulbereich (/school) öffnet eine Lehrperson den Zugang (Sitzungspasswort) oder er öffnet sich automatisch von der IP-Adresse der Schule während der vereinbarten Zeiten.",
+          "Ihre Gespräche werden NUR in Ihrem Browser gespeichert (localStorage). Sie durchlaufen den Server nur für die Dauer der KI-Antwort und werden dort nie aufbewahrt. Löschen Sie Ihre Browserdaten, sind sie weg — exportieren Sie sie vorher.",
+        ],
+      },
+      {
+        title: "Persönliche API-Schlüssel",
+        body: [
+          "Der eingegebene API-Schlüssel bleibt im Arbeitsspeicher der Seite (nie im Browser-Speicher, nie in einer Datenbank). Er wird bei jeder Anfrage verschlüsselt (HTTPS) an den Server übertragen, der ihn ohne Speicherung an den KI-Anbieter weiterreicht.",
+        ],
+      },
+      {
+        title: "Was der Server speichert",
+        body: [
+          "1. Veröffentlichte sokratische Prompts mit anonymen Zählern (Nutzungen, Tokens, Bewertungen) — ohne Bezug zu einer Person.",
+          "2. Konten NUR für Autorinnen/Autoren und Administratoren: öffentlicher Name und E-Mail-Adresse, per Einmalcode verifiziert. Passwörter existieren nicht.",
+          "3. Für die Abrechnung des internen Schlüssels: der Verbrauch pro SCHUL-IP-Adresse (die Adresse einer Schule, nicht einer Person), mit Anbieter und Token-Volumen. Nutzungen mit persönlichem Schlüssel werden nie mit Ihrer IP protokolliert.",
+          "4. Nur wenn Sie es ausdrücklich aktivieren (Sync-Option): eine Kopie Ihres Profils (Gespräche, Favoriten) — jederzeit löschbar.",
+        ],
+      },
+      {
+        title: "Ihre Rechte",
+        body: [
+          "Export: Ihr vollständiges Profil lässt sich mit einem Klick aus dem Verlauf herunterladen. Löschung: Autorinnen und Autoren können ihre Prompts löschen; die Löschung eines Kontos (und des synchronisierten Profils) erfolgt auf einfache Anfrage an den Administrator: blanvillain@harmonia.education.",
+          "Der Code der Website ist öffentlich und überprüfbar. Es werden keine Cookies verwendet, keine Daten an Dritte weitergegeben — an KI-Anbieter gesendete Nachrichten unterliegen deren jeweiligen Richtlinien.",
+        ],
+      },
+    ],
+  },
 };
-    
-export default rgpd;
+
+export default function RgpdPage() {
+  const { locale } = useRouter();
+  const content = CONTENT[locale || "fr"] ?? CONTENT.fr;
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
+      <Head><title>{`${content.title} — EduChat`}</title></Head>
+      <nav className="pt-6 pb-4">
+        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
+          <MdArrowBack /> EduChat
+        </Link>
+      </nav>
+      <h1 className="text-3xl font-bold">{content.title}</h1>
+      <p className="mt-3 opacity-80">{content.intro}</p>
+      {content.sections.map(section => (
+        <section key={section.title} className="mt-8">
+          <h2 className="text-xl font-bold">{section.title}</h2>
+          {section.body.map((paragraph, i) => (
+            <p key={i} className="mt-2 text-sm leading-relaxed opacity-90">{paragraph}</p>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
