@@ -67,34 +67,43 @@ function Mindmap() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const { nodeData, targets } = buildMap();
+
+    // Navigation par DÉLÉGATION de clic : Mind-Elixir n'émet « selectNewNode »
+    // que pour un nœud créé, pas au clic ordinaire. On lit donc l'id du nœud
+    // dans le DOM (attribut data-nodeid, préfixé « me » par la bibliothèque).
+    const onClick = (event: MouseEvent) => {
+      const node = (event.target as HTMLElement)?.closest?.("[data-nodeid]") as HTMLElement | null;
+      if (!node) return;
+      const target = targets[(node.dataset.nodeid || "").replace(/^me/, "")];
+      if (!target) return;
+      if (target.startsWith("/")) routerRef.current.push(target);
+      else document.querySelector(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.addEventListener("click", onClick);
+
     let cancelled = false;
-    let instance: any = null;
     (async () => {
       // Import CÔTÉ CLIENT uniquement : Mind-Elixir manipule le DOM.
       const MindElixir = (await import("mind-elixir")).default;
       if (cancelled || !containerRef.current) return;
-      const { nodeData, targets } = buildMap();
-      instance = new MindElixir({
+      const instance = new MindElixir({
         el: containerRef.current,
         direction: MindElixir.SIDE,       // branches équilibrées de part et d'autre
         editable: false, draggable: false, contextMenu: false, toolBar: false, keypress: false,
         theme: MindElixir.DARK_THEME,     // s'accorde au thème sombre du site
       });
       instance.init({ nodeData });
-      // Ajuste le zoom pour que TOUTE la carte tienne dans le cadre, centrée
-      // (sinon l'ouverture n'affiche que les branches d'un côté).
+      // Ajuste le zoom pour que TOUTE la carte tienne dans le cadre, centrée.
       requestAnimationFrame(() => { try { instance.scaleFit(); } catch { /* rendu pas prêt */ } });
-      // Clic sur un nœud → navigation.
-      instance.bus.addListener("selectNewNode", (node: any) => {
-        const target = targets[node?.id];
-        if (!target) return;
-        if (target.startsWith("/")) routerRef.current.push(target);
-        else document.querySelector(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
     })();
+
     return () => {
       cancelled = true;
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      el.removeEventListener("click", onClick);
+      el.innerHTML = "";
     };
   }, []);
 
