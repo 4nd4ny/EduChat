@@ -126,7 +126,11 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!messages.length) return;
     const conversation: Conversation = {
-      name: conversationName || "...", createdAt: Date.now(), lastMessage: Date.now(), messages: messages as any,
+      name: conversationName || "...",
+      // Préserve la vraie date de création (elle était écrasée à chaque message,
+      // ce qui faussait le tri de l'historique).
+      createdAt: conversations[conversationId]?.createdAt ?? Date.now(),
+      lastMessage: Date.now(), messages: messages as any,
       ...(promptName ? { promptName, promptVersion } : {}),
     };
     const id = storeConversation(conversationId, conversation);

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import React, { useCallback }  from "react";
-import { MdAdd, MdDeleteOutline, MdUploadFile } from "react-icons/md";
+import { MdAdd, MdDeleteOutline, MdDownload, MdUploadFile } from "react-icons/md";
 import { MAX_IMPORT_BYTES, useAnthropic } from "../context/AnthropicProvider";
+import { isProfile, applyProfile, downloadProfile } from "../utils/profile";
 import Conversations from "./Conversations";
 import ButtonContainer from "./ButtonContainer";
 import { useDropzone } from 'react-dropzone';
@@ -26,7 +27,17 @@ export default function ChatSidebar({}: Props) {
       reader.onload = () => {
         const fileContent = reader.result as string;
         try {
-          importConversation(JSON.parse(fileContent));
+          const jsonData = JSON.parse(fileContent);
+          if (isProfile(jsonData)) {
+            // Profil complet (conversations + favoris + notes) : fusion puis
+            // rechargement pour que toute l'UI reflète l'état importé.
+            const { conversations } = applyProfile(jsonData);
+            setImportError("");
+            alert(`Profil importé : ${conversations} conversation(s) ajoutée(s).`);
+            window.location.reload();
+            return;
+          }
+          importConversation(jsonData);
         } catch (error) {
           setImportError("Fichier illisible : ce n'est pas du JSON valide.");
         }
@@ -79,6 +90,10 @@ export default function ChatSidebar({}: Props) {
         <Conversations />
 
         <div className="flex flex-col gap-y-2 border-y border-white/10 py-2">
+          <ButtonContainer onClick={() => downloadProfile()}>
+            <MdDownload />
+            Exporter tout (profil)
+          </ButtonContainer>
           <ButtonContainer onClick={clearConversations}>
             <MdDeleteOutline />
             Tout effacer
