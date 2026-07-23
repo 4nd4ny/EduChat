@@ -1,6 +1,6 @@
 # Planning de migration EduChat → plateforme de tuteurs socratiques
 
-> **État d'avancement (23 juillet 2026)** : étapes **1 à 12 réalisées et déployées** sur https://educh.at (le déploiement continu a absorbé l'essentiel de l'étape 13). Restent : recette finale avec clés API réelles, étape 14 (espace enseignant) et étape 15 (sync de profil). Pages /publier, /p/essai et /admin encore en français ; traduction automatique des prompts en attente d'une clé réelle.
+> **État d'avancement (23 juillet 2026, soir)** : **les 15 étapes sont réalisées et déployées** sur https://educh.at. Reste la recette finale avec des clés API réelles (celles du serveur sont factices), plus quelques compléments notés : i18n des pages /publier, /p/essai et /admin, traduction automatique des prompts, exemples de tuteurs du client à intégrer, boîte noreply@educh.at à créer (les codes email arrivent dans les logs du conteneur en attendant).
 >
 > **⚠️ Lire d'abord [pivot-v3-site-public.md](pivot-v3-site-public.md)** (22 juillet 2026) : le site devient PUBLIC et centré sur le catalogue de prompts socratiques ; `/school` porte l'expérience verrouillée des établissements (clé interne, facturation par IP). Ce pivot prévaut sur les fiches en cas de contradiction.
 
