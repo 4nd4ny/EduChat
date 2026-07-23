@@ -4,6 +4,7 @@ import AnthropicProvider from '../context/AnthropicProvider';
 import Layout from '../context/Layout'; 
 
 import "@/utils/globals.css";
+import "mind-elixir/style.css"; // carte interactive du Guide (/tutoriel)
 
 export default function App({ Component, pageProps }: AppProps) {
   return (

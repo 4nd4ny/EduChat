@@ -1,128 +1,108 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MdArrowBack, MdArrowForward, MdOpenInNew, MdSchool } from "react-icons/md";
 
 // Tutoriel d'EduChat — page volontairement autonome et en FRANÇAIS uniquement
 // (la traduction viendra quand la version française sera stabilisée).
-// Point d'entrée : une mindmap interactive des fonctionnalités par profil.
-// La documentation spécifique aux ÉTABLISSEMENTS vit sur sa propre page
-// (/etablissements) : elle n'intéresse pas les autres utilisateurs.
+// Point d'entrée : une carte mentale interactive des fonctionnalités par profil,
+// rendue par Mind-Elixir (MIT). La documentation spécifique aux ÉTABLISSEMENTS
+// vit sur sa propre page (/etablissements).
 
 // ---------------------------------------------------------------------------
-// Mindmap — disposition « en colonnes » : les nœuds de profil sont près des
-// bords, leurs items s'écrivent VERS LE CENTRE, ce qui garantit qu'aucun
-// libellé n'est tronqué par les bords du dessin (défaut de la version radiale).
-// Un item dont l'ancre commence par « / » ouvre une autre page ; sinon il fait
-// défiler vers la section correspondante.
+// Carte mentale — données par profil. Chaque item porte une « cible » : une
+// ancre « #... » fait défiler vers la section ; un chemin « /... » ouvre une
+// autre page (les profils Établissement/Enseignant/Admin renvoient au guide
+// dédié). La structure est convertie en arbre Mind-Elixir + une table id→cible.
 // ---------------------------------------------------------------------------
 
-type Leaf = { label: string; anchor: string };
-type Branch = { label: string; color: string; side: "left" | "right"; y: number; anchor: string; leaves: Leaf[] };
+type Profile = { color: string; topic: string; anchor: string; leaves: [string, string][] };
 
-const BRANCHES: Branch[] = [
-  { label: "Élève · Visiteur", color: "#4FC3F7", side: "left", y: 120, anchor: "#eleves", leaves: [
-    { label: "Choisir un tuteur", anchor: "#eleves" },
-    { label: "Chatter (clé perso)", anchor: "#eleves" },
-    { label: "Favoris & notes", anchor: "#eleves" },
-    { label: "Exporter son profil", anchor: "#eleves" },
-  ] },
-  { label: "Enseignant", color: "#81C784", side: "left", y: 300, anchor: "/etablissements", leaves: [
-    { label: "Déverrouiller /school", anchor: "/etablissements" },
-    { label: "Déployer sur la classe", anchor: "/etablissements" },
-    { label: "Compte par email", anchor: "/etablissements" },
-  ] },
-  { label: "Établissement", color: "#BA68C8", side: "left", y: 468, anchor: "/etablissements", leaves: [
-    { label: "Horaires en libre-service", anchor: "/etablissements" },
-    { label: "Quota par élève", anchor: "/etablissements" },
-    { label: "Budget mensuel", anchor: "/etablissements" },
-    { label: "Parcours (schémas)", anchor: "/etablissements" },
-  ] },
-  { label: "Promptagogue", color: "#DC6521", side: "right", y: 150, anchor: "#promptagogues", leaves: [
-    { label: "Vérifier son email", anchor: "#promptagogues" },
-    { label: "Publier un tuteur", anchor: "#promptagogues" },
-    { label: "Tester par lien secret", anchor: "#validation" },
-    { label: "Versions & variantes", anchor: "#promptagogues" },
-  ] },
-  { label: "Administrateur", color: "#FFD54F", side: "right", y: 400, anchor: "#admin", leaves: [
-    { label: "Valider les tuteurs", anchor: "#validation" },
-    { label: "Gérer les établissements", anchor: "/etablissements" },
-    { label: "Facturer (CSV)", anchor: "/etablissements" },
-  ] },
+const PROFILES: Profile[] = [
+  { color: "#4FC3F7", topic: "Élève · Visiteur", anchor: "#eleves", leaves: [
+    ["Choisir un tuteur", "#eleves"], ["Chatter (clé perso)", "#eleves"],
+    ["Favoris & notes", "#eleves"], ["Exporter son profil", "#eleves"] ] },
+  { color: "#DC6521", topic: "Promptagogue", anchor: "#promptagogues", leaves: [
+    ["Vérifier son email", "#promptagogues"], ["Publier un tuteur", "#promptagogues"],
+    ["Tester par lien secret", "#validation"], ["Versions & variantes", "#promptagogues"] ] },
+  { color: "#81C784", topic: "Enseignant", anchor: "/etablissements", leaves: [
+    ["Déverrouiller /school", "/etablissements"], ["Déployer sur la classe", "/etablissements"],
+    ["Compte par email", "/etablissements"] ] },
+  { color: "#BA68C8", topic: "Établissement", anchor: "/etablissements", leaves: [
+    ["Horaires en libre-service", "/etablissements"], ["Quota par élève", "/etablissements"],
+    ["Budget mensuel", "/etablissements"], ["Parcours (schémas)", "/etablissements"] ] },
+  { color: "#FFD54F", topic: "Administrateur", anchor: "#admin", leaves: [
+    ["Valider les tuteurs", "#validation"], ["Gérer les établissements", "/etablissements"],
+    ["Facturer (CSV)", "/etablissements"] ] },
 ];
 
-const CX = 520, CY = 285, R = 56;
-const LEFT_X = 152, RIGHT_X = 888;   // centres des nœuds
-const NODE_HALF = 75;                // demi-largeur du rectangle de nœud
-const LEAF_GAP = 25;
+function buildMap() {
+  const targets: Record<string, string> = { root: "#visite" };
+  const children = PROFILES.map((p, bi) => {
+    const bid = `b${bi}`;
+    targets[bid] = p.anchor;
+    return {
+      id: bid, topic: p.topic, branchColor: p.color,
+      style: { background: p.color, color: "#111827", fontWeight: "700" },
+      children: p.leaves.map(([label, anchor], li) => {
+        const lid = `b${bi}l${li}`;
+        targets[lid] = anchor;
+        return { id: lid, topic: label };
+      }),
+    };
+  });
+  const nodeData = {
+    id: "root", topic: "EduChat",
+    style: { background: "#DC6521", color: "#ffffff", fontWeight: "700" },
+    children,
+  };
+  return { nodeData, targets };
+}
 
 function Mindmap() {
   const router = useRouter();
-  const [hovered, setHovered] = useState<string | null>(null);
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const go = (anchor: string) => {
-    if (anchor.startsWith("/")) { router.push(anchor); return; }
-    const el = document.querySelector(anchor);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const dim = (label: string) => (hovered && hovered !== label ? 0.28 : 1);
+  useEffect(() => {
+    let cancelled = false;
+    let instance: any = null;
+    (async () => {
+      // Import CÔTÉ CLIENT uniquement : Mind-Elixir manipule le DOM.
+      const MindElixir = (await import("mind-elixir")).default;
+      if (cancelled || !containerRef.current) return;
+      const { nodeData, targets } = buildMap();
+      instance = new MindElixir({
+        el: containerRef.current,
+        direction: MindElixir.SIDE,       // branches équilibrées de part et d'autre
+        editable: false, draggable: false, contextMenu: false, toolBar: false, keypress: false,
+        theme: MindElixir.DARK_THEME,     // s'accorde au thème sombre du site
+      });
+      instance.init({ nodeData });
+      // Clic sur un nœud → navigation.
+      instance.bus.addListener("selectNewNode", (node: any) => {
+        const target = targets[node?.id];
+        if (!target) return;
+        if (target.startsWith("/")) routerRef.current.push(target);
+        else document.querySelector(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    })();
+    return () => {
+      cancelled = true;
+      if (containerRef.current) containerRef.current.innerHTML = "";
+    };
+  }, []);
 
   return (
-    <svg viewBox="0 60 1040 460" role="img" aria-label="Carte des fonctionnalités par profil"
-      className="w-full rounded-lg border border-white/10 bg-secondary">
-      {/* Connecteurs centre → nœuds */}
-      {BRANCHES.map(b => {
-        const nx = b.side === "left" ? LEFT_X + NODE_HALF : RIGHT_X - NODE_HALF;
-        return (
-          <path key={"c" + b.label}
-            d={`M ${CX} ${CY} Q ${(CX + nx) / 2} ${(CY + b.y) / 2} ${nx} ${b.y}`}
-            fill="none" stroke={b.color} strokeWidth={hovered === b.label ? 3 : 1.5} opacity={dim(b.label) * 0.8} />
-        );
-      })}
-
-      {/* Items (vers le centre) */}
-      {BRANCHES.map(b => {
-        const inner = b.side === "left" ? LEFT_X + NODE_HALF : RIGHT_X - NODE_HALF;
-        const textX = b.side === "left" ? LEFT_X + NODE_HALF + 13 : RIGHT_X - NODE_HALF - 13;
-        return b.leaves.map((leaf, i) => {
-          const ly = b.y + (i - (b.leaves.length - 1) / 2) * LEAF_GAP;
-          return (
-            <g key={b.label + leaf.label} onClick={() => go(leaf.anchor)} className="cursor-pointer"
-              onMouseEnter={() => setHovered(b.label)} onMouseLeave={() => setHovered(null)} opacity={dim(b.label)}>
-              <line x1={inner} y1={b.y} x2={b.side === "left" ? textX - 6 : textX + 6} y2={ly}
-                stroke={b.color} strokeWidth="1" opacity="0.5" />
-              <text x={textX} y={ly + 4} textAnchor={b.side === "left" ? "start" : "end"}
-                fontSize="12.5" fill="rgb(222,222,222)"
-                style={{ textDecoration: hovered === b.label ? "underline" : "none" }}>
-                {leaf.label}
-              </text>
-            </g>
-          );
-        });
-      })}
-
-      {/* Nœuds de profil */}
-      {BRANCHES.map(b => {
-        const nx = b.side === "left" ? LEFT_X : RIGHT_X;
-        return (
-          <g key={"n" + b.label} onClick={() => go(b.anchor)} className="cursor-pointer"
-            onMouseEnter={() => setHovered(b.label)} onMouseLeave={() => setHovered(null)}>
-            <rect x={nx - NODE_HALF} y={b.y - 17} width={NODE_HALF * 2} height="34" rx="17"
-              fill={b.color} opacity={hovered === b.label ? 1 : 0.85} />
-            <text x={nx} y={b.y + 5} textAnchor="middle" fontSize="14" fontWeight="bold" fill="#111">{b.label}</text>
-          </g>
-        );
-      })}
-
-      {/* Centre */}
-      <g onClick={() => go("#visite")} className="cursor-pointer">
-        <circle cx={CX} cy={CY} r={R} fill="#1F2937" stroke="#DC6521" strokeWidth="3" />
-        <text x={CX} y={CY - 3} textAnchor="middle" fontSize="19" fontWeight="bold" fill="#fff">EduChat</text>
-        <text x={CX} y={CY + 17} textAnchor="middle" fontSize="10.5" fill="#DC6521">visite guidée ↓</text>
-      </g>
-    </svg>
+    <div>
+      <div ref={containerRef} role="img" aria-label="Carte des fonctionnalités par profil"
+        className="h-[520px] w-full overflow-hidden rounded-lg border border-white/10 bg-secondary" />
+      <p className="mt-1 text-center text-xs opacity-50">
+        Carte interactive — cliquez sur une bulle, glissez pour déplacer, molette pour zoomer.
+      </p>
+    </div>
   );
 }
 
