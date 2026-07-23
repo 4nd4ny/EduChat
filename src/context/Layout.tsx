@@ -17,7 +17,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [totalTokens, setTotalTokens] = useState('');
 
   const { pathname } = useRouter();
-  const isProtected = pathname !== '/rgpd' && pathname !== '/police'; // Exclure la page /rgpd de la protection
+  // Pivot v3 : le site est PUBLIC (catalogue, fiches, chat en clé personnelle).
+  // Seul l'espace établissement /school passe par le déverrouillage enseignant.
+  const isProtected = pathname.startsWith('/school');
+  // La sidebar d'historique n'a de sens que sur les pages de conversation.
+  const hasChatSidebar = pathname.startsWith('/chat') || pathname.startsWith('/school');
 
   useEffect(() => {
     
@@ -67,37 +71,42 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      {isProtected ? (
-        <ProtectedPage>
-          <div className="max-w-screen relative h-screen max-h-screen w-screen overflow-hidden">
-            <div className="flex h-[calc(100vh)] max-h-[calc(100vh)]">
-              <>
-                {isMobile && (
-                  <div>
-                    <button
-                      onMouseOver={openSidebar}
-                      onClick={toggleSidebar}
-                      className={`${styles.button} "fixed h-full rounded-md"`}
-                    >
-                    </button>
-                    <div className={styles.tab} onClick={toggleSidebar}>
-                      <span>{sidebarOpen ? 'Fermer' : 'Historique'}</span>
+      {hasChatSidebar ? (
+        (() => {
+          const chatShell = (
+            <div className="max-w-screen relative h-screen max-h-screen w-screen overflow-hidden">
+              <div className="flex h-[calc(100vh)] max-h-[calc(100vh)]">
+                <>
+                  {isMobile && (
+                    <div>
+                      <button
+                        onMouseOver={openSidebar}
+                        onClick={toggleSidebar}
+                        className={`${styles.button} "fixed h-full rounded-md"`}
+                      >
+                      </button>
+                      <div className={styles.tab} onClick={toggleSidebar}>
+                        <span>{sidebarOpen ? 'Fermer' : 'Historique'}</span>
+                      </div>
                     </div>
+                  )}
+                  <div className={getSidebarClasses(sidebarOpen)} style={getSidebarStyle(sidebarOpen)}>
+                    <ChatSidebar />
                   </div>
-                )}
-                <div className={getSidebarClasses(sidebarOpen)} style={getSidebarStyle(sidebarOpen)}>
-                  <ChatSidebar />
+                </>
+                <div className="flex flex-grow overflow-hidden" onMouseOver={closeSidebar}>
+                  {children}
                 </div>
-              </>
-              <div className="flex flex-grow overflow-hidden" onMouseOver={closeSidebar}>
-                {children}
               </div>
             </div>
-          </div>
-        </ProtectedPage>
+          );
+          // /school : même coquille de chat, mais derrière le déverrouillage enseignant
+          return isProtected ? <ProtectedPage>{chatShell}</ProtectedPage> : chatShell;
+        })()
       ) : (
-        // Si non protégée (ex. rgpd), rendre seulement le contenu
-        <div className="max-w-screen relative h-screen max-h-screen w-screen overflow-hidden">
+        // Pages publiques sans chat (catalogue, fiches prompt, rgpd...) : contenu
+        // seul, avec défilement vertical naturel.
+        <div className="max-w-screen relative min-h-screen w-screen overflow-x-hidden">
           {children}
         </div>
       )}
