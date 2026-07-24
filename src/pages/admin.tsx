@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  MdArchive, MdArrowBack, MdCheck, MdDownload, MdDriveFileRenameOutline,
+  MdArchive, MdCheck, MdDownload, MdDriveFileRenameOutline,
   MdEdit, MdPublish, MdVisibilityOff,
 } from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
@@ -210,13 +210,8 @@ export default function AdminPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-16 text-primary">
+    <div className="mx-auto max-w-5xl px-4 pt-6 pb-16 text-primary">
       <Head><title>Administration — EduChat</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
       <h1 className="text-2xl font-bold">Administration</h1>
       {message && <p className="mt-2 text-sm text-red-400">{message}</p>}
 

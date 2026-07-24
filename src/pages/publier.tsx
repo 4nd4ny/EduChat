@@ -2,7 +2,6 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { MdArrowBack } from "react-icons/md";
 import { getAccount, authHeaders } from "../utils/account";
 
 // Gabarit socratique guidé : abaisse la barrière d'entrée et homogénéise la
@@ -94,13 +93,8 @@ export default function PublierPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
+    <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
       <Head><title>Publier un tuteur — EduChat</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
 
       <h1 className="text-2xl font-bold">Proposer un tuteur socratique</h1>
       {inspiredBy && (

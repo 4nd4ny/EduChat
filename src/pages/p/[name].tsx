@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useState } from "react";
-import { MdArrowBack, MdCheck, MdContentCopy, MdPlayArrow, MdStar, MdStarBorder, MdVisibilityOff } from "react-icons/md";
+import { MdCheck, MdContentCopy, MdPlayArrow, MdStar, MdStarBorder, MdVisibilityOff } from "react-icons/md";
 import { useAnthropic } from "../../context/AnthropicProvider";
 import { getFavorites, toggleFavorite, getGivenRating, storeGivenRating } from "../../utils/favorites";
 import { authHeaders } from "../../utils/account";
@@ -123,14 +123,9 @@ export default function PromptPage() {
   const isFavorite = favorites.includes(detail.name);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
+    <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
       <Head><title>{`${detail.name} — EduChat`}</title></Head>
 
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
 
       <header className="flex flex-col gap-3">
         <div className="flex items-start justify-between">

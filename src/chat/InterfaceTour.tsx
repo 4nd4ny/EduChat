@@ -62,30 +62,39 @@ export default function InterfaceTour({ onClose }: { onClose: () => void }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Petite latence : laisse l'interface se peindre avant de mesurer.
-    const handle = setTimeout(() => {
-      setSteps(STEPS.filter(step => measure(step.target) !== null));
-    }, 350);
-    return () => clearTimeout(handle);
+    // Les cibles n'existent qu'une fois l'interface peinte — et sur un
+    // chargement à froid cela peut prendre plus d'une seconde. On RÉESSAIE
+    // donc jusqu'à en trouver (une mesure unique et trop précoce laissait la
+    // visite silencieusement vide).
+    let attempts = 0;
+    const collect = () => {
+      const available = STEPS.filter(step => measure(step.target) !== null);
+      if (available.length) { setSteps(available); return true; }
+      return false;
+    };
+    if (collect()) return;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (collect() || attempts >= 25) clearInterval(timer);
+    }, 200);
+    return () => clearInterval(timer);
   }, []);
 
   const current = steps[index] ?? null;
 
+  // Les mises à jour d'état restent PURES : appeler onClose() depuis un
+  // updater ferait fermer la visite pendant le rendu (React 18 rejoue les
+  // updaters), et elle disparaissait aussitôt affichée.
   const goTo = useCallback((next: number) => {
-    setIndex(previous => {
-      const value = typeof next === "number" ? next : previous;
-      return Math.max(0, Math.min(steps.length - 1, value));
-    });
+    setIndex(Math.max(0, Math.min(steps.length - 1, next)));
     setProgressTick(tick => tick + 1);
   }, [steps.length]);
 
   const advance = useCallback(() => {
-    setIndex(previous => {
-      if (previous + 1 >= steps.length) { onClose(); return previous; }
-      return previous + 1;
-    });
+    if (index + 1 >= steps.length) { onClose(); return; }
+    setIndex(index + 1);
     setProgressTick(tick => tick + 1);
-  }, [steps.length, onClose]);
+  }, [index, steps.length, onClose]);
 
   // Mesure de l'élément courant + suivi du redimensionnement.
   useEffect(() => {
@@ -158,10 +167,11 @@ export default function InterfaceTour({ onClose }: { onClose: () => void }) {
           className="rounded p-2 hover:bg-white/20"><MdClose /></button>
       </div>
 
-      {/* Sous-titre : blanc sur fond noir, en bas de l'écran. */}
-      <div className="absolute inset-x-0 bottom-6 flex justify-center px-4"
+      {/* Sous-titre : blanc sur fond noir, AU CENTRE de l'écran — en bas, il
+          masquait précisément les éléments qu'il décrit (saisie, boutons). */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4"
         onClick={event => event.stopPropagation()}>
-        <div className="max-w-2xl rounded-lg bg-black px-6 py-4 text-center shadow-2xl">
+        <div className="pointer-events-auto max-w-2xl rounded-lg bg-black/95 px-6 py-4 text-center shadow-2xl ring-1 ring-white/10">
           <p className="text-lg font-medium leading-relaxed text-white">
             {current ? t(current.textKey as any) : ""}
           </p>

@@ -86,7 +86,53 @@ export default function ChatInput() {
 
   return (
     <div className="fixed bottom-0 flex h-[13rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent md:w-[calc(100%-320px)]">
+      {/* Ordre voulu : la zone de saisie d'abord (c'est là qu'on écrit), le
+          compteur de tokens au milieu, les réglages en dernier. */}
       <form className="mx-auto flex h-full w-full max-w-6xl flex-col justify-end gap-2 p-4 pb-6" onSubmit={handleSubmit}>
+        <div data-tour="composer" className="relative flex w-full rounded border border-stone-500/20 bg-tertiary shadow-xl">
+          <textarea name="query" placeholder={t("chat.input.ask")} ref={textAreaRef} className="flex max-h-[120px] w-full resize-none border-none bg-tertiary p-4 text-primary outline-none" onChange={event => setInput(event.target.value)} value={input} rows={1} />
+          {canAttach && (
+            <>
+              <input ref={fileInputRef} type="file" multiple accept={acceptTypes} className="hidden"
+                onChange={event => { void handleFiles(event.target.files); event.target.value = ""; }} />
+              <button type="button" data-tour="attach" onClick={() => fileInputRef.current?.click()}
+                title={t("chat.input.attach.title")} aria-label={t("chat.input.attach.title")}
+                className="rounded p-4 text-primary hover:bg-[#DC6521]">
+                <MdAttachFile />
+              </button>
+            </>
+          )}
+          {canVoice && (
+            <VoiceControls onDictation={text =>
+              setInput(previous => (previous.trim() ? `${previous.trim()} ${text}` : text))} />
+          )}
+          <button type="submit" data-tour="send" className="rounded p-4 text-primary hover:bg-[#DC6521]" disabled={loading || !input.trim()} aria-label={t("chat.input.send")}>
+            {loading ? <div className="mx-auto h-5 w-5 animate-spin rounded-full border-b-2 border-white" /> : <MdSend />}
+          </button>
+        </div>
+
+        {/* Les pièces jointes en attente restent collées à la zone de saisie. */}
+        {(attachments.length > 0 || attachError) && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {attachments.map((a, index) => (
+              <span key={`${a.name}-${index}`} className="flex items-center gap-1 rounded bg-tertiary px-2 py-1 text-primary">
+                <MdAttachFile className="opacity-60" />
+                <span className="max-w-[10rem] truncate">{a.name}</span>
+                <button type="button" aria-label={t("chat.input.attach.remove")}
+                  onClick={() => setAttachments(previous => previous.filter((_, i) => i !== index))}
+                  className="opacity-60 hover:opacity-100"><MdClose /></button>
+              </span>
+            ))}
+            {attachError && <span role="alert" className="text-red-400">{attachError}</span>}
+          </div>
+        )}
+
+        {totalTokens > 0 && (
+          <div data-tour="tokens" className="text-right text-xs text-primary opacity-60" title={t("chat.input.consumed")}>
+            {formatTokens(totalTokens)} {t("chat.input.consumed")}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-2 text-xs text-primary md:grid-cols-4">
           <label className="flex flex-col gap-1">
             <span className="flex items-center gap-1.5">{t("chat.input.provider")}
@@ -113,46 +159,6 @@ export default function ChatInput() {
           <label className="flex flex-col gap-1">{t("chat.input.apiKey")}
             <input data-tour="apikey" type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={t("chat.input.apiKeyPlaceholder")} aria-label={t("chat.input.apiKey")} />
           </label>
-        </div>
-        {totalTokens > 0 && (
-          <div data-tour="tokens" className="text-right text-xs text-primary opacity-60" title={t("chat.input.consumed")}>
-            {formatTokens(totalTokens)} {t("chat.input.consumed")}
-          </div>
-        )}
-        {(attachments.length > 0 || attachError) && (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {attachments.map((a, index) => (
-              <span key={`${a.name}-${index}`} className="flex items-center gap-1 rounded bg-tertiary px-2 py-1 text-primary">
-                <MdAttachFile className="opacity-60" />
-                <span className="max-w-[10rem] truncate">{a.name}</span>
-                <button type="button" aria-label={t("chat.input.attach.remove")}
-                  onClick={() => setAttachments(previous => previous.filter((_, i) => i !== index))}
-                  className="opacity-60 hover:opacity-100"><MdClose /></button>
-              </span>
-            ))}
-            {attachError && <span role="alert" className="text-red-400">{attachError}</span>}
-          </div>
-        )}
-        <div data-tour="composer" className="relative flex w-full rounded border border-stone-500/20 bg-tertiary shadow-xl">
-          <textarea name="query" placeholder={t("chat.input.ask")} ref={textAreaRef} className="flex max-h-[120px] w-full resize-none border-none bg-tertiary p-4 text-primary outline-none" onChange={event => setInput(event.target.value)} value={input} rows={1} />
-          {canAttach && (
-            <>
-              <input ref={fileInputRef} type="file" multiple accept={acceptTypes} className="hidden"
-                onChange={event => { void handleFiles(event.target.files); event.target.value = ""; }} />
-              <button type="button" data-tour="attach" onClick={() => fileInputRef.current?.click()}
-                title={t("chat.input.attach.title")} aria-label={t("chat.input.attach.title")}
-                className="rounded p-4 text-primary hover:bg-[#DC6521]">
-                <MdAttachFile />
-              </button>
-            </>
-          )}
-          {canVoice && (
-            <VoiceControls onDictation={text =>
-              setInput(previous => (previous.trim() ? `${previous.trim()} ${text}` : text))} />
-          )}
-          <button type="submit" data-tour="send" className="rounded p-4 text-primary hover:bg-[#DC6521]" disabled={loading || !input.trim()} aria-label={t("chat.input.send")}>
-            {loading ? <div className="mx-auto h-5 w-5 animate-spin rounded-full border-b-2 border-white" /> : <MdSend />}
-          </button>
         </div>
       </form>
     </div>

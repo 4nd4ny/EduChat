@@ -4,6 +4,7 @@ import ChatSidebar from "@/chatSidebar/ChatSidebar";
 import Head from "next/head";
 import { useRouter } from 'next/router';
 import styles from '@/utils/sidebar.module.css';
+import SiteHeader from '@/site/SiteHeader';
 import { formatTokens } from '@/utils/formatTokens'; // Assurez-vous de créer ce fichier
 
 interface LayoutProps {
@@ -54,8 +55,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
 
+  // Sur mobile la sidebar coulisse par-dessus le contenu, mais JAMAIS par-dessus
+  // la barre de navigation (top-16) : celle-ci reste toujours atteignable.
   const getSidebarClasses = useCallback((isOpen: boolean) => `
-    ${isMobile ? 'fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out transform' : ''}
+    ${isMobile ? 'fixed bottom-0 top-16 left-0 z-30 transition-transform duration-300 ease-in-out transform' : ''}
     ${isMobile && !isOpen ? '-translate-x-[calc(100%+4px)]' : 'translate-x-0'}
   `, [isMobile]);
 
@@ -80,8 +83,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {hasChatSidebar ? (
         (() => {
           const chatShell = (
-            <div className="max-w-screen relative h-screen max-h-screen w-screen overflow-hidden">
-              <div className="flex h-[calc(100vh)] max-h-[calc(100vh)]">
+            // Coquille de chat : la barre de navigation occupe 4 rem en tête,
+            // le reste de la hauteur revient à la conversation.
+            <div className="max-w-screen relative flex h-screen max-h-screen w-screen flex-col overflow-hidden">
+              <SiteHeader />
+              <div className="flex h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]">
                 <>
                   {isMobile && (
                     <div>
@@ -110,9 +116,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           return isProtected ? <ProtectedPage>{chatShell}</ProtectedPage> : chatShell;
         })()
       ) : (
-        // Pages publiques sans chat (catalogue, fiches prompt, rgpd...) : contenu
-        // seul, avec défilement vertical naturel.
+        // Pages publiques sans chat (catalogue, fiches prompt, rgpd...) :
+        // barre de navigation puis contenu, défilement vertical naturel.
         <div className="max-w-screen relative min-h-screen w-screen overflow-x-hidden">
+          <SiteHeader />
           {children}
         </div>
       )}

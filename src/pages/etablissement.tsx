@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
-import { MdArrowBack, MdAdd, MdDelete, MdSchool } from "react-icons/md";
+import { MdAdd, MdDelete, MdSchool } from "react-icons/md";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 
@@ -99,13 +99,8 @@ export default function EtablissementPage() {
 
   const etab = data!.etablissement;
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-20 text-primary">
+    <div className="mx-auto max-w-3xl px-4 pt-6 pb-20 text-primary">
       <Head><title>Mon établissement — EduChat</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
 
       <h1 className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {etab.name}</h1>
       <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">Guide des établissements</Link> — accès élèves, quotas, facturation, parcours.</p>

@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MdArrowBack, MdCompareArrows, MdSend } from "react-icons/md";
+import { MdCompareArrows, MdSend } from "react-icons/md";
 import AssistantMessageContent from "../chat/AssistantMessageContent";
 import { providerDefaults, PROVIDER_IDS, type ProviderId, type ReasoningLevel } from "../shared/providers";
 import { requestCompletion } from "../utils/streamCompletion";
@@ -189,13 +189,8 @@ export default function DuelPage() {
 
   // ---- L'atelier -----------------------------------------------------------
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-24 text-primary">
+    <div className="mx-auto max-w-6xl px-4 pt-6 pb-24 text-primary">
       <Head><title>Duel — EduChat</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
 
       <h1 className="flex items-center gap-2 text-3xl font-bold"><MdCompareArrows /> Duel</h1>
       <p className="mt-1 text-sm opacity-70">

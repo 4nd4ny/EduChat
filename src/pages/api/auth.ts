@@ -186,6 +186,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const clientIp = getClientIp(req);
   const ANONYMOUS = 'anonymous';
 
+  // FERMETURE ANTICIPÉE de l'accès (console enseignante /session). Traitée
+  // AVANT le court-circuit « site déverrouillé » ci-dessous, sans quoi la
+  // requête repartirait aussitôt avec un succès sans rien fermer.
+  // Le mot de passe de salle reste exigé : sans lui, n'importe quel élève
+  // pourrait couper l'accès de toute la classe.
+  if (req.method === 'POST' && req.body?.action === 'close') {
+    const extracted = extractPasswordAndDuration(String(req.body?.password ?? ''));
+    const isMatch = !!extracted && SecretPasswords.some(secret =>
+      bcrypt.compareSync(extracted.password, secret));
+    if (!isMatch) {
+      logAttempt(clientIp, false, 'password', 'fermeture');
+      handleFailedAttempt(clientIp);
+      res.status(401).json({ success: false, message: 'Mot de passe incorrect' });
+      return;
+    }
+    try {
+      await fs.unlink(LOCK_FILE_PATH);
+    } catch {
+      /* déjà fermé : le résultat voulu est atteint */
+    }
+    logAttempt(clientIp, true, 'password', 'fermeture');
+    res.status(200).json({ success: true, message: 'Accès fermé' });
+    return;
+  }
+
   // Vérifier le verrou d'authentification pour savoir si le site est vérouillé
   if (await checkAuthLock()) {
     // Grace à la RGPD, toute personne peut se connecter sur le site lorsqu'il est dévérouillé sans que je puisse le détecter

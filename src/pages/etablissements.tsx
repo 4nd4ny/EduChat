@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React from "react";
-import { MdArrowBack, MdSchool } from "react-icons/md";
+import { MdSchool } from "react-icons/md";
 
 // Guide dédié aux ÉTABLISSEMENTS — page séparée du guide général (le sujet
 // n'intéresse pas les autres utilisateurs). En français uniquement.
@@ -65,13 +65,8 @@ const Section = ({ id, title, children }: { id: string; title: string; children:
 
 export default function GuideEtablissements() {
   return (
-    <div className="mx-auto max-w-4xl px-4 pb-20 text-primary">
+    <div className="mx-auto max-w-4xl px-4 pt-6 pb-20 text-primary">
       <Head><title>Guide des établissements — EduChat</title></Head>
-      <nav className="pt-6 pb-4 flex flex-wrap gap-4 text-sm opacity-70">
-        <Link href="/" className="flex items-center gap-1 hover:opacity-100"><MdArrowBack /> Catalogue</Link>
-        <Link href="/tutoriel" className="hover:opacity-100">Guide général</Link>
-      </nav>
-
       <h1 className="flex items-center gap-2 text-3xl font-bold"><MdSchool /> Guide des établissements</h1>
       <p className="mt-2 opacity-80">
         EduChat s'adresse aux écoles comme à leurs enseignants et élèves. Ce guide explique comment une

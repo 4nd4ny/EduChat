@@ -2,7 +2,6 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { MdArrowBack } from "react-icons/md";
 import { getAccount, storeToken, clearToken } from "../utils/account";
 import { deleteServerProfile, syncProfile } from "../utils/profileSync";
 import { useT } from "../i18n/useT";
@@ -79,15 +78,15 @@ export default function VerifierPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md px-4 pb-16 text-primary">
+    <div className="mx-auto max-w-md px-4 pt-6 pb-16 text-primary">
       <Head><title>Vérification — EduChat</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> Catalogue
-        </Link>
-      </nav>
 
       <h1 className="text-2xl font-bold">{t("verify.title")}</h1>
+      {/* Le compte n'est jamais obligatoire : le dire ici, à l'endroit exact
+          où la question se pose (et jamais aux élèves, qui n'en ont pas). */}
+      <p className="mt-2 rounded border border-white/15 bg-secondary p-3 text-sm opacity-80">
+        {t("nav.hint")}
+      </p>
       <p className="mt-2 text-sm opacity-80">{t("verify.intro")}</p>
 
       {account && step !== "done" && (

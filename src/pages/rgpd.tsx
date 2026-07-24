@@ -2,7 +2,6 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React from "react";
-import { MdArrowBack } from "react-icons/md";
 
 // Politique de confidentialité — réécrite pour la réalité v3 (étape 12) :
 // site public en clé personnelle, espace établissement /school en clé interne
@@ -204,13 +203,8 @@ export default function RgpdPage() {
   const content = CONTENT[locale || "fr"] ?? CONTENT.fr;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
+    <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
       <Head><title>{`${content.title} — EduChat`}</title></Head>
-      <nav className="pt-6 pb-4">
-        <Link href="/" className="flex w-fit items-center gap-1 text-sm opacity-70 hover:opacity-100">
-          <MdArrowBack /> EduChat
-        </Link>
-      </nav>
       <h1 className="text-3xl font-bold">{content.title}</h1>
       <p className="mt-3 opacity-80">{content.intro}</p>
       {content.sections.map(section => (
