@@ -5,13 +5,24 @@
 export type ProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral";
 export type ReasoningLevel = "low" | "medium" | "high";
 
-export const providerDefaults: Record<ProviderId, { label: string; model: string }> = {
-  anthropic: { label: "Claude", model: "claude-sonnet-4-5" },
-  openai: { label: "ChatGPT", model: "gpt-5.1" },
+// `gdpr` : ce fournisseur propose-t-il un cadre RGPD (DPA, pas d'entraînement sur
+// les données de l'API) pour une clé personnelle en offre commerciale ? Fondé sur
+// une recherche des politiques officielles (juillet 2026) :
+//  - mistral : OUI, le plus solide (sous-traitant français, hébergement UE par
+//    défaut, DPA public, pas d'entraînement API).
+//  - anthropic (Claude) / openai (ChatGPT) : cadre RGPD réel MAIS conditionnel
+//    (DPA en offre commerciale, transferts UE→US encadrés par clauses-types).
+//  - gemini : l'endpoint utilisé (AI Studio) peut entraîner sur les données →
+//    pas de tag. grok / openrouter (modèles gratuits/chinois) : non garanti.
+// Le tag signale une POSSIBILITÉ de conformité avec votre propre clé, jamais une
+// garantie absolue — voir la page /rgpd.
+export const providerDefaults: Record<ProviderId, { label: string; model: string; gdpr?: boolean }> = {
+  anthropic: { label: "Claude", model: "claude-sonnet-4-5", gdpr: true },
+  openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash" },
   openrouter: { label: "OpenRouter", model: "openai/gpt-5.1" },
   grok: { label: "Grok", model: "grok-4.5" },
-  mistral: { label: "Mistral", model: "mistral-medium-latest" },
+  mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true },
 };
 
 export const PROVIDER_IDS = Object.keys(providerDefaults) as ProviderId[];

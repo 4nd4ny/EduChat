@@ -40,6 +40,16 @@ const CONTENT: Record<string, Content> = {
         ],
       },
       {
+        title: "Les modèles d'IA et le RGPD",
+        body: [
+          "Le respect du RGPD ne dépend pas du modèle lui-même, mais de l'entreprise qui traite vos données (le sous-traitant) : où sont hébergés ses serveurs, si vos échanges servent à entraîner le modèle, et quel contrat (DPA) encadre le tout.",
+          "Repli gratuit et modèles « chinois » : quand le site répond sans clé personnelle (mode démo, modèles gratuits via l'agrégateur OpenRouter) ou avec des modèles édités hors UE et États-Unis, nous NE pouvons PAS garantir le respect du RGPD — les données peuvent quitter l'UE et être réutilisées. À réserver à des contenus non personnels.",
+          "Avec votre propre clé, en offre commerciale, un vrai cadre RGPD devient possible. Le plus solide est Mistral (sous-traitant français, hébergement dans l'UE, engagement de non-entraînement sur les données de l'API). Claude (Anthropic) et ChatGPT (OpenAI) offrent aussi un cadre réel via leur API commerciale (contrat de traitement, pas d'entraînement sur les données de l'API), mais conditionnel : les transferts UE→États-Unis sont encadrés par des clauses contractuelles types.",
+          "Le petit tag « RGPD » affiché dans le sélecteur de fournisseur signale cette POSSIBILITÉ de conformité avec votre propre clé — jamais une garantie automatique. Gemini (clé gratuite AI Studio, susceptible d'entraîner sur les données) et Grok n'en bénéficient pas.",
+          "Ces options conformes coûtent plus cher au token : c'est le prix de la liberté et du contrôle sur vos données. Nous ne sommes pas juristes ; pour tout usage impliquant des données personnelles, vérifiez le contrat de traitement (DPA) du fournisseur et signez-le si nécessaire.",
+        ],
+      },
+      {
         title: "Vos droits",
         body: [
           "Export : votre profil complet se télécharge en un clic depuis l'historique. Suppression : un auteur peut supprimer ses prompts ; la suppression d'un compte (et du profil synchronisé) s'obtient par simple demande à l'administrateur : blanvillain@harmonia.education.",
@@ -72,6 +82,16 @@ const CONTENT: Record<string, Content> = {
           "2. Accounts for AUTHORS and administrators only: public name and email address, verified by a single-use code. No passwords exist.",
           "3. For internal-key billing: consumption per SCHOOL IP address (a school's address, not a person's), with provider and token volume. Personal-key usage is never logged with your IP.",
           "4. If you explicitly enable it (sync option), a copy of your profile (conversations, favourites) — deletable at any time.",
+        ],
+      },
+      {
+        title: "AI models and GDPR",
+        body: [
+          "GDPR compliance does not depend on the model itself, but on the company that processes your data (the processor): where its servers are, whether your exchanges are used to train the model, and what contract (DPA) governs it all.",
+          "Free fallback and « Chinese » models: when the site answers without a personal key (demo mode, free models via the OpenRouter aggregator) or with models published outside the EU and United States, we CANNOT guarantee GDPR compliance — data may leave the EU and be reused. Reserve this for non-personal content.",
+          "With your own key, on a commercial plan, a real GDPR framework becomes possible. The strongest is Mistral (French processor, EU hosting, commitment not to train on API data). Claude (Anthropic) and ChatGPT (OpenAI) also offer a real framework through their commercial API (data-processing agreement, no training on API data), but a conditional one: EU→US transfers are covered by standard contractual clauses.",
+          "The small « GDPR » tag shown in the provider selector flags this POSSIBILITY of compliance with your own key — never an automatic guarantee. Gemini (free AI Studio key, which may train on data) and Grok do not carry it.",
+          "These compliant options cost more per token: that is the price of freedom and of control over your data. We are not lawyers; for any use involving personal data, check the provider's data-processing agreement (DPA) and sign it where required.",
         ],
       },
       {
@@ -110,6 +130,16 @@ const CONTENT: Record<string, Content> = {
         ],
       },
       {
+        title: "I modelli di IA e il GDPR",
+        body: [
+          "Il rispetto del GDPR non dipende dal modello in sé, ma dall'azienda che tratta i tuoi dati (il responsabile del trattamento): dove sono i suoi server, se i tuoi scambi servono ad addestrare il modello e quale contratto (DPA) regola il tutto.",
+          "Ripiego gratuito e modelli « cinesi »: quando il sito risponde senza chiave personale (modalità demo, modelli gratuiti tramite l'aggregatore OpenRouter) o con modelli editi fuori dall'UE e dagli Stati Uniti, NON possiamo garantire il rispetto del GDPR — i dati possono lasciare l'UE ed essere riutilizzati. Da riservare a contenuti non personali.",
+          "Con la tua chiave, in un piano commerciale, un vero quadro GDPR diventa possibile. Il più solido è Mistral (responsabile francese, hosting nell'UE, impegno a non addestrare sui dati dell'API). Claude (Anthropic) e ChatGPT (OpenAI) offrono anch'essi un quadro reale tramite la loro API commerciale (contratto di trattamento, nessun addestramento sui dati dell'API), ma condizionato: i trasferimenti UE→USA sono coperti da clausole contrattuali standard.",
+          "Il piccolo tag « GDPR » mostrato nel selettore del fornitore segnala questa POSSIBILITÀ di conformità con la tua chiave — mai una garanzia automatica. Gemini (chiave gratuita AI Studio, che può addestrare sui dati) e Grok non lo riportano.",
+          "Queste opzioni conformi costano di più per token: è il prezzo della libertà e del controllo sui tuoi dati. Non siamo giuristi; per ogni uso che coinvolge dati personali, verifica il contratto di trattamento (DPA) del fornitore e firmalo se necessario.",
+        ],
+      },
+      {
         title: "I tuoi diritti",
         body: [
           "Esportazione: il profilo completo si scarica con un clic dallo storico. Cancellazione: un autore può eliminare i propri prompt; la cancellazione dell'account (e del profilo sincronizzato) si ottiene su semplice richiesta all'amministratore: blanvillain@harmonia.education.",
@@ -142,6 +172,16 @@ const CONTENT: Record<string, Content> = {
           "2. Konten NUR für Autorinnen/Autoren und Administratoren: öffentlicher Name und E-Mail-Adresse, per Einmalcode verifiziert. Passwörter existieren nicht.",
           "3. Für die Abrechnung des internen Schlüssels: der Verbrauch pro SCHUL-IP-Adresse (die Adresse einer Schule, nicht einer Person), mit Anbieter und Token-Volumen. Nutzungen mit persönlichem Schlüssel werden nie mit Ihrer IP protokolliert.",
           "4. Nur wenn Sie es ausdrücklich aktivieren (Sync-Option): eine Kopie Ihres Profils (Gespräche, Favoriten) — jederzeit löschbar.",
+        ],
+      },
+      {
+        title: "KI-Modelle und die DSGVO",
+        body: [
+          "Die DSGVO-Konformität hängt nicht vom Modell selbst ab, sondern von dem Unternehmen, das Ihre Daten verarbeitet (dem Auftragsverarbeiter): wo dessen Server stehen, ob Ihre Eingaben zum Training des Modells verwendet werden und welcher Vertrag (AVV) das Ganze regelt.",
+          "Kostenloser Rückfall und « chinesische » Modelle: Wenn die Website ohne persönlichen Schlüssel antwortet (Demomodus, kostenlose Modelle über den Aggregator OpenRouter) oder mit Modellen von außerhalb der EU und der USA, können wir die DSGVO-Konformität NICHT garantieren — Daten können die EU verlassen und weiterverwendet werden. Nur für nicht personenbezogene Inhalte verwenden.",
+          "Mit Ihrem eigenen Schlüssel in einem kommerziellen Tarif wird ein echter DSGVO-Rahmen möglich. Am solidesten ist Mistral (französischer Auftragsverarbeiter, EU-Hosting, Zusage, nicht auf API-Daten zu trainieren). Claude (Anthropic) und ChatGPT (OpenAI) bieten über ihre kommerzielle API ebenfalls einen echten Rahmen (Auftragsverarbeitungsvertrag, kein Training auf API-Daten), jedoch einen bedingten: EU→US-Übermittlungen sind durch Standardvertragsklauseln abgedeckt.",
+          "Das kleine « DSGVO »-Tag in der Anbieterauswahl signalisiert diese MÖGLICHKEIT der Konformität mit Ihrem eigenen Schlüssel — nie eine automatische Garantie. Gemini (kostenloser AI-Studio-Schlüssel, der auf Daten trainieren kann) und Grok tragen es nicht.",
+          "Diese konformen Optionen kosten pro Token mehr: Das ist der Preis der Freiheit und der Kontrolle über Ihre Daten. Wir sind keine Juristen; für jede Nutzung mit personenbezogenen Daten prüfen Sie den Auftragsverarbeitungsvertrag (AVV) des Anbieters und schließen Sie ihn ab, wo nötig.",
         ],
       },
       {

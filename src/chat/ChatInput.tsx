@@ -39,9 +39,18 @@ export default function ChatInput() {
     <div className="fixed bottom-0 flex h-[13rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent md:w-[calc(100%-320px)]">
       <form className="mx-auto flex h-full w-full max-w-6xl flex-col justify-end gap-2 p-4 pb-6" onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 gap-2 text-xs text-primary md:grid-cols-4">
-          <label className="flex flex-col gap-1">{t("chat.input.provider")}
+          <label className="flex flex-col gap-1">
+            <span className="flex items-center gap-1.5">{t("chat.input.provider")}
+              {providerDefaults[provider]?.gdpr && (
+                <a href="/rgpd" target="_blank" rel="noreferrer" title={t("chat.input.gdpr.title")}
+                  className="rounded-sm bg-green-600/80 px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-white no-underline hover:bg-green-600">
+                  {t("chat.input.gdpr.tag")}
+                </a>
+              )}
+            </span>
             <select className="rounded bg-tertiary p-2" value={provider} onChange={event => setProvider(event.target.value as ProviderId)}>
-              {Object.entries(providerDefaults).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}
+              {Object.entries(providerDefaults).map(([id, item]) =>
+                <option key={id} value={id}>{item.label}{item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : ""}</option>)}
             </select>
           </label>
           <label className="flex flex-col gap-1">{t("chat.input.model")}
