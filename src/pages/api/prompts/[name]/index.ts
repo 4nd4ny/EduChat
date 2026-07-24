@@ -41,10 +41,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const row = getPublishedByName(name);
     if (!row) return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
-    const versions = getDb()
+    const db = getDb();
+    const versions = db
       .prepare('SELECT version, created_at AS createdAt, length(body) AS sizeBytes FROM prompt_versions WHERE prompt_id = ? ORDER BY version DESC')
       .all(row.id);
-    return res.status(200).json({ prompt: { ...toCard(row), body: row.body }, versions });
+    // Filiation : le tuteur source (s'il existe encore et est publié) et les
+    // variantes PUBLIÉES qui s'inspirent de celui-ci.
+    const inspiredBy = row.inspired_by
+      ? (db.prepare("SELECT name FROM prompts WHERE id = ? AND status = 'published'")
+        .get(row.inspired_by) as { name: string } | undefined)?.name ?? null
+      : null;
+    const variants = (db.prepare("SELECT name FROM prompts WHERE inspired_by = ? AND status = 'published' ORDER BY name")
+      .all(row.id) as { name: string }[]).map(v => v.name);
+    return res.status(200).json({ prompt: { ...toCard(row), body: row.body, inspiredBy, variants }, versions });
   }
 
   if (req.method !== 'PATCH' && req.method !== 'DELETE') {

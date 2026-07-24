@@ -41,6 +41,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const body = String(req.body?.body ?? '');
   const webSearch = req.body?.webSearch ? 1 : 0;
   const sizeBytes = Buffer.byteLength(body, 'utf8');
+  // Affiliation (étape « variantes ») : nom du tuteur source → id stocké en
+  // métadonnée. Silencieusement ignoré si le nom ne correspond à rien.
+  const inspiredByName = String(req.body?.inspiredBy ?? '').trim().slice(0, 64);
+  const inspiredById = inspiredByName ? (getByName(inspiredByName)?.id ?? null) : null;
 
   if (!isValidPromptName(name)) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
   if (getByName(name)) return res.status(409).json({ error: { code: 'ERR_NAME_TAKEN' } });
@@ -63,12 +67,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const shareToken = crypto.randomBytes(16).toString('hex');
   const info = db.prepare(`
     INSERT INTO prompts (name, author_email, author_name, language, description, body, version,
-                         status, share_token, web_search, created_at, updated_at, size_bytes)
+                         status, share_token, web_search, created_at, updated_at, size_bytes, inspired_by)
     VALUES (@name, @email, @authorName, @language, @description, @body, 1,
-            'draft', @shareToken, @webSearch, @now, @now, @sizeBytes)
+            'draft', @shareToken, @webSearch, @now, @now, @sizeBytes, @inspiredById)
   `).run({
     name, email: auth?.email ?? null, authorName: auth?.name ?? '',
-    language, description, body, shareToken, webSearch, now, sizeBytes,
+    language, description, body, shareToken, webSearch, now, sizeBytes, inspiredById,
   });
   db.prepare('INSERT INTO prompt_versions (prompt_id, version, body, created_at) VALUES (?, 1, ?, ?)')
     .run(info.lastInsertRowid, body, now);

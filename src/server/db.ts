@@ -226,6 +226,10 @@ export function getDb(): Database.Database {
     // Identifiant ANONYME de navigateur (uuid aléatoire, aucune identité) :
     // le support du quota par élève — pseudonyme, jamais relié à une personne.
     "ALTER TABLE usage_log ADD COLUMN client_id TEXT NOT NULL DEFAULT ''",
+    // Affiliation des prompts : id du tuteur dont celui-ci s'inspire (flux
+    // « proposer une variante »). Métadonnée de filiation, nullable — la
+    // suppression du parent n'orpheline pas la variante.
+    "ALTER TABLE prompts ADD COLUMN inspired_by INTEGER",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }
@@ -243,4 +247,5 @@ export type PromptRow = {
   created_at: number; updated_at: number;
   usage_count: number; tokens_total: number;
   rating_sum: number; rating_count: number; size_bytes: number;
+  inspired_by: number | null;
 };

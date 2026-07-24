@@ -12,6 +12,7 @@ type Detail = {
   version: number; createdAt: number; updatedAt: number;
   usageCount: number; tokensTotal: number;
   ratingAvg: number | null; ratingCount: number; body: string;
+  inspiredBy: string | null; variants: string[];
 };
 type Version = { version: number; createdAt: number; sizeBytes: number };
 
@@ -93,6 +94,28 @@ export default function PromptPage() {
           </button>
         </div>
         <p className="opacity-80">{detail.description}</p>
+        {/* Filiation : de qui ce tuteur s'inspire, et qui s'inspire de lui. */}
+        {(detail.inspiredBy || (detail.variants?.length ?? 0) > 0) && (
+          <div className="flex flex-col gap-1 rounded border border-white/10 bg-secondary p-2 text-xs">
+            {detail.inspiredBy && (
+              <span>🌱 Inspiré de{" "}
+                <Link className="font-bold underline" href={`/p/${encodeURIComponent(detail.inspiredBy)}`}>
+                  {detail.inspiredBy}
+                </Link>
+              </span>
+            )}
+            {(detail.variants?.length ?? 0) > 0 && (
+              <span>🌿 A inspiré :{" "}
+                {detail.variants.map((v, i) => (
+                  <React.Fragment key={v}>
+                    {i > 0 && ", "}
+                    <Link className="font-bold underline" href={`/p/${encodeURIComponent(v)}`}>{v}</Link>
+                  </React.Fragment>
+                ))}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-70">
           <span>par {detail.authorName}</span>
           <span className="uppercase">{detail.language}</span>

@@ -49,6 +49,9 @@ export default function PublierPage() {
   const [anonymous, setAnonymous] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Filiation : nom du tuteur source quand on arrive par « proposer une
+  // variante » — stockée en métadonnée du nouveau prompt (affiliation).
+  const [inspiredBy, setInspiredBy] = useState("");
 
   // Sans compte vérifié, la publication est nécessairement anonyme.
   useEffect(() => {
@@ -67,6 +70,7 @@ export default function PublierPage() {
         setBody(data.prompt.body);
         setDescription(`Variante de « ${data.prompt.name} » : ${data.prompt.description}`.slice(0, 500));
         setLanguage(data.prompt.language);
+        setInspiredBy(data.prompt.name);
       })
       .catch(() => {});
   }, [router.isReady, router.query.variante]);
@@ -78,7 +82,7 @@ export default function PublierPage() {
     if (!anonymous) Object.assign(headers, authHeaders());
     const response = await fetch("/api/prompts", {
       method: "POST", headers,
-      body: JSON.stringify({ name, language, description, body, webSearch }),
+      body: JSON.stringify({ name, language, description, body, webSearch, ...(inspiredBy ? { inspiredBy } : {}) }),
     });
     const data = await response.json().catch(() => ({}));
     setBusy(false);
@@ -99,6 +103,12 @@ export default function PublierPage() {
       </nav>
 
       <h1 className="text-2xl font-bold">Proposer un tuteur socratique</h1>
+      {inspiredBy && (
+        <p className="mt-2 rounded border border-[#DC6521]/40 bg-[#DC6521]/10 p-2 text-sm">
+          Variante inspirée de <Link className="font-bold underline" href={`/p/${encodeURIComponent(inspiredBy)}`}>{inspiredBy}</Link> —
+          la filiation sera affichée sur les deux fiches.
+        </p>
+      )}
       <p className="mt-2 text-sm opacity-80">
         Votre prompt naît « en construction » : vous le testez dans le chat, vous partagez son
         lien secret à des collègues pour avis, puis vous le soumettez. Il paraîtra au catalogue
