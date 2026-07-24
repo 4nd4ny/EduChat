@@ -1,6 +1,6 @@
 # EduChat
 
-This project is based on [EduChat](https://github.com/4nd4ny/EduChat-4o), which itself is based on the [GPT-4 Playground](https://github.com/Nashex/gpt4-playground) project by [Nashex](https://github.com/Nashex).
+This project is based on the [GPT-4 Playground](https://github.com/Nashex/gpt4-playground) project by [Nashex](https://github.com/Nashex).
 
 ## Overview
 
@@ -8,14 +8,9 @@ EduChat is a text-only multi-provider chat for educational institutions. It offe
 
 ## Key Features
 
-- Claude, ChatGPT, Gemini, OpenRouter, Grok, and Mistral
-- Web search enabled by default for every provider
-- User-selectable reasoning level: fast, balanced, or thorough
-- A personal API key for the active session, or a developer-managed server key
-
-## Differences from EduChat
-
-The main difference from [EduChat](https://github.com/4nd4ny/EduChat-4o) is the mixture of Claude and O1, instead of using ChatGPT 4o and O1. Which mean, you need two API keys!
+- Easy server installation
+- Access to Claude
+- Access to ChatGPT
 
 ## Development Notes
 
