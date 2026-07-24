@@ -11,11 +11,11 @@ type Props = {
   messageIndex: number; 
 };
 
-export default function ChatMessage({ 
-  message: { role, content, model }, 
-  isInitialUserMessage, 
+export default function ChatMessage({
+  message: { role, content, model, attachments },
+  isInitialUserMessage,
   isLastAssistantMessage,
-  messageIndex 
+  messageIndex
 }: Props) {
   const [hover, setHover] = React.useState(false);
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
@@ -75,6 +75,15 @@ export default function ChatMessage({
           {role === 'assistant' && model && (
             <div className="text-sm font-bold text-gray-500">
               {formatModelName(model)}
+            </div>
+          )}
+          {role === "user" && Array.isArray(attachments) && attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-4 pt-2 text-xs opacity-70">
+              {attachments.map((a: any, i: number) => (
+                <span key={i} className="rounded bg-primary/10 px-2 py-0.5">
+                  📎 {a.name || (a.kind === "pdf" ? "document.pdf" : "image")}
+                </span>
+              ))}
             </div>
           )}
           <div className="text-md prose w-full max-w-6xl rounded p-4 text-primary dark:prose-invert prose-code:text-primary prose-pre:bg-transparent prose-pre:p-0">

@@ -9,10 +9,15 @@ import {
   type ProviderCallOpts, type WireMessage,
 } from "../../server/llm";
 import {
+  ATTACHMENT_MEDIA_TYPES,
   ERR,
   isProviderId,
   isReasoningLevel,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+  providerAcceptsAttachment,
   providerDefaults,
+  type Attachment,
   type ProviderId,
   type ReasoningLevel,
 } from "../../shared/providers";
@@ -21,8 +26,11 @@ type Message = { role: "user" | "assistant"; content: string };
 
 // Runtime Node (et non edge) : indispensable pour lire auth_lock.json et la
 // base SQLite avant de dépenser les clés du serveur.
+// Limite relevée pour les pièces jointes (images/PDF en base64, BYOK) ; les
+// requêtes sans pièce jointe restent minuscules et le contrôle d'accès
+// s'applique avant tout appel amont.
 export const config = {
-  api: { bodyParser: { sizeLimit: "100kb" } },
+  api: { bodyParser: { sizeLimit: "48mb" } },
 };
 
 const developerKeys: Record<ProviderId, string | undefined> = {
@@ -121,6 +129,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const model = String(body.model || providerDefaults[provider].model).trim();
   if (!model || model.length > 128) return res.status(400).json({ error: { code: ERR.MODEL } });
+
+  // Pièces jointes (images/PDF) — réservées à la clé PERSONNELLE et aux
+  // fournisseurs compatibles. Validation stricte : type MIME en liste blanche,
+  // base64 plausible, tailles bornées.
+  const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+  if (rawAttachments.length > MAX_ATTACHMENTS) {
+    return res.status(400).json({ error: { code: ERR.ATTACH_INVALID } });
+  }
+  const attachments: Attachment[] = [];
+  for (const raw of rawAttachments) {
+    const kind: Attachment['kind'] | null = raw?.kind === 'image' || raw?.kind === 'pdf' ? raw.kind : null;
+    const mediaType = String(raw?.mediaType ?? '');
+    const data = String(raw?.data ?? '');
+    const name = String(raw?.name ?? '').slice(0, 128);
+    if (!kind || !ATTACHMENT_MEDIA_TYPES[kind].includes(mediaType)) {
+      return res.status(400).json({ error: { code: ERR.ATTACH_INVALID } });
+    }
+    // Longueur base64 ≈ 4/3 de l'original ; contrôle du format sur un échantillon.
+    if (!data || data.length > MAX_ATTACHMENT_BYTES * 4 / 3 + 4 || /[^A-Za-z0-9+/=]/.test(data.slice(0, 4096))) {
+      return res.status(400).json({ error: { code: ERR.ATTACH_INVALID } });
+    }
+    attachments.push({ kind, mediaType, name, data });
+  }
+  if (attachments.length) {
+    if (!String(body.apiKey || "").trim()) {
+      return res.status(403).json({ error: { code: ERR.ATTACH_KEY } });
+    }
+    if (attachments.some(a => !providerAcceptsAttachment(provider, a.kind))) {
+      return res.status(400).json({ error: { code: ERR.ATTACH_UNSUPPORTED } });
+    }
+  }
 
   // Tuteur socratique : résolu et injecté CÔTÉ SERVEUR — le texte du prompt ne
   // transite jamais par le client pendant le chat.
@@ -221,6 +260,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     provider: effProvider, model: modelName, apiKey,
     messages: cleanMessages, withSystem, system,
     reasoning, webSearch, freeMode: usedFreeKey, stream,
+    // Pièces jointes : déjà validées, et par construction BYOK uniquement
+    // (donc jamais transmises au repli gratuit ni à la clé interne).
+    ...(attachments.length && personalKey ? { attachments } : {}),
   });
 
   // Statistiques — uniquement après une complétion RÉUSSIE : compteurs publics

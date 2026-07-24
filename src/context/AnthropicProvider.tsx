@@ -11,7 +11,14 @@ import { requestCompletion } from "../utils/streamCompletion";
 
 export { providerDefaults };
 export type { ProviderId, ReasoningLevel };
-export type ChatMessage = { id: string; role: "user" | "assistant"; content: string; model?: string };
+// Pièce jointe en attente d'envoi (base64 complet) — ne vit qu'en mémoire.
+export type PendingAttachment = { kind: "image" | "pdf"; mediaType: string; name: string; data: string };
+// Dans l'historique, seules les MÉTADONNÉES des pièces jointes sont conservées
+// (nom + type) : le contenu base64 ferait exploser le quota localStorage.
+export type ChatMessage = {
+  id: string; role: "user" | "assistant"; content: string; model?: string;
+  attachments?: { kind: string; name: string }[];
+};
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2 Mo
 
@@ -56,7 +63,7 @@ function addTokenUsage(tokens: number) {
 
 type Context = {
   loading: boolean; messages: ChatMessage[]; setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  addMessage: (content: string, submit?: boolean, role?: "user" | "assistant") => void;
+  addMessage: (content: string, submit?: boolean, role?: "user" | "assistant", attachments?: PendingAttachment[]) => void;
   provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
   apiKey: string; setApiKey: (value: string) => void; reasoning: ReasoningLevel; setReasoning: (value: ReasoningLevel) => void;
   promptName: string; setPromptName: (value: string) => void;
@@ -137,7 +144,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     updateConversationName(conversationId, first.slice(0, 48) + (first.length > 48 ? "…" : ""));
   }, [messages, conversationName, conversationId, updateConversationName]);
 
-  const send = useCallback(async (nextMessages: ChatMessage[]) => {
+  const send = useCallback(async (nextMessages: ChatMessage[], attachments?: PendingAttachment[]) => {
     setLoading(true); setError("");
     // Streaming : un message assistant « en cours » est créé au premier fragment
     // puis complété au fil du flux. En repli gratuit (ou fournisseur sans flux),
@@ -161,6 +168,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
         shareToken: shareToken || undefined,
         clientId: getClientId() || undefined,
         messages: nextMessages.map(({ role, content }) => ({ role, content })),
+        ...(attachments?.length ? { attachments } : {}),
       }, {
         onStart: meta => {
           const usedProvider = providerDefaults[meta.provider as ProviderId] ? (meta.provider as ProviderId) : provider;
@@ -206,9 +214,17 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     } finally { setLoading(false); }
   }, [provider, model, apiKey, reasoning, promptName, promptVersion, shareToken, router.locale]);
 
-  const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user") => {
+  const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user", attachments?: PendingAttachment[]) => {
     const value = content.trim(); if (!value) return;
-    setMessages(previous => { const next = [...previous, { id: uuidv4(), role, content: value }]; if (submit && role === "user") void send(next); return next; });
+    setMessages(previous => {
+      const next = [...previous, {
+        id: uuidv4(), role, content: value,
+        // Historique : métadonnées seulement (le base64 reste hors localStorage).
+        ...(attachments?.length ? { attachments: attachments.map(({ kind, name }) => ({ kind, name })) } : {}),
+      }];
+      if (submit && role === "user") void send(next, attachments);
+      return next;
+    });
   }, [send]);
   const deleteMessagesFromIndex = useCallback((index: number) => setMessages(previous => previous.slice(0, index)), []);
   const resetConversation = useCallback(() => { setMessages([]); setConversationId(""); setConversationName("..."); router.push("/"); }, [router]);
