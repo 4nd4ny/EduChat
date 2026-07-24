@@ -50,7 +50,15 @@ export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS || 'blanvi
 // (typiquement SECRET_OPENROUTER_API_KEY, plafonnée chez le fournisseur).
 // Vide = pas de repli (comportement verrouillé historique).
 export const FreeProvider: string = (process.env.SECRET_FREE_PROVIDER || '').trim();
-export const FreeModel: string = (process.env.SECRET_FREE_MODEL || '').trim();
+// SECRET_FREE_MODEL peut lister PLUSIEURS modèles (séparés par des virgules) :
+// une CASCADE de secours. Si le premier modèle gratuit est saturé (429), le
+// serveur bascule automatiquement sur le suivant. Ex :
+//   SECRET_FREE_MODEL=google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free,nvidia/nemotron-3-super-120b-a12b:free
+// (DeepSeek/Qwen n'ont pas de variante :free sur OpenRouter actuellement ; les
+//  ajouter le jour où elles reviennent = éditer cette ligne, sans toucher au code.)
+export const FreeModels: string[] = (process.env.SECRET_FREE_MODEL || '')
+  .split(',').map(m => m.trim()).filter(Boolean);
+export const FreeModel: string = FreeModels[0] || ''; // compat : premier de la liste
 
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {

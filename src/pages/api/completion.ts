@@ -3,7 +3,7 @@ import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/acces
 import { getDb, PromptRow } from "../../server/db";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
-import { FreeProvider, FreeModel } from "../../utils/env";
+import { FreeProvider, FreeModel, FreeModels } from "../../utils/env";
 import {
   ERR,
   isProviderId,
@@ -209,9 +209,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     let data: any;
-    // Le repli gratuit (pool OpenRouter partagé) renvoie souvent un 429 transitoire
-    // « rate-limited upstream » : un seul retry après ~1,2 s le rattrape souvent.
-    for (let attempt = 1; ; attempt++) {
+    // Repli gratuit : CASCADE de secours. On tente chaque modèle gratuit de la
+    // liste dans l'ordre ; si l'un est saturé (429 « rate-limited upstream »), on
+    // passe au suivant. Un seul modèle configuré → 2 tentatives (429 souvent
+    // transitoire). Les autres chemins (BYOK / clé interne) : un seul modèle.
+    const freeList = FreeModels.length ? FreeModels : [effModel];
+    const candidates = usedFreeKey
+      ? (freeList.length === 1 ? [freeList[0], freeList[0]] : freeList).slice(0, 6)
+      : [effModel];
+    let lastError: any = null;
+    for (let ci = 0; ci < candidates.length; ci++) {
+     effModel = candidates[ci].slice(0, 128);
      try {
     if (effProvider === "openai" || effProvider === "grok") {
       data = await requestJson(effProvider === "openai" ? "https://api.openai.com/v1/responses" : "https://api.x.ai/v1/responses", {
@@ -272,12 +280,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }),
       });
     }
+        lastError = null;
         break;
      } catch (err) {
-       if (!usedFreeKey || attempt >= 2) throw err;
-       await new Promise(resolve => setTimeout(resolve, 1200));
+       lastError = err;
+       // Modèle suivant de la cascade (petite pause pour laisser le pool respirer).
+       if (ci < candidates.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
      }
     }
+    if (lastError) throw lastError;
 
     const tokenUsage = usageFromResponse(data);
 
