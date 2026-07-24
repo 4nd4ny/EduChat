@@ -127,6 +127,29 @@ CREATE TABLE IF NOT EXISTS session_settings (
   set_by_email      TEXT,
   expires_at        INTEGER NOT NULL
 );
+
+-- Commentaires ANONYMES sur les fiches de tuteurs. Aucune identité, aucune IP :
+-- seul le texte et son état de modération. Modérés par l'AUTEUR du tuteur ou
+-- par l'administration (qui voit tout). JAMAIS supprimés — masqués (hidden).
+CREATE TABLE IF NOT EXISTS comments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  prompt_id    INTEGER NOT NULL,
+  body         TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending','approved','hidden')),
+  created_at   INTEGER NOT NULL,
+  moderated_at INTEGER,
+  moderated_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_comments_prompt ON comments(prompt_id);
+CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status);
+
+-- Déduplication des alertes email envoyées à l'administration (une même
+-- alerte — ex. IP gourmande — ne part qu'une fois par jour).
+CREATE TABLE IF NOT EXISTS admin_alerts (
+  key TEXT PRIMARY KEY,
+  ts  INTEGER NOT NULL
+);
 `;
 
 // Prompts socratiques d'amorçage : un catalogue vide ne recrute personne.
@@ -230,6 +253,12 @@ export function getDb(): Database.Database {
     // « proposer une variante »). Métadonnée de filiation, nullable — la
     // suppression du parent n'orpheline pas la variante.
     "ALTER TABLE prompts ADD COLUMN inspired_by INTEGER",
+    // Archivage administratif : masque DÉFINITIVEMENT le prompt de l'interface
+    // d'administration, sans jamais rien supprimer (la facturation des tokens
+    // reste calculable). 0 = visible, 1 = archivé.
+    "ALTER TABLE prompts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+    // Date de création du compte (0 pour les comptes antérieurs à la colonne).
+    "ALTER TABLE users ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }
@@ -248,4 +277,12 @@ export type PromptRow = {
   usage_count: number; tokens_total: number;
   rating_sum: number; rating_count: number; size_bytes: number;
   inspired_by: number | null;
+  archived: number;
+};
+
+/** Ligne de la table comments (commentaires anonymes sur les fiches). */
+export type CommentRow = {
+  id: number; prompt_id: number; body: string;
+  status: 'pending' | 'approved' | 'hidden';
+  created_at: number; moderated_at: number | null; moderated_by: string | null;
 };

@@ -60,3 +60,8 @@ SECRET_SMTP_FROM=EduChat <noreply@educh.at>
 SECRET_PROXY_TOKEN=
 # Alternative : liste blanche d'IP socket de proxys de confiance (au lieu du secret).
 TRUSTED_PROXY_IPS=
+
+# Alerte « IP gourmande » : un email part vers SECRET_ADMIN_EMAILS dès qu'une
+# même IP dépasse ce volume quotidien de tokens sur la clé interne (une alerte
+# par IP et par jour, aucun blocage). 0 = désactivé. Défaut : 100000.
+SECRET_ALERT_IP_TOKENS_DAILY=100000

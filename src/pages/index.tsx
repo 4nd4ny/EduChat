@@ -91,6 +91,10 @@ export default function Catalogue() {
             title={t("home.duelTitle")}>
             {t("home.duel")}
           </Link>
+          <Link href="/verifier" className="px-2 py-2 text-xs opacity-60 hover:opacity-100"
+            title={t("home.accountTitle")}>
+            {t("home.account")}
+          </Link>
           <Link href="/tutoriel" className="px-2 py-2 text-xs opacity-60 hover:opacity-100">
             Guide
           </Link>

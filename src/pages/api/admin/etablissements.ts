@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
 import { requireAdmin } from '../../../server/admin';
+import { notifyAdmin } from '../../../server/mail';
 import { ERR, PROVIDER_IDS } from '../../../shared/providers';
 
 // Gestion des établissements (« clients ») — réservée aux administrateurs.
@@ -37,16 +38,24 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       INSERT INTO etablissements (name, ips, respire, token_quota_monthly, quota_per_student_daily, active_provider, billing_email, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(name, ips, respire, quota, perStudent, activeProvider, billingEmail, Date.now());
+    // Trace email de chaque nouvel établissement (hook prêt pour un futur
+    // parcours d'inscription en libre-service).
+    notifyAdmin(
+      `Nouvel établissement : ${name}`,
+      `L'établissement « ${name} » vient d'être créé.\nIPs : ${ips || '(aucune)'}\n` +
+      `RESPIRE : ${respire ? 'oui (gratuit)' : 'non'} — Quota mensuel : ${quota || 'illimité'}\n` +
+      `Email de facturation : ${billingEmail || '(non renseigné)'}`,
+    );
     return res.status(201).json({ ok: true, id: Number(info.lastInsertRowid) });
   }
 
   if (req.method === 'DELETE') {
-    const id = Number(req.query.id) || 0;
-    if (!id) return res.status(400).json({ error: { code: 'ERR_ID_INVALID' } });
-    // Le journal de consommation est conservé (données de facturation) :
-    // seules les lignes futures perdent leur rattachement.
-    db.prepare('DELETE FROM etablissements WHERE id = ?').run(id);
-    return res.status(200).json({ ok: true });
+    // DÉSACTIVÉ (principe du 24 juillet : on ne supprime jamais rien) —
+    // supprimer la ligne effacerait le nom, les IP et l'email de facturation
+    // d'un client dont usage_log garde l'historique : la facture d'un mois
+    // passé deviendrait inattribuable. Pour « fermer » un établissement :
+    // vider ses IP et son quota (il ne matche plus rien), la ligne demeure.
+    return res.status(403).json({ error: { code: 'ERR_DELETE_DISABLED' } });
   }
 
   res.setHeader('Allow', ['GET', 'POST', 'DELETE']);

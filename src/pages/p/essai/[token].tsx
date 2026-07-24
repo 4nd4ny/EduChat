@@ -11,8 +11,9 @@ type Draft = {
 };
 
 const errorLabels: Record<string, string> = {
-  ERR_FORBIDDEN: "Vous n'avez pas les droits pour cette action.",
+  ERR_FORBIDDEN: "Vous n'avez pas les droits pour cette action (dépublier/republier demande le jeton d'auteur : identifiez-vous sur /verifier).",
   ERR_STATUS: "Ce prompt n'est plus dans un état permettant cette action.",
+  ERR_ARCHIVED: "Ce prompt a été archivé par l'administration : il est figé.",
   ERR_BODY_TOO_SHORT: "Le prompt est trop court.",
   ERR_BODY_TOO_LARGE: "Le prompt dépasse 256 Ko.",
   ERR_QUOTA_USER: "Quota de 1 Mo atteint.",
@@ -76,6 +77,24 @@ export default function EssaiPage() {
     }
   };
 
+  // Dépublier / republier : droits d'AUTEUR IDENTIFIÉ (jeton) — l'atelier est
+  // l'endroit naturel pour piloter le cycle de vie de SON tuteur (rien n'est
+  // jamais supprimé : la bascule est réversible).
+  const retire = async () => {
+    const result = await patch({ action: "retire" });
+    if (result) {
+      setDraft({ ...draft!, status: "retired" });
+      setMessage("Dépublié — le tuteur n'apparaît plus au catalogue (republiable à tout moment).");
+    }
+  };
+  const republish = async () => {
+    const result = await patch({ action: "republish" });
+    if (result) {
+      setDraft({ ...draft!, status: "published" });
+      setMessage("Republié — le tuteur est de retour au catalogue.");
+    }
+  };
+
   const share = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -86,7 +105,7 @@ export default function EssaiPage() {
   if (notFound) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center text-primary">
-        <p>Ce lien d'essai n'existe pas (ou le prompt a été supprimé).</p>
+        <p>Ce lien d'essai n'existe pas (ou le prompt a été archivé par l'administration).</p>
         <Link href="/" className="mt-4 inline-block underline">Retour au catalogue</Link>
       </div>
     );
@@ -108,7 +127,7 @@ export default function EssaiPage() {
         {draft.status === "draft" && <>Prompt <b>en construction</b> — invisible au catalogue. Ce lien secret permet de le lire et de le tester : partagez-le à vos testeurs.</>}
         {draft.status === "pending" && <>Prompt <b>soumis</b>, en attente de validation.</>}
         {draft.status === "published" && <>Ce prompt est désormais <b>publié</b> : <Link className="underline" href={`/p/${encodeURIComponent(draft.name)}`}>voir sa fiche publique</Link>.</>}
-        {draft.status === "retired" && <>Ce prompt a été <b>dépublié</b>.</>}
+        {draft.status === "retired" && <>Ce prompt a été <b>dépublié</b> — rien n'est supprimé, son auteur peut le republier ci-dessous.</>}
       </div>
 
       <h1 className="mt-4 text-3xl font-bold">{draft.name}</h1>
@@ -128,6 +147,20 @@ export default function EssaiPage() {
           <button onClick={submit} disabled={busy}
             className="flex items-center gap-1 rounded border border-green-500/50 px-4 py-2 text-sm hover:bg-green-500/10 disabled:opacity-50">
             <MdSend /> Soumettre pour publication
+          </button>
+        )}
+        {draft.status === "published" && (
+          <button onClick={retire} disabled={busy}
+            title="Retirer du catalogue — réversible, rien n'est supprimé (jeton d'auteur requis)"
+            className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary disabled:opacity-50">
+            Dépublier
+          </button>
+        )}
+        {draft.status === "retired" && (
+          <button onClick={republish} disabled={busy}
+            title="Remettre au catalogue (jeton d'auteur requis)"
+            className="flex items-center gap-1 rounded border border-green-500/50 px-4 py-2 text-sm hover:bg-green-500/10 disabled:opacity-50">
+            Republier
           </button>
         )}
       </div>

@@ -116,6 +116,7 @@ export default function GuideFR() {
           <li><b>Pièces jointes</b> (clé personnelle) : joignez une <b>image ou un PDF</b> à votre question, selon le fournisseur choisi.</li>
           <li><b>Chat vocal</b> (clé personnelle, fournisseurs compatibles) : dictez votre question au micro, et le mode vocal lit les réponses — pratique sur smartphone.</li>
           <li><b>Favoris</b> (étoile) et <b>notes</b> (1-5) : conservés dans votre navigateur, les favoris remontent en tête du catalogue.</li>
+          <li><b>Commentaires anonymes</b> sur chaque fiche : déposez un retour d'usage — il paraît après modération par l'auteur du tuteur ou l'administration.</li>
           <li><b>Historique</b> : vos conversations restent dans le navigateur. Renommage, suppression, export de chaque discussion (.md + .json), et <b>export du profil complet</b> (conversations + favoris + notes) réimportable ailleurs par glisser-déposer.</li>
           <li><b>Compteur de tokens</b> : le total consommé s'affiche sous la zone de saisie et dans le titre de l'onglet.</li>
           <li><b>Via une école</b> : sur <Link className="underline" href="/school">/school</Link>, aucun compte ni clé — voir le <Link className="underline" href="/etablissements">guide des établissements</Link>.</li>
@@ -126,19 +127,19 @@ export default function GuideFR() {
       <Section id="promptagogues" title="Promptagogues — créer un tuteur">
         <p>Un <b>promptagogue</b> (prompt + pédagogue) est l'auteur d'un tuteur. Tout le monde peut le devenir :</p>
         <ol className="list-inside list-decimal space-y-2">
-          <li><b>Identifiez-vous</b> (facultatif mais recommandé) sur <Link className="underline" href="/verifier">/verifier</Link> : nom public + email, confirmé par un code à six chiffres reçu par email. <b>Aucun mot de passe, jamais.</b> Sans compte, la publication est anonyme — testable et soumissible via l'URL secrète, mais seule l'administration pourra la supprimer.</li>
+          <li><b>Identifiez-vous</b> (facultatif mais recommandé) sur <Link className="underline" href="/verifier">/verifier</Link> : nom public + email, confirmé par un code à six chiffres reçu par email. <b>Aucun mot de passe, jamais.</b> Sans compte, la publication est anonyme — testable et soumissible via l'URL secrète, mais toute la modération (validation, dépublication, archivage) reviendra à l'administration.</li>
           <li><b>Rédigez</b> sur <Link className="underline" href="/publier">/publier</Link> : un <b>nom propre unique</b> (Pythagore, Curie...), une description pour le catalogue, la langue, et le prompt lui-même — le gabarit fourni pose les règles socratiques de base (ne jamais donner la réponse, avancer par questions, encourager). Limites : 256 Ko par prompt, 1 Mo par auteur. Texte uniquement.</li>
           <li><b>Testez</b> : le brouillon « en construction » a une URL secrète — lecture, édition, test dans le chat, et invitation de testeurs par simple partage du lien.</li>
           <li><b>Affinez en duel</b> sur <Link className="underline" href="/duel">/duel</Link> (réservé aux promptagogues) : la même question à deux tuteurs sur le même modèle — ou au même tuteur sur deux modèles — pour mesurer l'effet d'une formulation.</li>
           <li><b>Soumettez</b>, puis laissez la validation faire son œuvre (section suivante).</li>
         </ol>
-        <p><b>Ensuite :</b> une modification d'un tuteur publié crée une <b>nouvelle version</b> — les conversations en cours restent sur la leur et proposent la bascule, sans jamais l'imposer. Vous pouvez <b>dépublier ou supprimer vos</b> tuteurs à tout moment. « Proposer une variante » sur n'importe quelle fiche pré-remplit le formulaire avec le prompt existant et enregistre la <b>filiation</b> (« inspiré de », affichée sur les deux fiches) : c'est la voie de la personnalisation. L'option <b>synchronisation</b> (cochée sur /verifier) sauvegarde votre profil sur le serveur pour retrouver vos conversations et favoris sur un autre navigateur.</p>
+        <p><b>Ensuite :</b> une modification d'un tuteur publié crée une <b>nouvelle version</b> — les conversations en cours restent sur la leur et proposent la bascule, sans jamais l'imposer. Vous pouvez <b>dépublier vos</b> tuteurs à tout moment depuis votre atelier (le lien secret), et les republier plus tard (rien n'est jamais supprimé : les compteurs restent intacts). Les <b>commentaires anonymes</b> déposés sur vos fiches vous attendent : vous les modérez (approuver ou masquer). « Proposer une variante » sur n'importe quelle fiche pré-remplit le formulaire avec le prompt existant et enregistre la <b>filiation</b> (« inspiré de », affichée sur les deux fiches) : c'est la voie de la personnalisation. L'option <b>synchronisation</b> (cochée sur /verifier) sauvegarde votre profil sur le serveur pour retrouver vos conversations et favoris sur un autre navigateur.</p>
       </Section>
 
       <Section id="validation" title="Le processus de validation">
         <div className="overflow-x-auto">
           <p className="whitespace-nowrap rounded bg-tertiary p-3 font-mono text-xs">
-            en construction (URL secrète) → soumis → <b className="text-green-400">publié</b> ⇄ dépublié — et suppression possible
+            en construction (URL secrète) → soumis → <b className="text-green-400">publié</b> ⇄ dépublié — rien n'est jamais supprimé
           </p>
         </div>
         <ul className="list-inside list-disc space-y-1">
@@ -146,7 +147,7 @@ export default function GuideFR() {
           <li><b>Soumis</b> : entre dans la file de validation, visible des validateurs seulement.</li>
           <li><b>Validation a priori</b> : un <b>administrateur ou n'importe quel promptagogue vérifié</b> relit le prompt et le publie. Ce choix communautaire protège les élèves (public mineur) tout en évitant le goulot d'un validateur unique — il filtre surtout les propositions anonymes.</li>
           <li><b>Publié</b> : au catalogue, utilisable par tous, compteurs actifs.</li>
-          <li><b>Dépublié</b> : retiré du catalogue mais conservé (réversible). La <b>suppression</b> définitive appartient à l'auteur (pour ses tuteurs) ou à l'administration ; un prompt anonyme n'est supprimable que par l'administration.</li>
+          <li><b>Dépublié</b> : retiré du catalogue mais conservé — l'auteur ou l'administration peut le <b>republier</b>, l'administration peut aussi l'<b>éditer, le renommer</b>, ou l'<b>archiver</b> (masqué définitivement de l'interface d'administration, mais conservé en base : rien n'est jamais supprimé, les statistiques de consommation restent exactes).</li>
         </ul>
       </Section>
 

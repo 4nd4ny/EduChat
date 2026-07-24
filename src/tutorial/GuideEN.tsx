@@ -111,6 +111,7 @@ export default function GuideEN() {
           <li><b>Attachments</b> (personal key): attach an <b>image or a PDF</b> to your question, depending on the chosen provider.</li>
           <li><b>Voice chat</b> (personal key, compatible providers): dictate your question into the microphone, and voice mode reads replies aloud — handy on a smartphone.</li>
           <li><b>Favourites</b> (star) and <b>ratings</b> (1-5): kept in your browser; favourites rise to the top of the catalogue.</li>
+          <li><b>Anonymous comments</b> on each page: leave usage feedback — it appears after moderation by the tutor's author or the administration.</li>
           <li><b>History</b>: your conversations stay in the browser. Renaming, deletion, per-conversation export (.md + .json), and <b>full profile export</b> (conversations + favourites + ratings) re-importable elsewhere by drag and drop.</li>
           <li><b>Token counter</b>: the total consumed shows under the input area and in the tab title.</li>
           <li><b>Through a school</b>: on <Link className="underline" href="/school">/school</Link>, no account or key — see the <Link className="underline" href="/etablissements">schools guide</Link>.</li>
@@ -121,19 +122,19 @@ export default function GuideEN() {
       <Section id="promptagogues" title="Promptagogues — creating a tutor">
         <p>A <b>promptagogue</b> (prompt + pedagogue) is a tutor's author. Anyone can become one:</p>
         <ol className="list-inside list-decimal space-y-2">
-          <li><b>Identify yourself</b> (optional but recommended) on <Link className="underline" href="/verifier">/verifier</Link>: public name + email, confirmed by a six-digit code received by email. <b>No password, ever.</b> Without an account, publication is anonymous — testable and submittable via the secret URL, but only the administration can delete it.</li>
+          <li><b>Identify yourself</b> (optional but recommended) on <Link className="underline" href="/verifier">/verifier</Link>: public name + email, confirmed by a six-digit code received by email. <b>No password, ever.</b> Without an account, publication is anonymous — testable and submittable via the secret URL, but all moderation (validation, unpublishing, archiving) will rest with the administration.</li>
           <li><b>Write</b> on <Link className="underline" href="/publier">/publier</Link>: a <b>unique proper name</b> (Pythagoras, Curie...), a catalogue description, the language, and the prompt itself — the provided template lays down the basic Socratic rules (never give the answer, advance by questions, encourage). Limits: 256 KB per prompt, 1 MB per author. Text only.</li>
           <li><b>Test</b>: the \"under construction\" draft has a secret URL — reading, editing, testing in the chat, and inviting testers by simply sharing the link.</li>
           <li><b>Refine in a duel</b> on <Link className="underline" href="/duel">/duel</Link> (promptagogues only): the same question to two tutors on the same model — or the same tutor on two models — to measure the effect of a wording.</li>
           <li><b>Submit</b>, then let validation do its work (next section).</li>
         </ol>
-        <p><b>Afterwards:</b> editing a published tutor creates a <b>new version</b> — ongoing conversations stay on theirs and offer the switch, never forcing it. You can <b>unpublish or delete your</b> tutors at any time. \"Propose a variant\" on any page pre-fills the form with the existing prompt and records the <b>lineage</b> (\"inspired by\", shown on both pages): that is the path of personalisation. The <b>sync</b> option (ticked on /verifier) saves your profile on the server so you can retrieve your conversations and favourites in another browser.</p>
+        <p><b>Afterwards:</b> editing a published tutor creates a <b>new version</b> — ongoing conversations stay on theirs and offer the switch, never forcing it. You can <b>unpublish your</b> tutors at any time from your workshop (the secret link) and republish them later (nothing is ever deleted: counters stay intact). The <b>anonymous comments</b> left on your pages await you: you moderate them (approve or hide). \"Propose a variant\" on any page pre-fills the form with the existing prompt and records the <b>lineage</b> (\"inspired by\", shown on both pages): that is the path of personalisation. The <b>sync</b> option (ticked on /verifier) saves your profile on the server so you can retrieve your conversations and favourites in another browser.</p>
       </Section>
 
       <Section id="validation" title="The validation process">
         <div className="overflow-x-auto">
           <p className="whitespace-nowrap rounded bg-tertiary p-3 font-mono text-xs">
-            under construction (secret URL) → submitted → <b className="text-green-400">published</b> ⇄ unpublished — and deletion possible
+            under construction (secret URL) → submitted → <b className="text-green-400">published</b> ⇄ unpublished — nothing is ever deleted
           </p>
         </div>
         <ul className="list-inside list-disc space-y-1">
@@ -141,7 +142,7 @@ export default function GuideEN() {
           <li><b>Submitted</b>: joins the validation queue, visible to validators only.</li>
           <li><b>A-priori validation</b>: an <b>administrator or any verified promptagogue</b> reviews the prompt and publishes it. This community choice protects students (a minor audience) while avoiding a single-validator bottleneck — it mostly filters anonymous proposals.</li>
           <li><b>Published</b>: in the catalogue, usable by everyone, counters active.</li>
-          <li><b>Unpublished</b>: removed from the catalogue but kept (reversible). Definitive <b>deletion</b> belongs to the author (for their tutors) or the administration; an anonymous prompt can only be deleted by the administration.</li>
+          <li><b>Unpublished</b>: removed from the catalogue but kept — the author or the administration can <b>republish</b> it; the administration can also <b>edit, rename</b> or <b>archive</b> it (permanently hidden from the admin interface, yet kept in the database: nothing is ever deleted, so consumption statistics stay exact).</li>
         </ul>
       </Section>
 

@@ -111,6 +111,7 @@ export default function GuideDE() {
           <li><b>Anhänge</b> (eigener Schlüssel): Hängen Sie ein <b>Bild oder PDF</b> an Ihre Frage an, je nach gewähltem Anbieter.</li>
           <li><b>Sprachchat</b> (eigener Schlüssel, kompatible Anbieter): Diktieren Sie Ihre Frage ins Mikrofon — der Sprachmodus liest Antworten laut vor. Praktisch auf dem Smartphone.</li>
           <li><b>Favoriten</b> (Stern) und <b>Bewertungen</b> (1-5): im Browser gespeichert; Favoriten rücken im Katalog nach oben.</li>
+          <li><b>Anonyme Kommentare</b> auf jeder Seite: Hinterlassen Sie eine Rückmeldung — sie erscheint nach Freigabe durch den Autor des Tutors oder die Administration.</li>
           <li><b>Verlauf</b>: Ihre Gespräche bleiben im Browser. Umbenennen, Löschen, Export jedes Gesprächs (.md + .json) und <b>Export des vollständigen Profils</b> (Gespräche + Favoriten + Bewertungen), per Drag-and-drop anderswo reimportierbar.</li>
           <li><b>Token-Zähler</b>: Der Gesamtverbrauch erscheint unter dem Eingabefeld und im Tab-Titel.</li>
           <li><b>Über eine Schule</b>: Auf <Link className="underline" href="/school">/school</Link> weder Konto noch Schlüssel — siehe <Link className="underline" href="/etablissements">Schul-Leitfaden</Link>.</li>
@@ -121,19 +122,19 @@ export default function GuideDE() {
       <Section id="promptagogues" title="Promptagogen — einen Tutor erstellen">
         <p>Ein <b>Promptagoge</b> (Prompt + Pädagoge) ist der Autor eines Tutors. Jede und jeder kann es werden:</p>
         <ol className="list-inside list-decimal space-y-2">
-          <li><b>Identifizieren Sie sich</b> (optional, aber empfohlen) auf <Link className="underline" href="/verifier">/verifier</Link>: öffentlicher Name + E-Mail, bestätigt durch einen sechsstelligen Code per E-Mail. <b>Kein Passwort, niemals.</b> Ohne Konto ist die Veröffentlichung anonym — über die geheime URL testbar und einreichbar, aber nur die Administration kann sie löschen.</li>
+          <li><b>Identifizieren Sie sich</b> (optional, aber empfohlen) auf <Link className="underline" href="/verifier">/verifier</Link>: öffentlicher Name + E-Mail, bestätigt durch einen sechsstelligen Code per E-Mail. <b>Kein Passwort, niemals.</b> Ohne Konto ist die Veröffentlichung anonym — über die geheime URL testbar und einreichbar, doch die gesamte Moderation (Freigabe, Zurückziehen, Archivieren) liegt dann bei der Administration.</li>
           <li><b>Schreiben Sie</b> auf <Link className="underline" href="/publier">/publier</Link>: ein <b>eindeutiger Eigenname</b> (Pythagoras, Curie...), eine Katalogbeschreibung, die Sprache und der Prompt selbst — die mitgelieferte Vorlage setzt die sokratischen Grundregeln (nie die Antwort geben, in Fragen voranschreiten, ermutigen). Grenzen: 256 KB pro Prompt, 1 MB pro Autor. Nur Text.</li>
           <li><b>Testen Sie</b>: Der Entwurf „im Aufbau“ hat eine geheime URL — Lesen, Bearbeiten, Testen im Chat, und Tester einladen durch einfaches Teilen des Links.</li>
           <li><b>Verfeinern Sie im Duell</b> auf <Link className="underline" href="/duel">/duel</Link> (nur Promptagogen): dieselbe Frage an zwei Tutoren auf demselben Modell — oder an denselben Tutor auf zwei Modellen — um die Wirkung einer Formulierung zu messen.</li>
           <li><b>Reichen Sie ein</b>, dann übernimmt die Freigabe (nächster Abschnitt).</li>
         </ol>
-        <p><b>Danach:</b> Eine Änderung an einem veröffentlichten Tutor erzeugt eine <b>neue Version</b> — laufende Gespräche bleiben auf ihrer und bieten den Wechsel an, ohne ihn je zu erzwingen. Sie können <b>Ihre</b> Tutoren jederzeit <b>zurückziehen oder löschen</b>. „Variante vorschlagen“ auf jeder Seite füllt das Formular mit dem bestehenden Prompt vor und registriert die <b>Herkunft</b> („inspiriert von“, auf beiden Seiten angezeigt): Das ist der Weg der Personalisierung. Die Option <b>Synchronisation</b> (auf /verifier angekreuzt) sichert Ihr Profil auf dem Server, um Gespräche und Favoriten in einem anderen Browser wiederzufinden.</p>
+        <p><b>Danach:</b> Eine Änderung an einem veröffentlichten Tutor erzeugt eine <b>neue Version</b> — laufende Gespräche bleiben auf ihrer und bieten den Wechsel an, ohne ihn je zu erzwingen. Sie können <b>Ihre</b> Tutoren jederzeit aus Ihrer Werkstatt (dem geheimen Link) <b>zurückziehen</b> und später wieder veröffentlichen (nichts wird je gelöscht: die Zähler bleiben intakt). Die <b>anonymen Kommentare</b> auf Ihren Seiten warten auf Sie: Sie moderieren sie (freigeben oder ausblenden). „Variante vorschlagen“ auf jeder Seite füllt das Formular mit dem bestehenden Prompt vor und registriert die <b>Herkunft</b> („inspiriert von“, auf beiden Seiten angezeigt): Das ist der Weg der Personalisierung. Die Option <b>Synchronisation</b> (auf /verifier angekreuzt) sichert Ihr Profil auf dem Server, um Gespräche und Favoriten in einem anderen Browser wiederzufinden.</p>
       </Section>
 
       <Section id="validation" title="Der Freigabeprozess">
         <div className="overflow-x-auto">
           <p className="whitespace-nowrap rounded bg-tertiary p-3 font-mono text-xs">
-            im Aufbau (geheime URL) → eingereicht → <b className="text-green-400">veröffentlicht</b> ⇄ zurückgezogen — und Löschung möglich
+            im Aufbau (geheime URL) → eingereicht → <b className="text-green-400">veröffentlicht</b> ⇄ zurückgezogen — nichts wird je gelöscht
           </p>
         </div>
         <ul className="list-inside list-disc space-y-1">
@@ -141,7 +142,7 @@ export default function GuideDE() {
           <li><b>Eingereicht</b>: kommt in die Freigabe-Warteschlange, nur für Prüfende sichtbar.</li>
           <li><b>A-priori-Freigabe</b>: Ein <b>Administrator oder jede verifizierte Promptagogin / jeder verifizierte Promptagoge</b> liest den Prompt gegen und veröffentlicht ihn. Diese Gemeinschaftslösung schützt die Schüler (minderjähriges Publikum) und vermeidet den Engpass eines einzelnen Prüfers — sie filtert vor allem anonyme Vorschläge.</li>
           <li><b>Veröffentlicht</b>: im Katalog, für alle nutzbar, Zähler aktiv.</li>
-          <li><b>Zurückgezogen</b>: aus dem Katalog entfernt, aber erhalten (umkehrbar). Die endgültige <b>Löschung</b> gehört dem Autor (für seine Tutoren) oder der Administration; ein anonymer Prompt kann nur von der Administration gelöscht werden.</li>
+          <li><b>Zurückgezogen</b>: aus dem Katalog entfernt, aber erhalten — Autor oder Administration können ihn <b>wieder veröffentlichen</b>; die Administration kann ihn auch <b>bearbeiten, umbenennen</b> oder <b>archivieren</b> (dauerhaft aus der Admin-Oberfläche ausgeblendet, aber in der Datenbank erhalten: nichts wird je gelöscht, die Verbrauchsstatistiken bleiben exakt).</li>
         </ul>
       </Section>
 

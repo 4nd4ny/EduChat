@@ -4,7 +4,8 @@ import { getDb, PromptRow } from "../../server/db";
 import { requireAuth } from "../../server/token";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
-import { FreeProvider, FreeModel, FreeModels } from "../../utils/env";
+import { notifyAdmin } from "../../server/mail";
+import { AlertIpDailyTokens, FreeProvider, FreeModel, FreeModels } from "../../utils/env";
 import {
   buildProviderRequest, canStreamProvider, streamProviderResponse,
   type ProviderCallOpts, type WireMessage,
@@ -306,6 +307,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch (statsError) {
       console.error('Statistiques non enregistrées :', statsError);
       // La réponse de chat n'est jamais sacrifiée pour une statistique.
+    }
+
+    // Alerte « IP gourmande » : si cette IP dépasse le seuil quotidien de
+    // tokens sur la CLÉ INTERNE, l'administration reçoit UN email (par IP et
+    // par jour — déduplication en base). Simple visibilité, aucun blocage :
+    // les quotas d'établissement restent les garde-fous.
+    if (usedServerKey && AlertIpDailyTokens > 0) {
+      try {
+        const db = getDb();
+        const now = new Date();
+        const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const used = (db.prepare(
+          'SELECT COALESCE(SUM(tokens), 0) AS total FROM usage_log WHERE ip = ? AND used_server_key = 1 AND ts >= ?')
+          .get(clientIp, dayStart) as { total: number }).total;
+        if (used >= AlertIpDailyTokens) {
+          const dayKey = `ipusage:${clientIp}:${now.toISOString().slice(0, 10)}`;
+          const inserted = db.prepare('INSERT OR IGNORE INTO admin_alerts (key, ts) VALUES (?, ?)')
+            .run(dayKey, Date.now());
+          if (inserted.changes > 0) {
+            const etabName = etablissementId
+              ? (db.prepare('SELECT name FROM etablissements WHERE id = ?').get(etablissementId) as { name: string } | undefined)?.name
+              : null;
+            notifyAdmin(
+              `Usage intensif de la clé interne — ${etabName ?? clientIp}`,
+              `L'IP ${clientIp}${etabName ? ` (établissement « ${etabName} »)` : ' (aucun établissement rattaché)'} ` +
+              `a consommé ${used.toLocaleString('fr-CH')} tokens sur la clé interne aujourd'hui ` +
+              `(seuil d'alerte : ${AlertIpDailyTokens.toLocaleString('fr-CH')}).\n` +
+              `Aucun blocage appliqué — ce message est purement informatif (une alerte par IP et par jour).`,
+            );
+          }
+        }
+      } catch (alertError) {
+        console.error("Alerte d'usage non évaluée :", alertError);
+      }
     }
   };
 

@@ -111,6 +111,7 @@ export default function GuideIT() {
           <li><b>Allegati</b> (chiave personale): allega un'<b>immagine o un PDF</b> alla tua domanda, secondo il fornitore scelto.</li>
           <li><b>Chat vocale</b> (chiave personale, fornitori compatibili): detta la tua domanda al microfono, e la modalità vocale legge le risposte — comoda sullo smartphone.</li>
           <li><b>Preferiti</b> (stella) e <b>valutazioni</b> (1-5): conservati nel tuo browser; i preferiti salgono in cima al catalogo.</li>
+          <li><b>Commenti anonimi</b> su ogni scheda: lascia un riscontro d'uso — appare dopo la moderazione dell'autore del tutor o dell'amministrazione.</li>
           <li><b>Storico</b>: le conversazioni restano nel browser. Rinomina, cancellazione, esportazione di ogni discussione (.md + .json), ed <b>esportazione del profilo completo</b> (conversazioni + preferiti + valutazioni) reimportabile altrove con il trascinamento.</li>
           <li><b>Contatore di token</b>: il totale consumato appare sotto l'area di scrittura e nel titolo della scheda.</li>
           <li><b>Tramite una scuola</b>: su <Link className="underline" href="/school">/school</Link>, nessun account né chiave — vedi la <Link className="underline" href="/etablissements">guida degli istituti</Link>.</li>
@@ -121,19 +122,19 @@ export default function GuideIT() {
       <Section id="promptagogues" title="Promptagoghi — creare un tutor">
         <p>Un <b>promptagogo</b> (prompt + pedagogo) è l'autore di un tutor. Chiunque può diventarlo:</p>
         <ol className="list-inside list-decimal space-y-2">
-          <li><b>Identificati</b> (facoltativo ma consigliato) su <Link className="underline" href="/verifier">/verifier</Link>: nome pubblico + email, confermata da un codice a sei cifre ricevuto via email. <b>Nessuna password, mai.</b> Senza account, la pubblicazione è anonima — testabile e inviabile tramite l'URL segreto, ma solo l'amministrazione potrà cancellarla.</li>
+          <li><b>Identificati</b> (facoltativo ma consigliato) su <Link className="underline" href="/verifier">/verifier</Link>: nome pubblico + email, confermata da un codice a sei cifre ricevuto via email. <b>Nessuna password, mai.</b> Senza account, la pubblicazione è anonima — testabile e inviabile tramite l'URL segreto, ma tutta la moderazione (validazione, ritiro, archiviazione) spetterà all'amministrazione.</li>
           <li><b>Scrivi</b> su <Link className="underline" href="/publier">/publier</Link>: un <b>nome proprio unico</b> (Pitagora, Curie...), una descrizione per il catalogo, la lingua, e il prompt stesso — il modello fornito pone le regole socratiche di base (mai dare la risposta, avanzare per domande, incoraggiare). Limiti: 256 KB per prompt, 1 MB per autore. Solo testo.</li>
           <li><b>Testa</b>: la bozza « in costruzione » ha un URL segreto — lettura, modifica, test nella chat, e inviti ai tester con la semplice condivisione del link.</li>
           <li><b>Perfeziona in duello</b> su <Link className="underline" href="/duel">/duel</Link> (riservato ai promptagoghi): la stessa domanda a due tutor sullo stesso modello — o allo stesso tutor su due modelli — per misurare l'effetto di una formulazione.</li>
           <li><b>Invia</b>, poi lascia che la validazione faccia il suo lavoro (sezione successiva).</li>
         </ol>
-        <p><b>Dopo:</b> una modifica di un tutor pubblicato crea una <b>nuova versione</b> — le conversazioni in corso restano sulla loro e propongono il passaggio, senza mai imporlo. Puoi <b>ritirare o cancellare i tuoi</b> tutor in ogni momento. « Proponi una variante » su qualsiasi scheda precompila il modulo con il prompt esistente e registra la <b>filiazione</b> (« ispirato da », mostrata su entrambe le schede): è la via della personalizzazione. L'opzione <b>sincronizzazione</b> (spuntata su /verifier) salva il tuo profilo sul server per ritrovare conversazioni e preferiti su un altro browser.</p>
+        <p><b>Dopo:</b> una modifica di un tutor pubblicato crea una <b>nuova versione</b> — le conversazioni in corso restano sulla loro e propongono il passaggio, senza mai imporlo. Puoi <b>ritirare i tuoi</b> tutor in ogni momento dalla tua officina (il link segreto) e ripubblicarli più tardi (niente viene mai cancellato: i contatori restano intatti). I <b>commenti anonimi</b> lasciati sulle tue schede ti aspettano: sei tu a moderarli (approvare o nascondere). « Proponi una variante » su qualsiasi scheda precompila il modulo con il prompt esistente e registra la <b>filiazione</b> (« ispirato da », mostrata su entrambe le schede): è la via della personalizzazione. L'opzione <b>sincronizzazione</b> (spuntata su /verifier) salva il tuo profilo sul server per ritrovare conversazioni e preferiti su un altro browser.</p>
       </Section>
 
       <Section id="validation" title="Il processo di validazione">
         <div className="overflow-x-auto">
           <p className="whitespace-nowrap rounded bg-tertiary p-3 font-mono text-xs">
-            in costruzione (URL segreto) → inviato → <b className="text-green-400">pubblicato</b> ⇄ ritirato — e cancellazione possibile
+            in costruzione (URL segreto) → inviato → <b className="text-green-400">pubblicato</b> ⇄ ritirato — niente viene mai cancellato
           </p>
         </div>
         <ul className="list-inside list-disc space-y-1">
@@ -141,7 +142,7 @@ export default function GuideIT() {
           <li><b>Inviato</b>: entra nella coda di validazione, visibile solo ai validatori.</li>
           <li><b>Validazione a priori</b>: un <b>amministratore o qualsiasi promptagogo verificato</b> rilegge il prompt e lo pubblica. Questa scelta comunitaria protegge gli studenti (pubblico minorenne) evitando il collo di bottiglia di un validatore unico — filtra soprattutto le proposte anonime.</li>
           <li><b>Pubblicato</b>: nel catalogo, utilizzabile da tutti, contatori attivi.</li>
-          <li><b>Ritirato</b>: rimosso dal catalogo ma conservato (reversibile). La <b>cancellazione</b> definitiva spetta all'autore (per i suoi tutor) o all'amministrazione; un prompt anonimo è cancellabile solo dall'amministrazione.</li>
+          <li><b>Ritirato</b>: rimosso dal catalogo ma conservato — l'autore o l'amministrazione può <b>ripubblicarlo</b>; l'amministrazione può anche <b>modificarlo, rinominarlo</b> o <b>archiviarlo</b> (nascosto definitivamente dall'interfaccia di amministrazione, ma conservato nel database: niente viene mai cancellato, le statistiche di consumo restano esatte).</li>
         </ul>
       </Section>
 

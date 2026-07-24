@@ -15,8 +15,9 @@ export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 // POST /api/prompts — créer un BROUILLON (« en construction ») :
 //   - signé (Authorization: Bearer) : rattaché à l'auteur, soumis à son quota de 1 Mo ;
 //   - anonyme : possible (décision client), la validation admin sera le seul filtre,
-//     et seul l'admin pourra le supprimer. L'URL secrète renvoyée est alors
-//     l'unique « clé » du proposant pour tester et soumettre son brouillon.
+//     et toute la modération (validation, dépublication, archivage) lui reviendra.
+//     L'URL secrète renvoyée est alors l'unique « clé » du proposant pour tester
+//     et soumettre son brouillon.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     const sort = String(req.query.sort ?? 'score').slice(0, 16);
@@ -55,8 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Quota par utilisateur (1 Mo) — pour les auteurs identifiés uniquement :
   // l'anonyme n'a pas de compte, la modération a priori est son garde-fou.
+  // La suppression n'existant plus, les prompts ARCHIVÉS par l'administration
+  // sortent du décompte : le quota reste libérable (jamais un cliquet).
   if (auth) {
-    const used = (db.prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM prompts WHERE author_email = ?')
+    const used = (db.prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM prompts WHERE author_email = ? AND archived = 0')
       .get(auth.email) as { total: number }).total;
     if (used + sizeBytes > MAX_USER_BYTES) {
       return res.status(413).json({ error: { code: 'ERR_QUOTA_USER' } });

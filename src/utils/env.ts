@@ -60,6 +60,15 @@ export const FreeModels: string[] = (process.env.SECRET_FREE_MODEL || '')
   .split(',').map(m => m.trim()).filter(Boolean);
 export const FreeModel: string = FreeModels[0] || ''; // compat : premier de la liste
 
+// Alerte « IP gourmande » : dès qu'une même IP dépasse ce volume de tokens sur
+// la CLÉ INTERNE dans la journée (UTC), une notification part vers
+// l'administration — une seule par IP et par jour. 0 = alerte désactivée.
+// Ce n'est PAS un blocage : juste de la visibilité avant la fin du mois.
+export const AlertIpDailyTokens: number = (() => {
+  const parsed = parseInt(process.env.SECRET_ALERT_IP_TOKENS_DAILY ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 100000;
+})();
+
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(25[0-5]|2[0-4]\d|[01]?\d\d?)\.((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){2}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/;

@@ -1,7 +1,10 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
-import { MdArrowBack, MdCheck, MdDelete, MdDownload, MdVisibilityOff } from "react-icons/md";
+import {
+  MdArchive, MdArrowBack, MdCheck, MdDownload, MdDriveFileRenameOutline,
+  MdEdit, MdPublish, MdVisibilityOff,
+} from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 
@@ -25,12 +28,22 @@ type TeacherBillingRow = {
 type AdminUser = {
   email: string; name: string; isPromptagogue: number; isTeacher: number;
   etablissementId: number | null; etablissementName: string | null;
+  syncOptin: number; createdAt: number; verifiedAt: number | null; promptCount: number;
+};
+type AdminComment = {
+  id: number; body: string; status: "pending" | "approved" | "hidden";
+  createdAt: number; moderatedAt: number | null; moderatedBy: string | null;
+  promptName: string; promptAuthorEmail: string | null;
 };
 
-// Administration : modération des prompts, gestion des établissements
-// (« clients »), facturation mensuelle de la clé interne. L'accès est
-// contrôlé côté serveur (SECRET_ADMIN_EMAILS relu à chaque requête) — cette
-// page n'est qu'une vitrine sur ces API.
+// Administration : modération des prompts ET des commentaires, gestion des
+// comptes et des établissements (« clients »), facturation mensuelle de la clé
+// interne. L'accès est contrôlé côté serveur (SECRET_ADMIN_EMAILS relu à
+// chaque requête) — cette page n'est qu'une vitrine sur ces API.
+//
+// PRINCIPE (décision client) : on ne SUPPRIME jamais rien ici. Dépublier est
+// réversible (republier) ; archiver masque définitivement un prompt de cette
+// interface, mais la ligne et ses compteurs restent en base (facturation).
 export default function AdminPage() {
   const account = typeof window !== "undefined" ? getAccount() : null;
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
@@ -38,11 +51,15 @@ export default function AdminPage() {
   const [billing, setBilling] = useState<BillingRow[]>([]);
   const [teacherBilling, setTeacherBilling] = useState<TeacherBillingRow[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [comments, setComments] = useState<AdminComment[]>([]);
+  const [moderatedTotal, setModeratedTotal] = useState(0);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   });
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Éditeur de prompt (description + corps) — ouvert sur un nom de prompt.
+  const [editing, setEditing] = useState<{ name: string; description: string; body: string } | null>(null);
   const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState("");
@@ -56,6 +73,10 @@ export default function AdminPage() {
       .then(r => r.json()).then(data => setEtabs(data.etablissements ?? [])).catch(() => {});
     fetch("/api/admin/users", { headers: authHeaders() })
       .then(r => r.json()).then(data => setUsers(data.users ?? [])).catch(() => {});
+    fetch("/api/admin/comments", { headers: authHeaders() })
+      .then(r => r.json())
+      .then(data => { setComments(data.comments ?? []); setModeratedTotal(data.moderatedTotal ?? 0); })
+      .catch(() => {});
     const [y, m] = period.split("-").map(Number);
     fetch(`/api/admin/billing?year=${y}&month=${m}`, { headers: authHeaders() })
       .then(r => r.json())
@@ -65,14 +86,68 @@ export default function AdminPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const act = async (name: string, action: string, method = "PATCH") => {
+  const act = async (name: string, action: string, extra: Record<string, unknown> = {}) => {
     setMessage("");
     const response = await fetch(`/api/prompts/${encodeURIComponent(name)}`, {
-      method,
+      method: "PATCH",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: method === "DELETE" ? undefined : JSON.stringify({ action }),
+      body: JSON.stringify({ action, ...extra }),
     });
-    if (!response.ok) { setMessage(`Échec de « ${action} » sur ${name}.`); return; }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setMessage(`Échec de « ${action} » sur ${name} (${data?.error?.code ?? response.status}).`);
+      return false;
+    }
+    reload();
+    return true;
+  };
+
+  const saveEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editing) return;
+    const ok = await act(editing.name, "edit", { description: editing.description, body: editing.body });
+    if (ok) setEditing(null);
+  };
+
+  const rename = async (name: string) => {
+    const newName = window.prompt(
+      `Nouveau nom pour « ${name} » ?\n(Prévu pour les prompts dépubliés : les conversations en cours référencent l'ancien nom.)`,
+      name);
+    if (!newName || newName === name) return;
+    await act(name, "rename", { newName });
+  };
+
+  const archive = async (name: string) => {
+    if (!window.confirm(
+      `Archiver « ${name} » ?\nLe prompt disparaît DÉFINITIVEMENT de cette interface, mais reste en base ` +
+      `avec ses compteurs (rien n'est supprimé).`)) return;
+    await act(name, "archive");
+  };
+
+  const moderateComment = async (c: AdminComment, action: "approve" | "hide") => {
+    setMessage("");
+    const response = await fetch(`/api/prompts/${encodeURIComponent(c.promptName)}/comments`, {
+      method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ id: c.id, action }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setMessage(`Échec de modération du commentaire #${c.id} (${data?.error?.code ?? response.status}).`);
+    }
+    reload();
+  };
+
+  const updateUser = async (email: string, patch: Record<string, unknown>) => {
+    setMessage("");
+    const response = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ email, ...patch }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setMessage(`Échec de mise à jour du compte ${email} (${data?.error?.code ?? response.status}).`);
+    }
     reload();
   };
 
@@ -124,6 +199,15 @@ export default function AdminPage() {
 
   const pending = prompts.filter(p => p.status === "pending");
   const others = prompts.filter(p => p.status !== "pending");
+  const pendingComments = comments.filter(c => c.status === "pending");
+  const moderatedComments = comments.filter(c => c.status !== "pending");
+
+  const statusBadge = (status: string) => (
+    <span className={`rounded px-1.5 text-xs ${status === "published" ? "bg-green-600/30"
+      : status === "draft" ? "bg-yellow-600/30" : status === "pending" ? "bg-orange-600/30" : "bg-gray-600/30"}`}>
+      {status === "retired" ? "dépublié" : status}
+    </span>
+  );
 
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16 text-primary">
@@ -136,7 +220,7 @@ export default function AdminPage() {
       <h1 className="text-2xl font-bold">Administration</h1>
       {message && <p className="mt-2 text-sm text-red-400">{message}</p>}
 
-      {/* ---- Modération ---- */}
+      {/* ---- Modération des prompts ---- */}
       <section className="mt-8">
         <h2 className="text-lg font-bold">À valider ({pending.length})</h2>
         {pending.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun prompt en attente.</p>}
@@ -153,8 +237,8 @@ export default function AdminPage() {
                 <span className="flex-grow" />
                 <button onClick={() => act(p.name, "approve")}
                   className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> Publier</button>
-                <button onClick={() => { if (confirm(`Supprimer définitivement « ${p.name} » ?`)) act(p.name, "", "DELETE"); }}
-                  className="flex items-center gap-1 rounded bg-red-600/70 px-2 py-1 hover:bg-red-600"><MdDelete /> Supprimer</button>
+                <button onClick={() => archive(p.name)} title="Refuser : masquer définitivement de cette interface (conservé en base)"
+                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdArchive /> Archiver</button>
               </div>
               <p className="mt-1 opacity-80">{p.description}</p>
               {expanded === p.name && (
@@ -165,22 +249,169 @@ export default function AdminPage() {
         </ul>
 
         <h2 className="mt-6 text-lg font-bold">Tous les prompts</h2>
+        <p className="mt-1 text-xs opacity-60">
+          Rien n'est jamais supprimé : dépublier ⇄ republier, éditer/renommer un prompt dépublié,
+          archiver pour nettoyer cette liste (le prompt reste en base avec ses compteurs).
+        </p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {others.map(p => (
-            <li key={p.name} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
-              <span className={`rounded px-1.5 text-xs ${p.status === "published" ? "bg-green-600/30" : p.status === "draft" ? "bg-yellow-600/30" : "bg-gray-600/30"}`}>{p.status}</span>
-              <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
-              <span className="opacity-60">{p.usageCount} usages · {formatTokens(p.tokensTotal)}</span>
-              <span className="flex-grow" />
-              {p.status === "published" && (
-                <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
-                  className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdVisibilityOff /> Dépublier</button>
+            <li key={p.name} className="border-b border-white/5 py-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {statusBadge(p.status)}
+                <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
+                <span className="opacity-60">{p.usageCount} usages · {formatTokens(p.tokensTotal)}</span>
+                <span className="flex-grow" />
+                {p.status === "published" && (
+                  <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
+                    className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdVisibilityOff /> Dépublier</button>
+                )}
+                {p.status === "retired" && (
+                  <>
+                    <button onClick={() => act(p.name, "republish")} title="Republier au catalogue tel quel"
+                      className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> Republier</button>
+                    <button onClick={() => setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body })}
+                      title="Modifier la description et le prompt"
+                      className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdEdit /> Modifier</button>
+                    <button onClick={() => rename(p.name)} title="Renommer (prompt dépublié uniquement)"
+                      className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdDriveFileRenameOutline /> Renommer</button>
+                  </>
+                )}
+                {p.status !== "published" && (
+                  <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
+                    className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                )}
+              </div>
+              {editing?.name === p.name && (
+                <form onSubmit={saveEdit} className="mt-2 flex flex-col gap-2 rounded border border-white/10 bg-secondary p-3">
+                  <input value={editing.description}
+                    onChange={e => setEditing({ ...editing, description: e.target.value })}
+                    maxLength={500} placeholder="Description (catalogue)"
+                    className="rounded bg-tertiary p-2 text-sm" />
+                  <textarea value={editing.body}
+                    onChange={e => setEditing({ ...editing, body: e.target.value })}
+                    rows={12} className="rounded bg-tertiary p-2 font-mono text-xs leading-relaxed" />
+                  <div className="flex gap-2">
+                    <button type="submit" className="rounded bg-[#DC6521] px-3 py-1.5 text-xs font-bold hover:opacity-90">
+                      Enregistrer (nouvelle version si publié)
+                    </button>
+                    <button type="button" onClick={() => setEditing(null)}
+                      className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">Annuler</button>
+                  </div>
+                </form>
               )}
-              <button onClick={() => { if (confirm(`Supprimer définitivement « ${p.name} » ?`)) act(p.name, "", "DELETE"); }}
-                className="flex items-center gap-1 rounded border border-red-500/40 px-2 py-0.5 text-xs hover:bg-red-500/10"><MdDelete /></button>
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* ---- Commentaires (l'admin voit tout) ---- */}
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Commentaires à modérer ({pendingComments.length})</h2>
+        <p className="mt-1 text-xs opacity-60">
+          Les auteurs modèrent les commentaires de leurs propres tuteurs ; vous couvrez tout —
+          en particulier les tuteurs anonymes. Masquer ne supprime jamais.
+        </p>
+        {pendingComments.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun commentaire en attente.</p>}
+        <ul className="mt-2 flex flex-col gap-2">
+          {pendingComments.map(c => (
+            <li key={c.id} className="rounded border border-yellow-500/30 bg-secondary p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-xs opacity-70">
+                <Link href={`/p/${encodeURIComponent(c.promptName)}`} className="font-bold underline">{c.promptName}</Link>
+                <span>{new Date(c.createdAt).toLocaleString("fr-CH")}</span>
+                {!c.promptAuthorEmail && <span className="rounded bg-orange-600/30 px-1.5">tuteur anonyme — à vous</span>}
+                <span className="flex-grow" />
+                <button onClick={() => moderateComment(c, "approve")}
+                  className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> Approuver</button>
+                <button onClick={() => moderateComment(c, "hide")}
+                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdVisibilityOff /> Masquer</button>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap">{c.body}</p>
+            </li>
+          ))}
+        </ul>
+        {moderatedComments.length > 0 && (
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer opacity-70">
+              Commentaires déjà modérés ({moderatedTotal > moderatedComments.length
+                ? `${moderatedComments.length} affichés sur ${moderatedTotal}`
+                : moderatedComments.length})
+            </summary>
+            <ul className="mt-2 flex flex-col gap-1">
+              {moderatedComments.map(c => (
+                <li key={c.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1 text-xs">
+                  <span className={`rounded px-1.5 ${c.status === "approved" ? "bg-green-600/30" : "bg-gray-600/30"}`}>
+                    {c.status === "approved" ? "approuvé" : "masqué"}
+                  </span>
+                  <Link href={`/p/${encodeURIComponent(c.promptName)}`} className="underline">{c.promptName}</Link>
+                  <span className="max-w-md truncate opacity-70">{c.body}</span>
+                  <span className="flex-grow" />
+                  <span className="opacity-50">{c.moderatedBy ?? ""}</span>
+                  <button onClick={() => moderateComment(c, c.status === "approved" ? "hide" : "approve")}
+                    className="rounded border border-white/20 px-2 py-0.5 hover:bg-tertiary">
+                    {c.status === "approved" ? "Masquer" : "Approuver"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
+
+      {/* ---- Comptes ---- */}
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Comptes ({users.length})</h2>
+        <p className="mt-1 text-xs opacity-60">
+          Chacun peut se créer un compte sur /verifier (jamais obligatoire, jamais pour les élèves).
+          Ici : rôles et rattachement d'un enseignant à son établissement. Retirer les deux rôles
+          neutralise un compte sans le supprimer.
+        </p>
+        {users.length === 0 ? (
+          <p className="mt-2 text-sm opacity-60">Aucun compte vérifié pour l'instant.</p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase opacity-60">
+                <tr><th className="py-1 pr-2">Compte</th><th className="pr-2">Rôles</th>
+                  <th className="pr-2">Établissement</th><th className="pr-2">Prompts</th><th>Créé le</th></tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.email} className="border-b border-white/5 align-middle">
+                    <td className="py-1.5 pr-2">
+                      <b>{u.name || "—"}</b>
+                      <span className="ml-1 opacity-60">{u.email}</span>
+                      {!!u.syncOptin && <span className="ml-1 rounded bg-blue-600/30 px-1 text-xs" title="Profil synchronisé sur le serveur">sync</span>}
+                    </td>
+                    <td className="pr-2 whitespace-nowrap">
+                      <label className="mr-2 text-xs">
+                        <input type="checkbox" checked={!!u.isPromptagogue}
+                          onChange={e => updateUser(u.email, { isPromptagogue: e.target.checked })} /> promptagogue
+                      </label>
+                      <label className="text-xs">
+                        <input type="checkbox" checked={!!u.isTeacher}
+                          onChange={e => updateUser(u.email, { isTeacher: e.target.checked })} /> enseignant
+                      </label>
+                    </td>
+                    <td className="pr-2">
+                      {u.isTeacher ? (
+                        <select value={u.etablissementId ?? ""}
+                          onChange={e => updateUser(u.email, { etablissementId: e.target.value || null })}
+                          className="rounded bg-tertiary p-1 text-xs">
+                          <option value="">— aucun —</option>
+                          {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
+                        </select>
+                      ) : <span className="text-xs opacity-40">—</span>}
+                    </td>
+                    <td className="pr-2 text-xs">{u.promptCount || 0}</td>
+                    <td className="text-xs opacity-60">
+                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString("fr-CH") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {/* ---- Établissements ---- */}
@@ -219,39 +450,6 @@ export default function AdminPage() {
             {form.id ? `Enregistrer #${form.id}` : "Ajouter l'établissement"}
           </button>
         </form>
-      </section>
-
-      {/* ---- Enseignants ---- */}
-      <section className="mt-10">
-        <h2 className="text-lg font-bold">Enseignants (rattachement aux établissements)</h2>
-        {users.filter(u => u.isTeacher).length === 0 ? (
-          <p className="mt-2 text-sm opacity-60">Aucun compte enseignant pour l'instant.</p>
-        ) : (
-          <ul className="mt-2 flex flex-col gap-1 text-sm">
-            {users.filter(u => u.isTeacher).map(u => (
-              <li key={u.email} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
-                <b>{u.name || u.email}</b>
-                <span className="opacity-60">{u.email}</span>
-                <span className="flex-grow" />
-                <select
-                  value={u.etablissementId ?? ""}
-                  onChange={async e => {
-                    await fetch("/api/admin/users", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", ...authHeaders() },
-                      body: JSON.stringify({ email: u.email, etablissementId: e.target.value || null }),
-                    });
-                    reload();
-                  }}
-                  className="rounded bg-tertiary p-1 text-xs"
-                >
-                  <option value="">— aucun établissement —</option>
-                  {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
-                </select>
-              </li>
-            ))}
-          </ul>
-        )}
       </section>
 
       {/* ---- Facturation ---- */}
@@ -311,6 +509,8 @@ export default function AdminPage() {
         <p className="mt-2 text-xs opacity-50">
           Montants exprimés en tokens par fournisseur — le tarif appliqué à la facture reste à votre main.
           Les établissements RESPIRE apparaissent pour information, à 0.
+          Une alerte email part automatiquement dès qu'une IP dépasse le seuil quotidien
+          de tokens sur la clé interne (SECRET_ALERT_IP_TOKENS_DAILY).
         </p>
       </section>
     </div>

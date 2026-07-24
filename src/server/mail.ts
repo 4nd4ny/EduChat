@@ -9,9 +9,38 @@
 // reste testable sans email réel.
 
 import nodemailer from 'nodemailer';
-import { SmtpConfig } from '../utils/env';
+import { AdminEmails, SmtpConfig } from '../utils/env';
 
 const SITE_URL = process.env.SITE_URL || 'https://educh.at';
+
+function makeTransporter() {
+  return nodemailer.createTransport({
+    host: SmtpConfig.host,
+    port: SmtpConfig.port,
+    secure: SmtpConfig.port === 465,
+    auth: { user: SmtpConfig.user, pass: SmtpConfig.pass },
+  });
+}
+
+/**
+ * Notification à l'ADMINISTRATION (nouveau compte, prompt à modérer, nouveau
+ * commentaire, IP gourmande...). TOUJOURS en tâche de fond : jamais attendue,
+ * jamais bloquante, jamais fatale — une notification perdue est un moindre mal
+ * comparé à une réponse utilisateur sacrifiée. Sans SMTP configuré (dev), la
+ * notification va dans les logs du serveur.
+ */
+export function notifyAdmin(subject: string, text: string): void {
+  const fullSubject = `[EduChat] ${subject}`;
+  const fullText = `${text}\n\n— Notification automatique d'EduChat (${SITE_URL}/admin)`;
+  if (!SmtpConfig.host) {
+    console.log(`[DEV — SMTP non configuré] Notification admin : ${fullSubject}\n${text}`);
+    return;
+  }
+  if (!AdminEmails.length) return;
+  makeTransporter()
+    .sendMail({ from: SmtpConfig.from, to: AdminEmails.join(', '), subject: fullSubject, text: fullText })
+    .catch(error => console.error('Notification admin non envoyée :', error?.message));
+}
 
 export async function sendVerificationCode(email: string, name: string, code: string): Promise<void> {
   const link = `${SITE_URL}/verifier#${code}`;
@@ -32,11 +61,5 @@ export async function sendVerificationCode(email: string, name: string, code: st
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    host: SmtpConfig.host,
-    port: SmtpConfig.port,
-    secure: SmtpConfig.port === 465,
-    auth: { user: SmtpConfig.user, pass: SmtpConfig.pass },
-  });
-  await transporter.sendMail({ from: SmtpConfig.from, to: email, subject, text });
+  await makeTransporter().sendMail({ from: SmtpConfig.from, to: email, subject, text });
 }

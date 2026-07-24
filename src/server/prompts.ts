@@ -45,12 +45,16 @@ const ORDER_BY: Record<string, string> = {
   name: 'name COLLATE NOCASE ASC',
 };
 
+// Un prompt ARCHIVÉ (refusé/neutralisé par l'administration) est invisible et
+// inutilisable PARTOUT : catalogue, fiche, chat, et même son URL secrète —
+// sinon un prompt refusé resterait exploitable (voire sur la clé interne)
+// tout en étant invisible de la modération. La ligne reste en base.
 export function listPublished(sort: string, search: string): PromptCard[] {
   const db = getDb();
   const orderBy = ORDER_BY[sort] ?? ORDER_BY.score;
   const rows = db.prepare(`
     SELECT * FROM prompts
-    WHERE status = 'published'
+    WHERE status = 'published' AND archived = 0
       AND (@q = '' OR name LIKE '%' || @q || '%' OR description LIKE '%' || @q || '%')
     ORDER BY ${orderBy}
   `).all({ q: search, now: Date.now() }) as PromptRow[];
@@ -58,7 +62,7 @@ export function listPublished(sort: string, search: string): PromptCard[] {
 }
 
 export function getPublishedByName(name: string): PromptRow | undefined {
-  return getDb().prepare("SELECT * FROM prompts WHERE name = ? AND status = 'published'")
+  return getDb().prepare("SELECT * FROM prompts WHERE name = ? AND status = 'published' AND archived = 0")
     .get(name) as PromptRow | undefined;
 }
 
@@ -68,7 +72,8 @@ export function getByName(name: string): PromptRow | undefined {
 
 export function getByShareToken(token: string): PromptRow | undefined {
   if (!/^[a-f0-9]{24,64}$/.test(token)) return undefined;
-  return getDb().prepare('SELECT * FROM prompts WHERE share_token = ?').get(token) as PromptRow | undefined;
+  return getDb().prepare('SELECT * FROM prompts WHERE share_token = ? AND archived = 0')
+    .get(token) as PromptRow | undefined;
 }
 
 // Quotas d'upload (exigences n°8) : 256 Ko par prompt, 1 Mo par utilisateur.

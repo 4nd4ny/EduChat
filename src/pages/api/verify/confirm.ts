@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { getDb } from '../../../server/db';
 import { issueToken } from '../../../server/token';
 import { getClientIp, isRateLimited } from '../../../server/access';
+import { notifyAdmin } from '../../../server/mail';
 import { ERR } from '../../../shared/providers';
 
 const MAX_ATTEMPTS = 5;
@@ -49,19 +50,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Usage unique : le code est consommé, le compte créé ou réactivé.
   const now = Date.now();
+  // Nouveau compte ou re-vérification ? (notification admin + rôles)
+  const existing = db.prepare('SELECT is_teacher FROM users WHERE email = ?').get(email) as
+    { is_teacher: number } | undefined;
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM email_codes WHERE email = ?').run(email);
-    // is_teacher se DEMANDE ici ; le rattachement à un établissement, lui,
-    // n'est effectif qu'une fois posé par un admin (étape 14).
+    // is_teacher se DEMANDE à la création ; le rattachement à un établissement,
+    // lui, n'est effectif qu'une fois posé par un admin (étape 14).
+    // Sur un compte EXISTANT, les rôles ne sont JAMAIS retouchés ici : sinon,
+    // une simple re-vérification email annulerait un retrait de rôle décidé
+    // par l'administration (les rôles se gèrent dans /admin ; une demande de
+    // rôle enseignant sur compte existant part en notification ci-dessous).
     db.prepare(`
-      INSERT INTO users (email, name, verified_at, is_promptagogue, is_teacher, sync_optin)
-      VALUES (@email, @name, @now, 1, @teacher, @optin)
+      INSERT INTO users (email, name, verified_at, is_promptagogue, is_teacher, sync_optin, created_at)
+      VALUES (@email, @name, @now, 1, @teacher, @optin, @now)
       ON CONFLICT(email) DO UPDATE SET
-        name = @name, verified_at = @now, is_promptagogue = 1,
-        is_teacher = MAX(is_teacher, @teacher), sync_optin = @optin
+        name = @name, verified_at = @now, sync_optin = @optin
     `).run({ email, name: row.name, now, teacher: isTeacher, optin: syncOptin });
   });
   tx();
+
+  // L'administration est prévenue de chaque NOUVELLE inscription, et d'une
+  // demande de rôle enseignant émise par un compte existant qui ne l'a pas.
+  if (!existing) {
+    notifyAdmin(
+      `Nouveau compte : ${row.name || email}`,
+      `Une nouvelle personne vient de vérifier son adresse sur EduChat.\n` +
+      `Nom public : ${row.name || '(non renseigné)'}\nEmail : ${email}\n` +
+      `Rôle demandé : ${isTeacher ? 'ENSEIGNANT (rattachement à poser dans /admin)' : 'promptagogue'}`,
+    );
+  } else if (isTeacher && !existing.is_teacher) {
+    notifyAdmin(
+      `Demande de rôle enseignant : ${row.name || email}`,
+      `Le compte existant ${email} (${row.name || 'sans nom'}) a re-vérifié son adresse en demandant ` +
+      `le rôle ENSEIGNANT. Ce rôle ne s'accorde plus automatiquement : à poser dans /admin si légitime.`,
+    );
+  }
 
   res.status(200).json({ token: issueToken(row.name, email), name: row.name, email });
 }

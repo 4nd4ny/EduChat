@@ -30,7 +30,7 @@ const errorLabels: Record<string, string> = {
   ERR_NAME_TAKEN: "Ce nom est déjà pris — chaque tuteur a un nom propre unique.",
   ERR_BODY_TOO_SHORT: "Le prompt est trop court pour être un vrai tuteur.",
   ERR_BODY_TOO_LARGE: "Le prompt dépasse 256 Ko.",
-  ERR_QUOTA_USER: "Votre quota total de 1 Mo est atteint : supprimez d'anciens prompts.",
+  ERR_QUOTA_USER: "Votre quota total de 1 Mo est atteint : raccourcissez d'anciens prompts, ou demandez à l'administration d'archiver ceux qui ne servent plus.",
   ERR_RATE_LIMIT: "Trop de créations rapprochées : patientez une minute.",
 };
 
@@ -120,11 +120,11 @@ export default function PublierPage() {
         {account ? (
           <>Publication au nom de <b>{account.name || account.email}</b>.{" "}
             <label className="ml-2"><input type="checkbox" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} /> publier anonymement</label>
-            {anonymous && <span className="block pt-1 text-xs opacity-70">Anonyme : seul un administrateur pourra le supprimer ; gardez précieusement l'URL secrète.</span>}
+            {anonymous && <span className="block pt-1 text-xs opacity-70">Anonyme : la modération (validation, dépublication, archivage) reviendra entièrement à l'administration ; gardez précieusement l'URL secrète.</span>}
           </>
         ) : (
-          <>Vous publiez <b>anonymement</b> (seul un admin pourra supprimer le prompt, et l'URL
-            secrète sera votre seul accès). Pour publier sous votre nom :{" "}
+          <>Vous publiez <b>anonymement</b> (la modération reviendra entièrement à l'administration,
+            et l'URL secrète sera votre seul accès). Pour publier sous votre nom :{" "}
             <Link href="/verifier" className="underline">vérifiez votre adresse email</Link> — sans mot de passe, 30 secondes.
           </>
         )}
