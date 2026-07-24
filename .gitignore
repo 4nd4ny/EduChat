@@ -23,3 +23,9 @@ auth_log.txt
 
 .DS_Store
 tsconfig.tsbuildinfo
+
+# État du limiteur de débit écrit à l'exécution (serveur de dev en local)
+rate_limit.json
+
+# Outillage local de session (Claude Code)
+.claude/

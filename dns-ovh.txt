@@ -1,0 +1,13 @@
+$TTL 3600
+@	IN SOA dns104.ovh.net. tech.ovh.net. (2084354306 86400 3600 3600000 60)
+        IN NS     dns104.ovh.net.
+        IN NS     ns104.ovh.net.
+        IN MX     1 mx1.mail.ovh.net.
+        IN MX     5 mx2.mail.ovh.net.
+        IN MX     100 mx3.mail.ovh.net.
+        IN A     91.134.241.141
+        IN TXT     "v=spf1 include:mx.ovh.com -all"
+        IN TXT     "1|www.educh.at"
+ftp        IN CNAME     educh.at.
+www        IN A     91.134.241.141
+www        IN TXT     "3|welcome"
