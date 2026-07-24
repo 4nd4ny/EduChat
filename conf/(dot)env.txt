@@ -1,9 +1,62 @@
-# add \ before $
+# Hash bcrypt genere par conf/pwd_crypt.py (plusieurs valeurs possibles, separees par des virgules).
+# Avec dotenv/systemd : echapper les $ par un antislash.
+# Avec Docker (env_file) : ecrire le hash TEL QUEL, sans antislash — sinon le mot de passe ne fonctionnera pas.
 SECRET_PASSWD=\$3a\$20\$kkkkkDEDPEy/RSDFblablablaZ.H5asdf12345asdf1234asdf1234XX 
 SECRET_OPENAI_API_KEY=sk-proj-kabcdefghijklmnopqrstuvwxyz-012345678901234678901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ
 SECRET_ANTHROPIC_API_KEY=sk-anth-kabcdefghijklmnopqrstuvwxyz-012345678901234678901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ
+SECRET_GEMINI_API_KEY=
+SECRET_OPENROUTER_API_KEY=
+SECRET_XAI_API_KEY=
+SECRET_MISTRAL_API_KEY=
+
+# Repli GRATUIT public : quand aucune cle personnelle n'est saisie et que la
+# session n'est pas deverrouillee, le site repond quand meme via ce fournisseur
+# et ce modele, avec la cle serveur ci-dessus (ici SECRET_OPENROUTER_API_KEY).
+# Vide = pas de repli (le site reste verrouille sans cle). Verifier l'identifiant
+# exact du modele gratuit sur openrouter.ai/models (filtre « free »).
+SECRET_FREE_PROVIDER=openrouter
+# Modele(s) gratuit(s) : liste ORDONNEE separee par des virgules = cascade de
+# secours (si le 1er est sature, le serveur bascule sur le suivant). Le DERNIER
+# de la liste peut etre un modele PAYANT tres bon marche (ici mistral-small-24b,
+# ~0,05/0,08 USD par Mtok) : filet fiable quand tous les :free sont satures, sous
+# le plafond de 1 USD/j configure cote OpenRouter. Retirer ce dernier element
+# pour rester 100 % gratuit.
+SECRET_FREE_MODEL=google/gemma-4-26b-a4b-it:free,openai/gpt-oss-20b:free,nvidia/nemotron-3-super-120b-a12b:free,mistralai/mistral-small-24b-instruct-2501
 
 # 1 for monday
 SECRET_ALLOWED_IPS=127.0.0.1,255.255.255.255,1.2.3.4,6.6.6.6,8.8.8.8
 SECRET_ALLOWED_HOURS=[{"day":1,"start":"09:00","end":"10:00"},{"day":2,"start":"14:00","end":"15:00"},{"day":3,"start":"16:00","end":"17:00"}] 
 SET_TIME_ZONE=Europe/Zurich
+
+# Plafond de la duree de deverrouillage suffixee au mot de passe, en minutes.
+# Defaut 600 si absente ou invalide. Ex : « motdepasse99999 » sera ramene a ce plafond.
+SECRET_MAX_UNLOCK_MINUTES=600
+
+# Repertoire des donnees persistantes. En conteneur Docker : /data (volume monte).
+# Laisser vide en developpement (repli sur la racine du projet).
+DATA_DIR=
+
+# Comptes administrateurs (emails separes par des virgules).
+SECRET_ADMIN_EMAILS=blanvillain@harmonia.education
+
+# Cle de signature des jetons de compte (HMAC). Mettre une valeur aleatoire longue.
+SECRET_TOKEN_KEY=
+
+# SMTP OVH pour les codes de verification (boite noreply@educh.at).
+SECRET_SMTP_HOST=
+SECRET_SMTP_PORT=465
+SECRET_SMTP_USER=
+SECRET_SMTP_PASS=
+SECRET_SMTP_FROM=EduChat <noreply@educh.at>
+
+# CONTROLE DE COHERENCE anti-usurpation d'IP (recommande en production).
+# L'IP identifie l'etablissement (acces, quotas, facture) : pour ne pas la
+# laisser forger, EduChat n'honore l'en-tete X-Real-IP que si le reverse proxy
+# ajoute ce secret dans l'en-tete X-Proxy-Token. A activer en DEUX temps :
+#  1) mettre une valeur aleatoire ci-dessous ;
+#  2) dans Nginx Proxy Manager (Proxy Host educh.at > Advanced), ajouter :
+#       proxy_set_header X-Proxy-Token "la_meme_valeur";
+# Sans cela, X-Real-IP est honore sans verification (mode historique, non durci).
+SECRET_PROXY_TOKEN=
+# Alternative : liste blanche d'IP socket de proxys de confiance (au lieu du secret).
+TRUSTED_PROXY_IPS=

@@ -12,6 +12,8 @@ secret.txt
 data/
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 
 # État d'authentification écrit à l'exécution
