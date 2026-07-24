@@ -72,8 +72,11 @@ export default function SiteStats() {
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-secondary/95 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-5 gap-y-1 overflow-x-auto px-4 py-1.5 text-[11px] tabular-nums text-primary">
-        <Item value={numberFormat.format(stats.accounts)} label={t("stats.accounts")} />
-        <Item value={numberFormat.format(stats.prompts)} label={t("stats.prompts")} />
+        {/* Les libellés s'accordent : « 1 compte », « 42 comptes ». */}
+        <Item value={numberFormat.format(stats.accounts)}
+          label={t(stats.accounts === 1 ? "stats.account" : "stats.accounts")} />
+        <Item value={numberFormat.format(stats.prompts)}
+          label={t(stats.prompts === 1 ? "stats.prompt" : "stats.prompts")} />
         <Item value={formatTokens(stats.tokens)} label={t("stats.tokens")} />
         <Item value={numberFormat.format(stats.online)} label={t("stats.online")} live
           title={t("stats.onlineTitle")} />
