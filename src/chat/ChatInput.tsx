@@ -4,6 +4,7 @@ import { PendingAttachment, ProviderId, providerDefaults, ReasoningLevel, useAnt
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../shared/providers";
 import { formatTokens } from "../utils/formatTokens";
 import { useT } from "../i18n/useT";
+import VoiceControls from "./VoiceControls";
 
 export default function ChatInput() {
   const { loading, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning } = useAnthropic();
@@ -32,6 +33,8 @@ export default function ChatInput() {
   // refait la même vérification — ceci n'est que le confort d'interface).
   const caps = providerDefaults[provider] ?? {};
   const canAttach = !!apiKey.trim() && (!!caps.images || !!caps.pdf);
+  // Chat vocal : clé perso + fournisseur doté d'une API de transcription.
+  const canVoice = !!apiKey.trim() && !!caps.voice;
   const acceptTypes = [
     ...(caps.images ? ["image/png", "image/jpeg", "image/webp", "image/gif"] : []),
     ...(caps.pdf ? ["application/pdf"] : []),
@@ -142,6 +145,10 @@ export default function ChatInput() {
                 <MdAttachFile />
               </button>
             </>
+          )}
+          {canVoice && (
+            <VoiceControls onDictation={text =>
+              setInput(previous => (previous.trim() ? `${previous.trim()} ${text}` : text))} />
           )}
           <button type="submit" data-tour="send" className="rounded p-4 text-primary hover:bg-[#DC6521]" disabled={loading || !input.trim()} aria-label={t("chat.input.send")}>
             {loading ? <div className="mx-auto h-5 w-5 animate-spin rounded-full border-b-2 border-white" /> : <MdSend />}

@@ -21,15 +21,19 @@ export type ReasoningLevel = "low" | "medium" | "high";
 // repli gratuit ni à la clé interne (maîtrise des coûts et du juridique).
 // Gemini : l'API interactions utilisée ne documente pas d'entrée base64 stable
 // → pas de pièces jointes. Grok/Mistral : images seulement (pas de PDF natif).
+// `voice` : le fournisseur expose une API de TRANSCRIPTION audio utilisable
+// avec la clé personnelle (OpenAI : gpt-4o-mini-transcribe/whisper ; Mistral :
+// Voxtral). La lecture des réponses, elle, passe par la synthèse vocale du
+// navigateur — aucun coût, aucune donnée envoyée.
 export const providerDefaults: Record<ProviderId, {
-  label: string; model: string; gdpr?: boolean; images?: boolean; pdf?: boolean;
+  label: string; model: string; gdpr?: boolean; images?: boolean; pdf?: boolean; voice?: boolean;
 }> = {
   anthropic: { label: "Claude", model: "claude-sonnet-4-5", gdpr: true, images: true, pdf: true },
-  openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true },
+  openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash" },
   openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
   grok: { label: "Grok", model: "grok-4.5", images: true },
-  mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true, images: true },
+  mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true, images: true, voice: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.
@@ -77,6 +81,9 @@ export const ERR = {
   ATTACH_KEY: "ERR_ATTACHMENTS_KEY",           // pièces jointes sans clé personnelle
   ATTACH_UNSUPPORTED: "ERR_ATTACHMENTS_UNSUPPORTED", // fournisseur incompatible
   ATTACH_INVALID: "ERR_ATTACHMENTS_INVALID",   // format/taille invalides
+  VOICE_KEY: "ERR_VOICE_KEY",                  // transcription sans clé personnelle
+  VOICE_UNSUPPORTED: "ERR_VOICE_UNSUPPORTED",  // fournisseur sans API de transcription
+  VOICE_INVALID: "ERR_VOICE_INVALID",          // audio invalide (format/taille)
 } as const;
 
 export type ErrorCode = (typeof ERR)[keyof typeof ERR];
