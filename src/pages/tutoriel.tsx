@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useRef, useState } from "react";
-import { MdArrowBack, MdArrowForward, MdOpenInNew, MdSchool } from "react-icons/md";
+import { MdArrowBack, MdArrowForward, MdOpenInNew, MdSchool, MdTour } from "react-icons/md";
 
 // Tutoriel d'EduChat — page volontairement autonome et en FRANÇAIS uniquement
 // (la traduction viendra quand la version française sera stabilisée).
@@ -224,6 +224,17 @@ export default function TutorielPage() {
       </p>
 
       <div className="mt-6"><Mindmap /></div>
+
+      {/* Exerciseur : visite interactive de la VRAIE interface du chat —
+          overlay qui met chaque élément en lumière avec un sous-titre. */}
+      <Link href="/chat?tuteur=Socrate&visite=1"
+        className="mt-6 flex items-center gap-3 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-4 hover:bg-[#DC6521]/20">
+        <MdTour className="text-2xl text-[#DC6521]" />
+        <span className="text-sm">
+          <b>Visite interactive de l'interface</b> — l'écran du chat s'ouvre et chaque élément
+          (tuteur, fournisseur, clé, micro…) est présenté à tour de rôle, en 40 secondes.
+        </span>
+      </Link>
 
       <div id="visite" className="mt-8 scroll-mt-6"><GuidedTour /></div>
 

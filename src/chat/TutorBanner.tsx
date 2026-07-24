@@ -35,7 +35,7 @@ export default function TutorBanner() {
   const hasNewer = latestVersion > 0 && promptVersion > 0 && latestVersion > promptVersion;
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-white/10 bg-secondary px-3 py-1.5 text-xs text-primary">
+    <div data-tour="tutor" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-white/10 bg-secondary px-3 py-1.5 text-xs text-primary">
       <span>
         {t("chat.banner.tutor")} <Link href={`/p/${encodeURIComponent(promptName)}`} className="font-bold text-[#DC6521] hover:underline">{promptName}</Link>
         {promptVersion > 0 && <span className="opacity-60"> (v{promptVersion})</span>}
