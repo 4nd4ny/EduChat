@@ -5,7 +5,8 @@ import { requireAuth } from "../../server/token";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { notifyAdmin } from "../../server/mail";
-import { AlertIpDailyTokens, FreeProvider, FreeModel, FreeModels } from "../../utils/env";
+import { touchPresence } from "../../server/stats";
+import { AlertIpDailyTokens, DeveloperKeys, FreeProvider, FreeModel, FreeModels } from "../../utils/env";
 import {
   buildProviderRequest, canStreamProvider, streamProviderResponse,
   type ProviderCallOpts, type WireMessage,
@@ -35,14 +36,9 @@ export const config = {
   api: { bodyParser: { sizeLimit: "48mb" } },
 };
 
-const developerKeys: Record<ProviderId, string | undefined> = {
-  anthropic: process.env.SECRET_ANTHROPIC_API_KEY,
-  openai: process.env.SECRET_OPENAI_API_KEY,
-  gemini: process.env.SECRET_GEMINI_API_KEY,
-  openrouter: process.env.SECRET_OPENROUTER_API_KEY,
-  grok: process.env.SECRET_XAI_API_KEY,
-  mistral: process.env.SECRET_MISTRAL_API_KEY,
-};
+// Clés serveur : définies dans utils/env (partagées avec le compteur public,
+// qui doit savoir si le repli gratuit est réellement servi).
+const developerKeys = DeveloperKeys as Record<ProviderId, string | undefined>;
 
 function textFromResponse(data: any): string {
   if (typeof data?.output_text === "string") return data.output_text;
@@ -282,6 +278,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // clé INTERNE (donnée de facturation d'un établissement scolaire) — jamais
   // pour les clés personnelles.
   const recordStats = (tokenUsage: number) => {
+    // Présence anonyme : alimente le compteur « en ligne » de l'accueil, tous
+    // modes confondus (clé personnelle comprise). Empreinte non réversible.
+    touchPresence(clientId, clientIp);
     try {
       const db = getDb();
       db.transaction(() => {

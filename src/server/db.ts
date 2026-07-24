@@ -150,6 +150,17 @@ CREATE TABLE IF NOT EXISTS admin_alerts (
   key TEXT PRIMARY KEY,
   ts  INTEGER NOT NULL
 );
+
+-- Présence « en ligne » du compteur public de fréquentation. ANONYME (une
+-- empreinte HMAC non réversible, jamais l'IP ni le clientId en clair) et
+-- ÉPHÉMÈRE (purgée au bout de quelques minutes — minimisation des données,
+-- sans rapport avec la règle « on ne supprime jamais » qui protège la
+-- facturation et les publications).
+CREATE TABLE IF NOT EXISTS presence (
+  id        TEXT PRIMARY KEY,
+  last_seen INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_presence_seen ON presence(last_seen);
 `;
 
 // Prompts socratiques d'amorçage : un catalogue vide ne recrute personne.

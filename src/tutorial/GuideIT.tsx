@@ -171,6 +171,7 @@ export default function GuideIT() {
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Account promptagogo / insegnante</td><td className="pr-2">Database</td><td>Nome pubblico, email (mai mostrata), ruoli, opzione di sincronizzazione. <b>Nessuna password esiste.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Istituti e consumi</td><td className="pr-2">Database</td><td>Dettagliato nella <Link className="underline" href="/etablissements#donnees">guida degli istituti</Link> (IP, orari, quote, registro dei consumi per IP — nessun dato nominativo di studenti).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profilo sincronizzato (opzione)</td><td className="pr-2">Database</td><td>Copia del tuo profilo del browser, cancellabile in ogni momento da /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Contatore « online » della home</td><td className="pr-2">Database</td><td>Un&apos;impronta tecnica non reversibile del browser (mai l&apos;IP in chiaro) e l&apos;ora dell&apos;ultima attività, cancellate dopo quindici minuti.</td></tr>
             </tbody>
           </table>
         </div>

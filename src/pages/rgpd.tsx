@@ -37,6 +37,7 @@ const CONTENT: Record<string, Content> = {
           "2. Les comptes des AUTEURS et administrateurs uniquement : nom public et adresse email, vérifiée par un code à usage unique. Aucun mot de passe n'existe.",
           "3. Pour la facturation de la clé interne : la consommation par adresse IP d'ÉTABLISSEMENT (adresse d'une école, pas d'une personne), avec fournisseur et volume de tokens. Les usages en clé personnelle ne sont jamais journalisés avec votre IP.",
           "4. Si vous l'activez explicitement (option de synchronisation), une copie de votre profil (conversations, favoris) — supprimable à tout moment.",
+          "5. Pour le compteur de fréquentation affiché en bas de l'accueil : une empreinte technique NON RÉVERSIBLE de votre navigateur (jamais votre adresse IP en clair) avec l'heure de votre dernière activité, effacée automatiquement après quinze minutes. Elle ne sert qu'à afficher un nombre de personnes en ligne et n'est reliée à rien d'autre.",
         ],
       },
       {
@@ -82,6 +83,7 @@ const CONTENT: Record<string, Content> = {
           "2. Accounts for AUTHORS and administrators only: public name and email address, verified by a single-use code. No passwords exist.",
           "3. For internal-key billing: consumption per SCHOOL IP address (a school's address, not a person's), with provider and token volume. Personal-key usage is never logged with your IP.",
           "4. If you explicitly enable it (sync option), a copy of your profile (conversations, favourites) — deletable at any time.",
+          "5. For the visitor counter shown at the bottom of the home page: a NON-REVERSIBLE technical fingerprint of your browser (never your IP address in clear) with the time of your last activity, automatically erased after fifteen minutes. It only feeds a number of people online and is linked to nothing else.",
         ],
       },
       {
@@ -127,6 +129,7 @@ const CONTENT: Record<string, Content> = {
           "2. Gli account dei soli AUTORI e amministratori: nome pubblico e indirizzo email, verificato con un codice monouso. Non esistono password.",
           "3. Per la fatturazione della chiave interna: il consumo per indirizzo IP dell'ISTITUTO (l'indirizzo di una scuola, non di una persona), con fornitore e volume di token. Gli usi con chiave personale non vengono mai registrati con il tuo IP.",
           "4. Se la attivi esplicitamente (opzione di sincronizzazione), una copia del tuo profilo (conversazioni, preferiti) — eliminabile in qualsiasi momento.",
+          "5. Per il contatore di frequentazione mostrato in fondo alla home: un'impronta tecnica NON REVERSIBILE del tuo browser (mai il tuo indirizzo IP in chiaro) con l'ora della tua ultima attività, cancellata automaticamente dopo quindici minuti. Serve solo a mostrare un numero di persone online e non è collegata a nient'altro.",
         ],
       },
       {
@@ -172,6 +175,7 @@ const CONTENT: Record<string, Content> = {
           "2. Konten NUR für Autorinnen/Autoren und Administratoren: öffentlicher Name und E-Mail-Adresse, per Einmalcode verifiziert. Passwörter existieren nicht.",
           "3. Für die Abrechnung des internen Schlüssels: der Verbrauch pro SCHUL-IP-Adresse (die Adresse einer Schule, nicht einer Person), mit Anbieter und Token-Volumen. Nutzungen mit persönlichem Schlüssel werden nie mit Ihrer IP protokolliert.",
           "4. Nur wenn Sie es ausdrücklich aktivieren (Sync-Option): eine Kopie Ihres Profils (Gespräche, Favoriten) — jederzeit löschbar.",
+          "5. Für den Besucherzähler am unteren Rand der Startseite: ein NICHT UMKEHRBARER technischer Fingerabdruck Ihres Browsers (niemals Ihre IP-Adresse im Klartext) mit dem Zeitpunkt Ihrer letzten Aktivität, nach fünfzehn Minuten automatisch gelöscht. Er speist nur eine Zahl von Personen online und ist mit nichts anderem verknüpft.",
         ],
       },
       {

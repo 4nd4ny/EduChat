@@ -171,6 +171,7 @@ export default function GuideEN() {
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogue / teacher account</td><td className="pr-2">Database</td><td>Public name, email (never displayed), roles, sync option. <b>No password exists.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schools & consumption</td><td className="pr-2">Database</td><td>Detailed in the <Link className="underline" href="/etablissements#donnees">schools guide</Link> (IP, hours, quotas, per-IP consumption log — no student personal data).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synced profile (optional)</td><td className="pr-2">Database</td><td>A copy of your browser profile, deletable at any time from /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Home page &quot;online&quot; counter</td><td className="pr-2">Database</td><td>A non-reversible technical fingerprint of the browser (never the IP in clear) and the time of the last activity, erased after fifteen minutes.</td></tr>
             </tbody>
           </table>
         </div>

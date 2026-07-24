@@ -176,6 +176,7 @@ export default function GuideFR() {
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Compte promptagogue / enseignant</td><td className="pr-2">Base de données</td><td>Nom public, email (jamais affiché), rôles, option de synchronisation. <b>Aucun mot de passe n'existe.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Établissements & consommation</td><td className="pr-2">Base de données</td><td>Détaillé dans le <Link className="underline" href="/etablissements#donnees">guide des établissements</Link> (IP, horaires, quotas, journal de consommation par IP — aucune donnée nominative d'élève).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profil synchronisé (option)</td><td className="pr-2">Base de données</td><td>Copie de votre profil de navigateur, supprimable à tout moment depuis /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Compteur « en ligne » de l'accueil</td><td className="pr-2">Base de données</td><td>Une empreinte technique non réversible du navigateur (jamais l'IP en clair) et l'heure de la dernière activité, effacées après quinze minutes.</td></tr>
             </tbody>
           </table>
         </div>

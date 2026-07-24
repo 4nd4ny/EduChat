@@ -65,3 +65,11 @@ TRUSTED_PROXY_IPS=
 # même IP dépasse ce volume quotidien de tokens sur la clé interne (une alerte
 # par IP et par jour, aucun blocage). 0 = désactivé. Défaut : 100000.
 SECRET_ALERT_IP_TOKENS_DAILY=100000
+
+# Compteur public « crédits gratuits restants aujourd'hui » (bas de l'accueil).
+# Budget quotidien du repli gratuit, en USD — le vrai plafond se règle CHEZ
+# OpenRouter ; cette valeur ne sert qu'à l'affichage. Défaut : 1.
+SECRET_FREE_DAILY_USD=1
+# Prix moyen du filet PAYANT de la cascade gratuite, en USD par million de
+# tokens (les modèles « :free » sont comptés à zéro). Défaut : 0.08.
+SECRET_FREE_PRICE_PER_MTOK=0.08

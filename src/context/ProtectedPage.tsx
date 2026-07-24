@@ -1,4 +1,5 @@
 import React, { useState, useEffect, KeyboardEvent, ReactNode } from 'react';
+import { useRouter } from 'next/router';
 import SessionSetup from './SessionSetup';
 
 interface ProtectedPageProps {
@@ -6,6 +7,7 @@ interface ProtectedPageProps {
 }
 
 const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
+  const router = useRouter();
   const [password, setPassword] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,10 +40,26 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
       const response = await fetch('/api/auth', {method: 'GET',});
       const data = await response.json();
       setIsAuthorized(data.success);
+      // « Réglages de session » demandés explicitement (/school?session=1,
+      // raccourci Enseignant de l'accueil) : l'écran s'ouvre même si le site
+      // est DÉJÀ déverrouillé — sans cela, une enseignante ne pouvait plus
+      // redéployer un autre tuteur de toute la durée du verrou.
+      if (data.success && new URLSearchParams(window.location.search).get('session') === '1') {
+        setShowSetup(true);
+      }
     } catch (error) {
       console.error('Error checking authorization:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Refermer les réglages nettoie le paramètre : un rafraîchissement ne les
+  // rouvre pas indéfiniment.
+  const closeSetup = () => {
+    setShowSetup(false);
+    if (typeof window !== 'undefined' && window.location.search.includes('session=1')) {
+      void router.replace(window.location.pathname, undefined, { shallow: true });
     }
   };
 
@@ -78,7 +96,7 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
   }
 
   if (isAuthorized) {
-    if (showSetup) return <SessionSetup onDone={() => setShowSetup(false)} />;
+    if (showSetup) return <SessionSetup onDone={closeSetup} />;
     return <>{children}</>;
   }
 

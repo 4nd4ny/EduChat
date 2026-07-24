@@ -171,6 +171,7 @@ export default function GuideDE() {
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogen- / Lehrpersonen-Konto</td><td className="pr-2">Datenbank</td><td>Öffentlicher Name, E-Mail (nie angezeigt), Rollen, Sync-Option. <b>Es existiert kein Passwort.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schulen & Verbrauch</td><td className="pr-2">Datenbank</td><td>Im Detail im <Link className="underline" href="/etablissements#donnees">Schul-Leitfaden</Link> (IP, Zeiten, Kontingente, Verbrauchsprotokoll pro IP — keine personenbezogenen Schülerdaten).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synchronisiertes Profil (Option)</td><td className="pr-2">Datenbank</td><td>Kopie Ihres Browser-Profils, jederzeit über /verifier löschbar.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">„Online“-Zähler der Startseite</td><td className="pr-2">Datenbank</td><td>Ein nicht umkehrbarer technischer Fingerabdruck des Browsers (nie die IP im Klartext) und der Zeitpunkt der letzten Aktivität, nach fünfzehn Minuten gelöscht.</td></tr>
             </tbody>
           </table>
         </div>

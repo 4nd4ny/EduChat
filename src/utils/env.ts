@@ -69,6 +69,34 @@ export const AlertIpDailyTokens: number = (() => {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 100000;
 })();
 
+// Clés API du SERVEUR, par fournisseur. Source unique : la route de complétion
+// les dépense, le compteur public s'en sert pour savoir si le repli gratuit est
+// réellement opérationnel. Une clé absente = ce fournisseur n'est pas servi.
+export const DeveloperKeys: Record<string, string | undefined> = {
+  anthropic: process.env.SECRET_ANTHROPIC_API_KEY,
+  openai: process.env.SECRET_OPENAI_API_KEY,
+  gemini: process.env.SECRET_GEMINI_API_KEY,
+  openrouter: process.env.SECRET_OPENROUTER_API_KEY,
+  grok: process.env.SECRET_XAI_API_KEY,
+  mistral: process.env.SECRET_MISTRAL_API_KEY,
+};
+
+// Budget quotidien du repli GRATUIT public, en USD — le plafond réel est posé
+// CHEZ le fournisseur (OpenRouter) ; cette valeur sert au compteur public
+// « crédits gratuits restants aujourd'hui » affiché en bas de l'accueil.
+export const FreeDailyUsd: number = (() => {
+  const parsed = parseFloat(process.env.SECRET_FREE_DAILY_USD ?? '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+})();
+
+// Prix moyen (USD par million de tokens) du filet PAYANT de la cascade
+// gratuite — les modèles « :free » ne coûtent rien et sont comptés à zéro.
+// Sert uniquement à estimer les crédits consommés du jour.
+export const FreePricePerMtok: number = (() => {
+  const parsed = parseFloat(process.env.SECRET_FREE_PRICE_PER_MTOK ?? '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0.08;
+})();
+
 // Fonction de validation d'IP : est-ce vraiment utile ?
 function isValidIP(ip: string): boolean {
   const ipv4Regex = /^(25[0-5]|2[0-4]\d|[01]?\d\d?)\.((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){2}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
