@@ -7,6 +7,7 @@ import { providerDefaults, type ProviderId, type ReasoningLevel } from "../share
 import { translate } from "../i18n/useT";
 import { getClientId } from "../utils/clientId";
 import { fr as frDict } from "../i18n/dictionaries";
+import { requestCompletion } from "../utils/streamCompletion";
 
 export { providerDefaults };
 export type { ProviderId, ReasoningLevel };
@@ -138,33 +139,72 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
 
   const send = useCallback(async (nextMessages: ChatMessage[]) => {
     setLoading(true); setError("");
+    // Streaming : un message assistant « en cours » est créé au premier fragment
+    // puis complété au fil du flux. En repli gratuit (ou fournisseur sans flux),
+    // le serveur répond d'un bloc et le message n'apparaît qu'à la fin — le
+    // comportement historique.
+    const assistantId = uuidv4();
+    let placeholderShown = false;
+    let streamLabel = providerDefaults[provider].label;
+    let pendingText = "";
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      flushTimer = null;
+      const value = pendingText;
+      setMessages(previous => previous.map(m => m.id === assistantId ? { ...m, content: value } : m));
+    };
     try {
-      const response = await fetch("/api/completion", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider, model, apiKey, reasoning,
-          promptName: promptName || undefined,
-          promptVersion: promptVersion || undefined,
-          shareToken: shareToken || undefined,
-          clientId: getClientId() || undefined,
-          messages: nextMessages.map(({ role, content }) => ({ role, content })) }) });
-      const data = await response.json();
-      if (!response.ok) {
-        // Codes d'erreur stables du serveur, traduits dans la langue courante.
-        const code = data?.error?.code as string | undefined;
-        const key = code && (frDict as any)[`err.${code}`] ? `err.${code}` : "err.fallback";
-        throw new Error(translate(router.locale, key as any));
-      }
-      addTokenUsage(Number(data.tokenUsage));
+      const result = await requestCompletion({
+        provider, model, apiKey, reasoning,
+        promptName: promptName || undefined,
+        promptVersion: promptVersion || undefined,
+        shareToken: shareToken || undefined,
+        clientId: getClientId() || undefined,
+        messages: nextMessages.map(({ role, content }) => ({ role, content })),
+      }, {
+        onStart: meta => {
+          const usedProvider = providerDefaults[meta.provider as ProviderId] ? (meta.provider as ProviderId) : provider;
+          streamLabel = providerDefaults[usedProvider].label + (meta.free ? " (gratuit)" : "");
+        },
+        onDelta: fullText => {
+          if (!placeholderShown) {
+            placeholderShown = true;
+            setMessages(previous => [...previous, { id: assistantId, role: "assistant", content: fullText, model: streamLabel }]);
+            return;
+          }
+          // Rafraîchissement throttlé (~7 fois/s) : l'affichage reste fluide sans
+          // réécrire l'historique localStorage à chaque token.
+          pendingText = fullText;
+          if (!flushTimer) flushTimer = setTimeout(flush, 150);
+        },
+      });
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      addTokenUsage(result.tokenUsage);
       // Épingle la version du tuteur au premier échange réussi.
-      if (data.promptVersion && !promptVersion) setPromptVersion(Number(data.promptVersion));
-      const usedProvider = (data.provider && providerDefaults[data.provider as ProviderId]) ? (data.provider as ProviderId) : provider;
-      const label = providerDefaults[usedProvider].label + (data.free ? " (gratuit)" : "");
-      setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: data.reply, model: label }]);
+      if (result.promptVersion && !promptVersion) setPromptVersion(Number(result.promptVersion));
+      const usedProvider = providerDefaults[result.provider as ProviderId] ? (result.provider as ProviderId) : provider;
+      const label = providerDefaults[usedProvider].label + (result.free ? " (gratuit)" : "");
+      if (placeholderShown) {
+        setMessages(previous => previous.map(m => m.id === assistantId ? { ...m, content: result.reply, model: label } : m));
+      } else {
+        setMessages(previous => [...previous, { id: assistantId, role: "assistant", content: result.reply, model: label }]);
+      }
     } catch (exception: any) {
-      const message = exception?.message || "Erreur inconnue.";
-      setError(message); setMessages(previous => [...previous, { id: uuidv4(), role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      // Codes d'erreur stables du serveur, traduits dans la langue courante.
+      const code = (exception as any)?.code as string | undefined;
+      const message = code && (frDict as any)[`err.${code}`]
+        ? translate(router.locale, `err.${code}` as any)
+        : (code ? translate(router.locale, "err.fallback") : (exception?.message || "Erreur inconnue."));
+      setError(message);
+      if (placeholderShown) {
+        setMessages(previous => previous.map(m => m.id === assistantId
+          ? { ...m, content: `${m.content}\n\n*Erreur : ${message}*` } : m));
+      } else {
+        setMessages(previous => [...previous, { id: assistantId, role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
+      }
     } finally { setLoading(false); }
-  }, [provider, model, apiKey, reasoning, promptName, promptVersion, shareToken]);
+  }, [provider, model, apiKey, reasoning, promptName, promptVersion, shareToken, router.locale]);
 
   const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user") => {
     const value = content.trim(); if (!value) return;

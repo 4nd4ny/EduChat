@@ -5,6 +5,10 @@ import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { FreeProvider, FreeModel, FreeModels } from "../../utils/env";
 import {
+  buildProviderRequest, canStreamProvider, streamProviderResponse,
+  type ProviderCallOpts, type WireMessage,
+} from "../../server/llm";
+import {
   ERR,
   isProviderId,
   isReasoningLevel,
@@ -102,6 +106,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const promptName = String(body.promptName ?? "").slice(0, 64);
   const promptVersion = Number.isInteger(body.promptVersion) ? Number(body.promptVersion) : 0;
   const shareToken = String(body.shareToken ?? "").slice(0, 64);
+  // Streaming demandé par le client. Il n'est JAMAIS appliqué au repli gratuit
+  // (exigence produit : le mode gratuit reste en texte simple) ni à Gemini
+  // (API sans flux stable) — dans ces cas la réponse repasse en JSON complet.
+  const wantStream = body.stream === true;
   // Identifiant ANONYME de navigateur (uuid aléatoire côté client) : support du
   // quota quotidien par élève — pseudonyme, jamais relié à une identité.
   const clientId = /^[a-f0-9-]{8,64}$/i.test(String(body.clientId ?? "")) ? String(body.clientId) : "";
@@ -205,97 +213,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Pour les API à liste de messages, le prompt système est un message system
   // en tête ; Anthropic a son champ `system` dédié.
-  const withSystem = system ? [{ role: "system", content: system }, ...cleanMessages] : cleanMessages;
+  const withSystem: WireMessage[] = system
+    ? [{ role: "system", content: system }, ...cleanMessages]
+    : cleanMessages;
 
-  try {
-    let data: any;
-    // Repli gratuit : CASCADE de secours. On tente chaque modèle gratuit de la
-    // liste dans l'ordre ; si l'un est saturé (429 « rate-limited upstream »), on
-    // passe au suivant. Un seul modèle configuré → 2 tentatives (429 souvent
-    // transitoire). Les autres chemins (BYOK / clé interne) : un seul modèle.
-    const freeList = FreeModels.length ? FreeModels : [effModel];
-    const candidates = usedFreeKey
-      ? (freeList.length === 1 ? [freeList[0], freeList[0]] : freeList).slice(0, 6)
-      : [effModel];
-    let lastError: any = null;
-    for (let ci = 0; ci < candidates.length; ci++) {
-     effModel = candidates[ci].slice(0, 128);
-     try {
-    if (effProvider === "openai" || effProvider === "grok") {
-      data = await requestJson(effProvider === "openai" ? "https://api.openai.com/v1/responses" : "https://api.x.ai/v1/responses", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: effModel,
-          input: withSystem,
-          reasoning: { effort: reasoning },
-          ...(webSearch ? { tools: [{ type: effProvider === "openai" ? "web_search_preview" : "web_search" }] } : {}),
-        }),
-      });
-    } else if (effProvider === "anthropic") {
-      const budgets: Record<ReasoningLevel, number> = { low: 1024, medium: 4096, high: 8192 };
-      data = await requestJson("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "content-type": "application/json" },
-        body: JSON.stringify({
-          model: effModel, messages: cleanMessages, max_tokens: Math.max(4096, budgets[reasoning] + 2048),
-          ...(system ? { system } : {}),
-          thinking: { type: "enabled", budget_tokens: budgets[reasoning] },
-          ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search" }] } : {}),
-        }),
-      });
-    } else if (effProvider === "gemini") {
-      data = await requestJson("https://generativelanguage.googleapis.com/v1beta/interactions", {
-        method: "POST",
-        headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: effModel, input: withSystem,
-          ...(webSearch ? { tools: [{ type: "google_search" }] } : {}),
-          reasoning: { effort: reasoning },
-        }),
-      });
-    } else if (effProvider === "openrouter") {
-      data = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json",
-          "HTTP-Referer": "https://educh.at", "X-Title": "EduChat", // attribution recommandée par OpenRouter
-        },
-        body: JSON.stringify({
-          model: effModel, messages: withSystem, max_tokens: 2048,
-          // Pas de « reasoning » sur le repli gratuit : le petit modèle Gemma ne
-          // raisonne pas et le paramètre est inutile (voire mal supporté).
-          ...(usedFreeKey ? {} : { reasoning: { effort: reasoning } }),
-          ...(webSearch ? { tools: [{ type: "openrouter:web_search" }] } : {}),
-        }),
-      });
-    } else {
-      data = await requestJson("https://api.mistral.ai/v1/conversations", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: effModel, inputs: withSystem,
-          ...(webSearch ? { tools: [{ type: "web_search" }] } : {}),
-          completion_args: { temperature: reasoning === "low" ? 0.2 : 0.5 },
-        }),
-      });
-    }
-        lastError = null;
-        break;
-     } catch (err) {
-       lastError = err;
-       // Modèle suivant de la cascade (petite pause pour laisser le pool respirer).
-       if (ci < candidates.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
-     }
-    }
-    if (lastError) throw lastError;
+  const callOpts = (modelName: string, stream: boolean): ProviderCallOpts => ({
+    provider: effProvider, model: modelName, apiKey,
+    messages: cleanMessages, withSystem, system,
+    reasoning, webSearch, freeMode: usedFreeKey, stream,
+  });
 
-    const tokenUsage = usageFromResponse(data);
-
-    // Statistiques — uniquement après une complétion RÉUSSIE :
-    // compteurs publics du tuteur + journal de consommation. Le journal ne
-    // porte l'IP que pour la clé INTERNE (donnée de facturation d'un
-    // établissement scolaire) — jamais pour les clés personnelles.
+  // Statistiques — uniquement après une complétion RÉUSSIE : compteurs publics
+  // du tuteur + journal de consommation. Le journal ne porte l'IP que pour la
+  // clé INTERNE (donnée de facturation d'un établissement scolaire) — jamais
+  // pour les clés personnelles.
+  const recordStats = (tokenUsage: number) => {
     try {
       const db = getDb();
       db.transaction(() => {
@@ -322,6 +254,82 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error('Statistiques non enregistrées :', statsError);
       // La réponse de chat n'est jamais sacrifiée pour une statistique.
     }
+  };
+
+  // ---- Chemin STREAMÉ (clé personnelle ou clé interne, fournisseur capable) --
+  if (wantStream && !usedFreeKey && canStreamProvider(effProvider)) {
+    // NDJSON : une ligne = un événement {type: start|delta|done|error}.
+    // X-Accel-Buffering désactive la mise en tampon du reverse proxy (NPM/nginx),
+    // sans quoi le flux arriverait d'un bloc.
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    });
+    const emit = (event: Record<string, unknown>) => { res.write(JSON.stringify(event) + '\n'); };
+    emit({
+      type: 'start', provider: effProvider, free: false,
+      ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
+    });
+
+    let emitted = false;
+    try {
+      let text = '';
+      let tokens = 0;
+      try {
+        const result = await streamProviderResponse(callOpts(effModel, true), fragment => {
+          emitted = true;
+          emit({ type: 'delta', text: fragment });
+        });
+        text = result.text; tokens = result.tokens;
+      } catch (streamError) {
+        // Rien n'est encore parti vers le client : une seconde chance en réponse
+        // complète (certains modèles/passerelles refusent le flux).
+        if (emitted) throw streamError;
+        const { url, init } = buildProviderRequest(callOpts(effModel, false));
+        const data = await requestJson(url, init);
+        text = textFromResponse(data);
+        tokens = usageFromResponse(data);
+        emit({ type: 'delta', text });
+      }
+      recordStats(tokens);
+      emit({ type: 'done', tokenUsage: tokens });
+    } catch (error: any) {
+      console.error(`Erreur du fournisseur ${effProvider} (flux) :`, error?.message);
+      emit({ type: 'error', code: ERR.UPSTREAM });
+    }
+    return res.end();
+  }
+
+  // ---- Chemin NON STREAMÉ (repli gratuit, Gemini, ou client sans stream) -----
+  try {
+    let data: any;
+    // Repli gratuit : CASCADE de secours. On tente chaque modèle gratuit de la
+    // liste dans l'ordre ; si l'un est saturé (429 « rate-limited upstream »), on
+    // passe au suivant. Un seul modèle configuré → 2 tentatives (429 souvent
+    // transitoire). Les autres chemins (BYOK / clé interne) : un seul modèle.
+    const freeList = FreeModels.length ? FreeModels : [effModel];
+    const candidates = usedFreeKey
+      ? (freeList.length === 1 ? [freeList[0], freeList[0]] : freeList).slice(0, 6)
+      : [effModel];
+    let lastError: any = null;
+    for (let ci = 0; ci < candidates.length; ci++) {
+      effModel = candidates[ci].slice(0, 128);
+      try {
+        const { url, init } = buildProviderRequest(callOpts(effModel, false));
+        data = await requestJson(url, init);
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        // Modèle suivant de la cascade (petite pause pour laisser le pool respirer).
+        if (ci < candidates.length - 1) await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    if (lastError) throw lastError;
+
+    const tokenUsage = usageFromResponse(data);
+    recordStats(tokenUsage);
 
     return res.status(200).json({
       reply: textFromResponse(data),
