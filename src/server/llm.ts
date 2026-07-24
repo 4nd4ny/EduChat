@@ -10,7 +10,7 @@
 // route renvoie alors d'un bloc). Le repli gratuit reste volontairement en
 // texte non streamé (exigence produit).
 
-import type { ProviderId, ReasoningLevel } from '../shared/providers';
+import type { Attachment, ProviderId, ReasoningLevel } from '../shared/providers';
 
 export type WireMessage = { role: string; content: any };
 
@@ -28,7 +28,55 @@ export type ProviderCallOpts = {
   /** Repli gratuit : paramétrage minimal (pas de reasoning, petit max_tokens). */
   freeMode: boolean;
   stream: boolean;
+  /** Pièces jointes (images/PDF) du DERNIER message utilisateur — BYOK uniquement. */
+  attachments?: Attachment[];
 };
+
+/**
+ * Rattache les pièces jointes au dernier message utilisateur, dans le dialecte
+ * multimodal du fournisseur. Chaque API a sa forme :
+ *  - Anthropic : blocs {type:image|document, source:{type:base64,...}} ;
+ *  - OpenAI/Grok (Responses) : input_text / input_image / input_file (data-URL) ;
+ *  - OpenRouter (chat completions) : text / image_url / file (data-URL) ;
+ *  - Mistral (conversations) : text / image_url (images seulement).
+ * La validation (clé perso, capacités, tailles) est faite AVANT, dans la route.
+ */
+function withAttachments(messages: WireMessage[], provider: ProviderId, attachments: Attachment[]): WireMessage[] {
+  if (!attachments.length) return messages;
+  const lastUser = messages.map(m => m.role).lastIndexOf('user');
+  if (lastUser < 0) return messages;
+
+  return messages.map((message, index) => {
+    if (index !== lastUser) return message;
+    const text = String(message.content ?? '');
+    const dataUrl = (a: Attachment) => `data:${a.mediaType};base64,${a.data}`;
+
+    if (provider === 'anthropic') {
+      const blocks: any[] = attachments.map(a => a.kind === 'image'
+        ? { type: 'image', source: { type: 'base64', media_type: a.mediaType, data: a.data } }
+        : { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } });
+      return { role: 'user', content: [...blocks, { type: 'text', text }] };
+    }
+    if (provider === 'openai' || provider === 'grok') {
+      const parts: any[] = attachments.map(a => a.kind === 'image'
+        ? { type: 'input_image', image_url: dataUrl(a) }
+        : { type: 'input_file', filename: a.name || 'document.pdf', file_data: dataUrl(a) });
+      return { role: 'user', content: [...parts, { type: 'input_text', text }] };
+    }
+    if (provider === 'openrouter') {
+      const parts: any[] = attachments.map(a => a.kind === 'image'
+        ? { type: 'image_url', image_url: { url: dataUrl(a) } }
+        : { type: 'file', file: { filename: a.name || 'document.pdf', file_data: dataUrl(a) } });
+      return { role: 'user', content: [...parts, { type: 'text', text }] };
+    }
+    if (provider === 'mistral') {
+      const parts: any[] = attachments.filter(a => a.kind === 'image')
+        .map(a => ({ type: 'image_url', image_url: dataUrl(a) }));
+      return { role: 'user', content: [...parts, { type: 'text', text }] };
+    }
+    return message; // gemini : pièces jointes refusées en amont
+  });
+}
 
 /** Le fournisseur sait-il streamer via ce module ? */
 export function canStreamProvider(provider: ProviderId): boolean {
@@ -36,7 +84,15 @@ export function canStreamProvider(provider: ProviderId): boolean {
 }
 
 /** Construit URL + init fetch pour un appel de complétion, streamé ou non. */
-export function buildProviderRequest(o: ProviderCallOpts): { url: string; init: RequestInit } {
+export function buildProviderRequest(raw: ProviderCallOpts): { url: string; init: RequestInit } {
+  const attachments = raw.attachments ?? [];
+  const o: ProviderCallOpts = attachments.length
+    ? {
+      ...raw,
+      messages: withAttachments(raw.messages, raw.provider, attachments),
+      withSystem: withAttachments(raw.withSystem, raw.provider, attachments),
+    }
+    : raw;
   if (o.provider === 'openai' || o.provider === 'grok') {
     return {
       url: o.provider === 'openai' ? 'https://api.openai.com/v1/responses' : 'https://api.x.ai/v1/responses',
@@ -101,7 +157,10 @@ export function buildProviderRequest(o: ProviderCallOpts): { url: string; init: 
           // Pas de « reasoning » sur le repli gratuit : le petit modèle gratuit
           // ne raisonne pas et le paramètre est inutile (voire mal supporté).
           ...(o.freeMode ? {} : { reasoning: { effort: o.reasoning } }),
-          ...(o.webSearch ? { tools: [{ type: 'openrouter:web_search' }] } : {}),
+          // Recherche web OpenRouter = plugin « web » (l'ancien pseudo-tool
+          // « openrouter:web_search » était rejeté : « No endpoints found that
+          // support tool use » sur tout modèle sans tools).
+          ...(o.webSearch ? { plugins: [{ id: 'web' }] } : {}),
           // En flux, demander le décompte de tokens dans le dernier événement.
           ...(o.stream ? { stream: true, usage: { include: true } } : {}),
         }),
