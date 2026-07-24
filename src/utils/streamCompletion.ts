@@ -48,10 +48,16 @@ export class CompletionError extends Error {
 export async function requestCompletion(
   body: CompletionBody,
   handlers: CompletionHandlers = {},
+  authToken?: string,
 ): Promise<CompletionResult> {
   const response = await fetch("/api/completion", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      // Jeton de compte : requis par le serveur pour les modes duals
+      // (réservés aux promptagogues vérifiés).
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    },
     body: JSON.stringify({ ...body, stream: !!handlers.onDelta }),
   });
 

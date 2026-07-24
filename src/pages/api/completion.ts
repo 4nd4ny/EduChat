@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
 import { getDb, PromptRow } from "../../server/db";
+import { requireAuth } from "../../server/token";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { FreeProvider, FreeModel, FreeModels } from "../../utils/env";
@@ -125,6 +126,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: { code: ERR.EMPTY } });
+  }
+
+  // Modes DUALS (comparaison de tuteurs ou de modèles) : réservés aux
+  // promptagogues vérifiés — rôle relu en base, jamais dans le jeton.
+  if (body.dual === true) {
+    const auth = requireAuth(req);
+    const promptagogue = auth && (getDb().prepare(
+      'SELECT is_promptagogue FROM users WHERE email = ? AND verified_at IS NOT NULL')
+      .get(auth.email) as { is_promptagogue: number } | undefined)?.is_promptagogue;
+    if (!promptagogue) return res.status(403).json({ error: { code: 'ERR_PROMPTAGOGUE_ONLY' } });
   }
 
   const model = String(body.model || providerDefaults[provider].model).trim();

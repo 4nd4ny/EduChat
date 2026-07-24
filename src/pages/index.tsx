@@ -86,6 +86,11 @@ export default function Catalogue() {
             className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
             {t("home.propose")}
           </Link>
+          <Link href="/duel"
+            className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary"
+            title={t("home.duelTitle")}>
+            {t("home.duel")}
+          </Link>
           <Link href="/tutoriel" className="px-2 py-2 text-xs opacity-60 hover:opacity-100">
             Guide
           </Link>
