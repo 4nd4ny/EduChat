@@ -36,9 +36,11 @@ export default function DemoChat({ promptName, onClose }: { promptName: string; 
       if (!response.ok) {
         setError(data?.error?.code === "ERR_LOCKED"
           ? "La démo gratuite n'est pas disponible pour le moment. Utilisez « Utiliser » avec votre clé personnelle."
-          : data?.error?.code === "ERR_RATE_LIMIT"
-            ? "Trop de messages d'affilée — patientez un instant."
-            : "Le tuteur n'a pas pu répondre. Réessayez dans un moment.");
+          : data?.error?.code === "ERR_FREE_BUSY"
+            ? "Le modèle gratuit est momentanément saturé (beaucoup de monde). Réessayez dans un instant, ou cliquez « Utiliser » avec votre clé personnelle."
+            : data?.error?.code === "ERR_RATE_LIMIT"
+              ? "Trop de messages d'affilée — patientez un instant."
+              : "Le tuteur n'a pas pu répondre. Réessayez dans un moment.");
         return;
       }
       setMessages(previous => [...previous, { role: "assistant", content: data.reply }]);

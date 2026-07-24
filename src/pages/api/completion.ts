@@ -209,7 +209,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     let data: any;
-
+    // Le repli gratuit (pool OpenRouter partagé) renvoie souvent un 429 transitoire
+    // « rate-limited upstream » : un seul retry après ~1,2 s le rattrape souvent.
+    for (let attempt = 1; ; attempt++) {
+     try {
     if (effProvider === "openai" || effProvider === "grok") {
       data = await requestJson(effProvider === "openai" ? "https://api.openai.com/v1/responses" : "https://api.x.ai/v1/responses", {
         method: "POST",
@@ -246,9 +249,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else if (effProvider === "openrouter") {
       data = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json",
+          "HTTP-Referer": "https://educh.at", "X-Title": "EduChat", // attribution recommandée par OpenRouter
+        },
         body: JSON.stringify({
-          model: effModel, messages: withSystem, reasoning: { effort: reasoning },
+          model: effModel, messages: withSystem, max_tokens: 2048,
+          // Pas de « reasoning » sur le repli gratuit : le petit modèle Gemma ne
+          // raisonne pas et le paramètre est inutile (voire mal supporté).
+          ...(usedFreeKey ? {} : { reasoning: { effort: reasoning } }),
           ...(webSearch ? { tools: [{ type: "openrouter:web_search" }] } : {}),
         }),
       });
@@ -262,6 +271,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           completion_args: { temperature: reasoning === "low" ? 0.2 : 0.5 },
         }),
       });
+    }
+        break;
+     } catch (err) {
+       if (!usedFreeKey || attempt >= 2) throw err;
+       await new Promise(resolve => setTimeout(resolve, 1200));
+     }
     }
 
     const tokenUsage = usageFromResponse(data);
@@ -305,7 +320,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
     });
   } catch (error: any) {
-    console.error(`Erreur du fournisseur ${provider} :`, error?.message);
-    return res.status(502).json({ error: { code: ERR.UPSTREAM } });
+    console.error(`Erreur du fournisseur ${effProvider} :`, error?.message);
+    // Repli gratuit saturé (429 upstream) : code dédié, invitant à réessayer ou
+    // à saisir une clé personnelle. Sinon, erreur amont générique.
+    return usedFreeKey
+      ? res.status(503).json({ error: { code: 'ERR_FREE_BUSY' } })
+      : res.status(502).json({ error: { code: ERR.UPSTREAM } });
   }
 }

@@ -90,6 +90,7 @@ export const fr = {
   'err.ERR_UPSTREAM': "Le fournisseur d'IA n'a pas répondu correctement.",
   'err.ERR_QUOTA_ETABLISSEMENT': 'Le quota mensuel de tokens de votre établissement est épuisé. Contactez votre enseignant, ou utilisez votre clé personnelle.',
   'err.ERR_QUOTA_ELEVE': "Votre quota personnel du jour est épuisé pour cet établissement. Réessayez demain, demandez à votre enseignant, ou utilisez votre clé personnelle.",
+  'err.ERR_FREE_BUSY': "Le modèle gratuit est momentanément saturé. Réessayez dans un instant, ou saisissez votre clé personnelle.",
   'err.ERR_PROMPT_UNKNOWN': "Ce tuteur n'existe pas ou n'est plus publié.",
   'err.fallback': 'La réponse a échoué.',
 } as const;
@@ -175,6 +176,7 @@ export const en: Record<TranslationKey, string> = {
   'err.ERR_UPSTREAM': 'The AI provider did not answer correctly.',
   'err.ERR_QUOTA_ETABLISSEMENT': "Your school's monthly token quota is exhausted. Contact your teacher, or use your personal key.",
   'err.ERR_QUOTA_ELEVE': "Your personal daily quota for this school is used up. Try again tomorrow, ask your teacher, or use your personal key.",
+  'err.ERR_FREE_BUSY': "The free model is momentarily overloaded. Try again shortly, or enter your personal API key.",
   'err.ERR_PROMPT_UNKNOWN': 'This tutor does not exist or is no longer published.',
   'err.fallback': 'The request failed.',
 };
