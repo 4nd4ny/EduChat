@@ -27,14 +27,15 @@ export const SUGGESTED_LADDER: Record<ProviderId, string[]> = {
   gemini: ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-pro-latest'],
   grok: ['grok-4.20-0309-non-reasoning', 'grok-4.3', 'grok-4.5'],
   openrouter: ['mistralai/mistral-small-3.2-24b-instruct', 'mistralai/mistral-large-2512', 'anthropic/claude-sonnet-5'],
-  // Fournisseurs chinois : jamais de clé interne (drapeau WRNG), donc jamais
-  // vérifiables depuis le serveur. Ces échelles viennent de la documentation
-  // des éditeurs, et sont volontairement courtes.
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  qwen: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
+  // Fournisseurs chinois : jamais servis par la clé d'une école (drapeau
+  // WRNG), mais leur catalogue est désormais interrogeable — ces échelles sont
+  // donc VÉRIFIÉES contre les listes réelles du 25 juillet 2026, sauf Kimi
+  // dont la clé manque encore.
+  deepseek: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  qwen: ['qwen3.7-flash', 'qwen3.7-plus', 'qwen3.7-max'],
   kimi: ['kimi-k2.5', 'kimi-k3'],
-  glm: ['glm-4.6'],
-  minimax: ['MiniMax-M2.5', 'MiniMax-M3'],
+  glm: ['glm-5-turbo', 'glm-5', 'glm-5.2'],
+  minimax: ['MiniMax-M2.5-highspeed', 'MiniMax-M2.7', 'MiniMax-M3'],
 };
 
 /** Le barreau demandé, ramené à ce que l'échelle propose réellement. */

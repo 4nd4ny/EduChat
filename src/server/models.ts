@@ -71,6 +71,13 @@ const NATIVE: Partial<Record<ProviderId, { url: string; auth: 'bearer' | 'x-api-
  * référence OpenRouter (« openai/gpt-5 » → « gpt-5 »). Vérifié un par un :
  * pour tous les autres, la transformation serait une devinette.
  */
+// Un catalogue de fournisseur mélange conversation, images, audio, embeddings
+// et traduction en direct. Le champ « Modèle » ne sert qu'à converser : le
+// reste n'est pas une option, c'est du bruit qui noie les vrais choix —
+// DashScope en renvoie 151, dont la moitié ne sait pas tenir un dialogue.
+const PAS_CONVERSATIONNEL =
+  /(image|video|audio|tts|asr|speech|embed|rerank|ocr|moderation|whisper|guard|realtime|livetranslate|banana|lyria|robotics|veo|imagen|codex|coder|fim)/i;
+
 const FROM_OPENROUTER: Partial<Record<ProviderId, string>> = {
   openai: 'openai/',
   gemini: 'google/',
@@ -172,7 +179,8 @@ function finalise(provider: ProviderId, models: string[]): string[] {
 async function build(provider: ProviderId, key: string): Promise<Entry> {
   const native = NATIVE[provider];
   if (native && (key || native.auth === 'aucune')) {
-    const ids = idsFrom(await fetchJson(native.url, headersFor(native.auth, key)));
+    const ids = idsFrom(await fetchJson(native.url, headersFor(native.auth, key)))
+      .filter(id => !PAS_CONVERSATIONNEL.test(id));
     if (ids.length) return { at: Date.now(), source: 'native', models: finalise(provider, ids) };
   }
 

@@ -53,7 +53,7 @@ export const providerDefaults: Record<ProviderId, {
   // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :
   // annoncer le trombone avec le modèle par défaut ne ferait que produire
   // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
-  deepseek: { label: "DeepSeek", model: "deepseek-chat", wrng: true },
+  deepseek: { label: "DeepSeek", model: "deepseek-v4-flash", wrng: true },
   qwen: { label: "Qwen", model: "qwen-plus", wrng: true },
   kimi: { label: "Kimi", model: "kimi-k2.5", wrng: true },
   glm: { label: "GLM", model: "glm-4.6", wrng: true },
