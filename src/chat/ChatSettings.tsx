@@ -30,6 +30,13 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [hasAccount, setHasAccount] = useState(false);
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
+  // Fournisseurs que le serveur peut servir sans clé personnelle. Les autres
+  // sont signalés dans la liste : mieux vaut le dire avant le clic qu'après
+  // une erreur incompréhensible.
+  const [served, setServed] = useState<string[] | null>(null);
+  useEffect(() => {
+    fetch("/api/providers").then(r => r.json()).then(d => setServed(d.served ?? [])).catch(() => {});
+  }, []);
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
@@ -79,8 +86,16 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             aria-label={t("chat.input.provider")}
             className={`${FIELD} w-full`}
           >
-            {Object.entries(providerDefaults).map(([id, item]) =>
-              <option key={id} value={id}>{item.label}{item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : item.wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}</option>)}
+            {Object.entries(providerDefaults).map(([id, item]) => {
+              const cleRequise = served !== null && !served.includes(id);
+              return (
+                <option key={id} value={id}>
+                  {item.label}
+                  {item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : item.wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
+                  {cleRequise ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                </option>
+              );
+            })}
           </select>
         </div>
       </Wrap>

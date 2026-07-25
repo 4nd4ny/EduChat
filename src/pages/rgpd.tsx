@@ -26,7 +26,7 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Les clés API personnelles",
         body: [
-          "PAR DÉFAUT, la clé API que vous saisissez reste dans la mémoire vive de la page (jamais dans le stockage du navigateur, jamais en base de données). Elle transite chiffrée (HTTPS) vers le serveur à chaque requête, qui la relaie au fournisseur d'IA sans la conserver — et l'oublie dès que vous fermez l'onglet.",
+          "La clé API que vous saisissez est CONSERVÉE DANS CE NAVIGATEUR (stockage local, une entrée par fournisseur) pour ne pas avoir à la retaper à chaque visite. Elle ne part sur aucun serveur d'EduChat pour y être stockée : elle transite chiffrée (HTTPS) à chaque requête, le serveur la relaie au fournisseur d'IA sans la garder. Contrepartie à connaître : conservée dans le navigateur, elle est lisible par tout script s'exécutant sur cet appareil — comme un mot de passe enregistré. Effacez le champ pour la retirer, ou videz les données du site.",
           "SEULE EXCEPTION, à votre demande : si vous avez un compte et que vous cochez « Mémoriser ma clé » dans le chat, elle est conservée CHIFFRÉE (AES-256-GCM) sur le serveur, pour vous éviter de la retaper. Elle ne redescend jamais vers le navigateur : le serveur la déchiffre uniquement le temps d'appeler le fournisseur. Décocher la case l'efface immédiatement. Les élèves, qui n'ont pas de compte, ne sont jamais concernés.",
         ],
       },
@@ -78,7 +78,7 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Personal API keys",
         body: [
-          "BY DEFAULT, the API key you type stays in the page's memory (never in browser storage, never in a database). It travels encrypted (HTTPS) to the server with each request, which relays it to the AI provider without keeping it — and forgets it as soon as you close the tab.",
+          "The API key you type is KEPT IN THIS BROWSER (local storage, one entry per provider) so you do not have to retype it at every visit. It is not stored on any EduChat server: it travels encrypted (HTTPS) with each request, and the server relays it to the AI provider without keeping it. The trade-off to know: kept in the browser, it is readable by any script running on this device — like a saved password. Clear the field to remove it, or clear the site data.",
           "THE ONLY EXCEPTION, at your request: if you have an account and tick « Remember my key » in the chat, it is kept ENCRYPTED (AES-256-GCM) on the server so you do not have to retype it. It never travels back to the browser: the server decrypts it only to call the provider. Unticking the box erases it immediately. Students, who have no account, are never concerned.",
         ],
       },
@@ -130,7 +130,7 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Le chiavi API personali",
         body: [
-          "PER IMPOSTAZIONE PREDEFINITA, la chiave API che digiti resta nella memoria della pagina (mai nello storage del browser, mai in un database). Viaggia cifrata (HTTPS) verso il server a ogni richiesta, che la inoltra al fornitore di IA senza conservarla — e la dimentica appena chiudi la scheda.",
+          "La chiave API che digiti è CONSERVATA IN QUESTO BROWSER (storage locale, una voce per fornitore) per non doverla ridigitare a ogni visita. Non viene memorizzata su alcun server di EduChat: viaggia cifrata (HTTPS) a ogni richiesta e il server la inoltra al fornitore di IA senza conservarla. Il rovescio della medaglia: conservata nel browser, è leggibile da qualsiasi script in esecuzione su questo dispositivo — come una password salvata. Svuota il campo per rimuoverla, oppure cancella i dati del sito.",
           "UNICA ECCEZIONE, su tua richiesta: se hai un account e spunti « Memorizza la mia chiave » nella chat, viene conservata CIFRATA (AES-256-GCM) sul server per non doverla riscrivere. Non torna mai al browser: il server la decifra solo per chiamare il fornitore. Togliendo la spunta viene cancellata subito. Gli studenti, che non hanno account, non sono mai coinvolti.",
         ],
       },
@@ -182,7 +182,7 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Persönliche API-Schlüssel",
         body: [
-          "STANDARDMÄSSIG bleibt der eingegebene API-Schlüssel im Arbeitsspeicher der Seite (nie im Browser-Speicher, nie in einer Datenbank). Er wird bei jeder Anfrage verschlüsselt (HTTPS) an den Server übertragen, der ihn ohne Speicherung an den KI-Anbieter weiterreicht — und vergisst ihn, sobald Sie den Tab schließen.",
+          "Der eingegebene API-Schlüssel wird IN DIESEM BROWSER GESPEICHERT (lokaler Speicher, ein Eintrag pro Anbieter), damit Sie ihn nicht bei jedem Besuch neu eintippen müssen. Auf keinem EduChat-Server wird er abgelegt: Er wird bei jeder Anfrage verschlüsselt (HTTPS) übertragen, und der Server reicht ihn ohne Speicherung an den KI-Anbieter weiter. Die Kehrseite: Im Browser gespeichert, ist er für jedes Skript auf diesem Gerät lesbar — wie ein gespeichertes Passwort. Leeren Sie das Feld, um ihn zu entfernen, oder löschen Sie die Website-Daten.",
           "EINZIGE AUSNAHME, auf Ihren Wunsch: Mit einem Konto und dem Häkchen „Schlüssel merken“ im Chat wird er VERSCHLÜSSELT (AES-256-GCM) auf dem Server aufbewahrt, damit Sie ihn nicht erneut eintippen müssen. Er gelangt nie zurück in den Browser: Der Server entschlüsselt ihn nur, um den Anbieter aufzurufen. Abwählen löscht ihn sofort. Schülerinnen und Schüler ohne Konto sind nie betroffen.",
         ],
       },

@@ -102,9 +102,17 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [provider, setProviderState] = useState<ProviderId>("anthropic");
-  const [model, setModel] = useState(providerDefaults.anthropic.model);
-  const [apiKey, setApiKey] = useState("");
+  // Mistral par défaut : sous-traitant européen, le seul cadre RGPD vraiment
+  // solide, et le fournisseur dont dépend la dictée (Voxtral). C'est le choix
+  // qui convient sans rien régler — pour un visiteur comme pour une classe.
+  const [provider, setProviderState] = useState<ProviderId>("mistral");
+  const [model, setModel] = useState(providerDefaults.mistral.model);
+  // La clé personnelle est MÉMORISÉE DANS CE NAVIGATEUR, par fournisseur.
+  // La ressaisir à chaque visite était le principal irritant. Contrepartie
+  // assumée et écrite dans /rgpd : elle est désormais lisible par tout script
+  // s'exécutant sur cet appareil — c'est le même niveau de protection que le
+  // mot de passe enregistré d'un site.
+  const [apiKey, setApiKeyState] = useState("");
   const [reasoning, setReasoning] = useState<ReasoningLevel>("medium");
   // BARREAU de l'échelle : 1 = le modèle le plus économe du fournisseur.
   // « Régénérer » monte d'un cran — on ne paie un modèle plus fort que si la
@@ -195,6 +203,21 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     }, 15_000);
     return () => clearTimeout(timer);
   }, [messages]);
+
+  const cleStockee = (id: ProviderId) => {
+    try { return localStorage.getItem(`educhat-key-${id}`) ?? ""; } catch { return ""; }
+  };
+  const setApiKey = useCallback((value: string) => {
+    setApiKeyState(value);
+    try {
+      if (value.trim()) localStorage.setItem(`educhat-key-${provider}`, value.trim());
+      else localStorage.removeItem(`educhat-key-${provider}`);
+    } catch { /* stockage refusé (navigation privée) : la clé reste en mémoire */ }
+  }, [provider]);
+
+  // Au démarrage et à chaque changement de fournisseur, on retrouve la clé de
+  // CE fournisseur : elles ne sont pas interchangeables.
+  useEffect(() => { setApiKeyState(cleStockee(provider)); }, [provider]);
 
   const setProvider = useCallback((next: ProviderId) => {
     setProviderState(next);
