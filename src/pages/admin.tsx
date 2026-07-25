@@ -3,7 +3,7 @@ import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   MdArchive, MdCheck, MdDownload, MdDriveFileRenameOutline,
-  MdEdit, MdPublish, MdVisibilityOff,
+  MdEdit, MdPublish, MdVisibilityOff, MdAdminPanelSettings,
 } from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
@@ -237,16 +237,28 @@ export default function AdminPage() {
   };
 
   if (!account || denied) {
+    // Même garde d'accès que /duel, /etablissement et /session : quatre pages
+    // qui refusent l'entrée doivent le faire de la même façon.
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center text-primary">
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
         <Head><title>Administration — EduChat</title></Head>
-        <p>Espace réservé aux administrateurs (liste définie sur le serveur).</p>
-        <p className="mt-4 text-sm opacity-70">
+        <MdAdminPanelSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
+        <h1 className="text-2xl font-bold">Espace réservé à l&apos;administration</h1>
+        <p className="mt-3 opacity-80">
           {account
-            ? `Le compte ${account.email} n'est pas administrateur.`
-            : <>Identifiez-vous d'abord : <Link href="/verifier" className="underline">vérifier mon email</Link></>}
+            ? `Le compte ${account.email} n'est pas administrateur — la liste est définie sur le serveur.`
+            : "Identifiez-vous d'abord : un code reçu par email, sans mot de passe."}
         </p>
-        <Link href="/" className="mt-6 inline-block underline">Retour au catalogue</Link>
+        <div className="mt-6 flex justify-center gap-3">
+          {!account && (
+            <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+              Vérifier mon email
+            </Link>
+          )}
+          <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+            Retour au catalogue
+          </Link>
+        </div>
       </div>
     );
   }

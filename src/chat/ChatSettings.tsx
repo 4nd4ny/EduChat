@@ -15,6 +15,23 @@ import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 const FIELD = "h-9 min-w-0 rounded bg-tertiary px-2 text-xs text-primary outline-none focus-visible:ring-2 focus-visible:ring-[#DC6521]";
 
+/**
+ * Étiquette d'un réglage. En rangée elle n'est portée que par aria-label et
+ * title ; en panneau elle est visible au-dessus du champ.
+ *
+ * DÉFINIE HORS DU COMPOSANT, et ce n'est pas un détail : déclarée à
+ * l'intérieur, elle était recréée à chaque rendu, donc React la voyait comme
+ * un composant DIFFÉRENT et remontait le champ à chaque frappe — le curseur
+ * sautait hors de la zone de saisie dès le premier caractère de la clé.
+ */
+function Wrap({ bar, label, width, children }: {
+  bar: boolean; label: string; width: string; children: React.ReactNode;
+}) {
+  return bar
+    ? <div className={width}>{children}</div>
+    : <label className="flex flex-col gap-1 text-xs text-primary">{label}{children}</label>;
+}
+
 export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const {
     provider, setProvider, apiKey, setApiKey,
@@ -58,22 +75,29 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
     refreshSavedKeys();
   };
 
-  const toggleRemember = (checked: boolean) =>
-    putKeys({ optin: checked, ...(checked && apiKey.trim() ? { provider, apiKey } : {}) });
+  // Cocher = enregistrer la clé du champ ; champ vide = effacer celle que le
+  // serveur détient pour ce fournisseur (« mémoriser l'absence de clé »).
+  const memoriser = async () => {
+    setSaisieFinie(false);
+    if (apiKey.trim()) { await putKeys({ optin: true, provider, apiKey }); return; }
+    setKeyError("");
+    const response = await fetch(`/api/keys?provider=${encodeURIComponent(provider)}`,
+      { method: "DELETE", headers: authHeaders() });
+    if (response.ok) refreshSavedKeys(); else setKeyError(t("err.fallback"));
+  };
 
   const keySaved = savedKeyProviders.includes(provider);
-  // « Nouvelle clé » : quelque chose est saisi pour ce fournisseur et le
-  // serveur ne le connaît pas encore. C'est le seul moment où proposer de
-  // mémoriser a un sens.
-  const cleNouvelle = !!apiKey.trim() && !keySaved;
+  // La proposition de mémorisation n'arrive qu'À LA SORTIE du champ : pendant
+  // la frappe, une case qui apparaît au premier caractère déplace la barre
+  // sous les doigts. On la montre donc quand la saisie est finie, et
+  // seulement s'il y a quelque chose à décider :
+  //   champ rempli   → proposer de mémoriser cette clé ;
+  //   champ vidé mais clé mémorisée → proposer d'oublier celle du serveur.
+  const [saisieFinie, setSaisieFinie] = useState(false);
+  useEffect(() => { setSaisieFinie(false); }, [provider]);
+  const aProposer = saisieFinie && (apiKey.trim() ? true : keySaved);
+  const oublier = !apiKey.trim() && keySaved;
   const drapeau = !!(providerDefaults[provider]?.gdpr || providerDefaults[provider]?.wrng);
-
-  // En rangée, l'étiquette n'est portée que par aria-label/title ; en panneau,
-  // elle est visible au-dessus du champ.
-  const Wrap = ({ label, width, children }: { label: string; width: string; children: React.ReactNode }) =>
-    bar
-      ? <div className={width}>{children}</div>
-      : <label className="flex flex-col gap-1 text-xs text-primary">{label}{children}</label>;
 
   return (
     <div className={bar ? "flex items-center gap-2" : "flex flex-col gap-3"}>
@@ -96,7 +120,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           {providerDefaults[provider]?.wrng ? t("chat.input.wrng.tag") : t("chat.input.gdpr.tag")}
         </a>
       )}
-      <Wrap label={t("chat.input.provider")} width="w-32">
+      <Wrap bar={bar} label={t("chat.input.provider")} width="w-32">
         <div className="relative">
           <select
             data-tour="provider"
@@ -127,13 +151,15 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           précisément l'objet. */}
 
 
-      <Wrap label={t("chat.input.apiKey")} width="w-36">
+      <Wrap bar={bar} label={t("chat.input.apiKey")} width="w-36">
         <input
           data-tour="apikey"
           type="password"
           autoComplete="off"
           value={apiKey}
           onChange={event => setApiKey(event.target.value)}
+          onFocus={() => setSaisieFinie(false)}
+          onBlur={() => setSaisieFinie(true)}
           placeholder={keySaved ? t("chat.input.keySaved") : t("chat.input.apiKeyPlaceholder")}
           title={keySaved ? t("chat.input.keySavedTitle") : t("chat.input.apiKey")}
           aria-label={t("chat.input.apiKey")}
@@ -145,11 +171,11 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           pour ce fournisseur et le serveur ne l'a pas encore. Le reste du
           temps elle n'avait rien à proposer, et occupait la barre pour rien.
           Cocher vaut consentement ET enregistrement, en un geste. */}
-      {hasAccount && keysAvailable && cleNouvelle && (
+      {hasAccount && keysAvailable && aProposer && (
         <label className={`flex items-center gap-1.5 text-[10px] leading-tight text-primary ${bar ? "max-w-[7rem]" : ""}`}
-          title={t("chat.input.rememberKeyTitle")}>
-          <input type="checkbox" checked={false} onChange={() => void toggleRemember(true)} />
-          <span className="opacity-70">{t("chat.input.rememberKey")}</span>
+          title={oublier ? t("chat.input.forgetKeyTitle") : t("chat.input.rememberKeyTitle")}>
+          <input type="checkbox" checked={false} onChange={() => void memoriser()} />
+          <span className="opacity-70">{oublier ? t("chat.input.forgetKey") : t("chat.input.rememberKey")}</span>
         </label>
       )}
 
