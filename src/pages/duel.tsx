@@ -8,6 +8,7 @@ import { requestCompletion } from "../utils/streamCompletion";
 import { getClientId } from "../utils/clientId";
 import { getAccount, getToken } from "../utils/account";
 import { fr as frDict } from "../i18n/dictionaries";
+import { useModelList } from "../chat/useModelList";
 
 // Mode DUEL — l'atelier des promptagogues (page réservée, vérifiée côté
 // serveur : /api/completion refuse « dual » sans compte promptagogue).
@@ -94,6 +95,11 @@ export default function DuelPage() {
       })
       .catch(() => {});
   }, []);
+
+  // Suggestions de modèles : une liste par colonne, car chaque colonne a son
+  // fournisseur et sa clé. Le champ reste libre.
+  const listeA = useModelList(config[0].provider, config[0].apiKey);
+  const listeB = useModelList(config[1].provider, config[1].apiKey);
 
   const updateConfig = (index: 0 | 1, patch: Partial<ColumnConfig>) => {
     setConfig(previous => {
@@ -232,8 +238,11 @@ export default function DuelPage() {
               </select>
             </label>
             <label className="flex flex-col gap-1">Modèle (commun)
-              <input className="rounded bg-tertiary p-2" value={config[0].model}
+              <input className="rounded bg-tertiary p-2" list={listeA.listId} value={config[0].model}
                 onChange={e => updateConfig(0, { model: e.target.value })} />
+              <datalist id={listeA.listId}>
+                {listeA.models.map(name => <option key={name} value={name} />)}
+              </datalist>
             </label>
             <label className="flex flex-col gap-1 md:col-span-2">Clé personnelle
               <input type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={config[0].apiKey}
@@ -259,8 +268,12 @@ export default function DuelPage() {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">Modèle
-                  <input className="rounded bg-tertiary p-2" value={config[index].model}
+                  <input className="rounded bg-tertiary p-2" list={(index === 0 ? listeA : listeB).listId}
+                    value={config[index].model}
                     onChange={e => updateConfig(index, { model: e.target.value })} />
+                  <datalist id={(index === 0 ? listeA : listeB).listId}>
+                    {(index === 0 ? listeA : listeB).models.map(name => <option key={name} value={name} />)}
+                  </datalist>
                 </label>
                 <label className="flex flex-col gap-1">Clé personnelle
                   <input type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={config[index].apiKey}

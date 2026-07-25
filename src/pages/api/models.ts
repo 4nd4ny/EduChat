@@ -27,10 +27,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'POST') {
     key = String(req.body?.apiKey ?? '').trim().slice(0, 512);
     // Une clé mémorisée ne redescend jamais au navigateur : c'est le serveur
-    // qui va la chercher pour le compte de son propriétaire.
+    // qui va la chercher pour le compte de son propriétaire. Le déchiffrement
+    // peut échouer (jeton douteux, secret changé depuis) : ce n'est pas une
+    // raison pour priver la page de sa liste.
     if (!key) {
-      const account = requireAuth(req);
-      if (account) key = readUserKey(account.email, provider) ?? '';
+      try {
+        const account = requireAuth(req);
+        if (account) key = readUserKey(account.email, provider) ?? '';
+      } catch {
+        key = '';
+      }
     }
   }
 

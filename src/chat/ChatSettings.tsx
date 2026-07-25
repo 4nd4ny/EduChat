@@ -1,7 +1,8 @@
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
+import { useModelList } from "./useModelList";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -22,9 +23,6 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   } = useAnthropic();
   const t = useT();
   const bar = layout === "bar";
-  // Deux ChatSettings coexistent (rangée + panneau) : sans identifiant
-  // propre, les deux champs seraient liés à la même liste, la première.
-  const listId = `educhat-models-${useId().replace(/:/g, "")}`;
 
   // Mémorisation de la clé : réservée aux comptes, sur consentement explicite.
   // L'état vit dans le CONTEXTE (et non ici) : la zone de saisie en a besoin
@@ -33,32 +31,10 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
 
-  // Modèles proposés pour le fournisseur courant : catalogue rafraîchi une
-  // fois par jour côté serveur. Le champ reste LIBRE — la liste n'est qu'une
-  // aide à la saisie, pour ne pas bloquer un modèle sorti ce matin.
-  const [models, setModels] = useState<string[]>([]);
+  // Modèles proposés pour le fournisseur courant (voir useModelList).
+  const { models, listId } = useModelList(provider, apiKey);
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
-
-  // La clé du visiteur permet au serveur de demander au fournisseur SA
-  // propre liste : c'est le seul moyen d'avoir les identifiants exacts d'un
-  // éditeur dont le serveur n'a pas de clé. On attend une clé plausible, et
-  // une pause dans la frappe, pour ne pas appeler à chaque caractère.
-  const cleUtile = apiKey.trim().length >= 20 ? apiKey.trim() : "";
-  useEffect(() => {
-    let alive = true;
-    const timer = setTimeout(() => {
-      fetch("/api/models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ provider, apiKey: cleUtile }),
-      })
-        .then(r => (r.ok ? r.json() : Promise.reject()))
-        .then(data => { if (alive) setModels(Array.isArray(data.models) ? data.models : []); })
-        .catch(() => { if (alive) setModels([]); });
-    }, cleUtile ? 700 : 0);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [provider, cleUtile]);
 
   // Cocher enregistre la clé du champ pour le fournisseur courant ; décocher
   // efface TOUTES les clés mémorisées (le serveur ne doit pas garder un
