@@ -84,8 +84,11 @@ export default function ChatSidebar({}: Props) {
     }
   });
 
+  // L'historique parle plus bas que la conversation : 0,85 rem au lieu des
+  // 110 % du corps, à peine au-dessus du compteur de jetons (0,75 rem).
+  // La taille est posée sur la colonne et héritée par tout son contenu.
   return (
-    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-primary xl:fixed xl:left-0 xl:top-[60px] xl:h-[calc(100vh-60px)] xl:w-[320px]">
+    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-[0.85rem] text-primary xl:fixed xl:left-0 xl:top-[60px] xl:h-[calc(100vh-60px)] xl:w-[320px]">
       <div className="flex h-full min-h-0 flex-col items-stretch p-2">
 
         <div className="flex shrink-0 flex-col gap-y-2 border-y border-white/10 py-2">  
