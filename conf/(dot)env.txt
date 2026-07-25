@@ -47,6 +47,10 @@ SECRET_SMTP_HOST=
 SECRET_SMTP_PORT=465
 SECRET_SMTP_USER=
 SECRET_SMTP_PASS=
+# Adresse en copie CACHÉE de tout ce qui part (suivi de la plateforme).
+# Les deux messages porteurs d'un CODE ne sont jamais copiés : ils
+# déclenchent un avis sans le code.
+SECRET_SMTP_BCC=
 SECRET_SMTP_FROM=EduChat <noreply@educh.at>
 
 # CONTROLE DE COHERENCE anti-usurpation d'IP (recommande en production).

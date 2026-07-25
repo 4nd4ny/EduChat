@@ -7,11 +7,36 @@
 // En développement, sans SECRET_SMTP_HOST configuré (la boîte noreply@educh.at
 // n'existe pas encore), le code est journalisé côté serveur : le flux complet
 // reste testable sans email réel.
+//
+// SUIVI DE LA PLATEFORME (SECRET_SMTP_BCC) : une adresse peut recevoir copie
+// cachée de tout ce qui part. Avec UNE exception délibérée — les deux messages
+// qui portent un CODE. Un code de vérification est le seul justificatif
+// d'identité du site (il n'y a pas de mot de passe) : en recevoir copie
+// permettrait de se connecter au compte d'autrui, ou de s'emparer d'une
+// adresse en cours de changement. Ces deux-là déclenchent donc, à la place, un
+// AVIS qui rapporte l'événement — qui, quand, pourquoi — sans le code.
 
 import nodemailer from 'nodemailer';
 import { AdminEmails, SmtpConfig } from '../utils/env';
 
 const SITE_URL = process.env.SITE_URL || 'https://educh.at';
+
+/** Copie cachée de suivi, quand une adresse est configurée. */
+function copie() {
+  return SmtpConfig.bcc ? { bcc: SmtpConfig.bcc } : {};
+}
+
+/**
+ * Avis de suivi pour les messages dont le CONTENU ne doit pas être copié.
+ * Fire-and-forget : le suivi ne fait jamais échouer l'envoi qu'il observe.
+ */
+function tracer(sujet: string, texte: string): void {
+  if (!SmtpConfig.bcc) return;
+  if (!SmtpConfig.host) { console.log(`[DEV — SMTP non configuré] Suivi : ${sujet}`); return; }
+  makeTransporter()
+    .sendMail({ from: SmtpConfig.from, to: SmtpConfig.bcc, subject: `[EduChat · suivi] ${sujet}`, text: texte })
+    .catch(error => console.error('Avis de suivi non envoyé :', error?.message));
+}
 
 function makeTransporter() {
   return nodemailer.createTransport({
@@ -38,7 +63,7 @@ export function notifyAdmin(subject: string, text: string): void {
   }
   if (!AdminEmails.length) return;
   makeTransporter()
-    .sendMail({ from: SmtpConfig.from, to: AdminEmails.join(', '), subject: fullSubject, text: fullText })
+    .sendMail({ from: SmtpConfig.from, to: AdminEmails.join(', '), ...copie(), subject: fullSubject, text: fullText })
     .catch(error => console.error('Notification admin non envoyée :', error?.message));
 }
 
@@ -60,6 +85,9 @@ export async function sendEmailChangeCode(newEmail: string, code: string): Promi
     return;
   }
   await makeTransporter().sendMail({ from: SmtpConfig.from, to: newEmail, subject, text });
+  tracer("changement d'adresse demandé",
+    `Un code de confirmation vient d'être envoyé à ${newEmail} pour rattacher un compte à cette adresse.\n`
+    + "Le code lui-même n'est pas reproduit ici : il vaut justificatif d'identité.");
 }
 
 /**
@@ -83,7 +111,7 @@ export function sendEmailChangeWarning(oldEmail: string, newEmail: string): void
     return;
   }
   makeTransporter()
-    .sendMail({ from: SmtpConfig.from, to: oldEmail, subject, text })
+    .sendMail({ from: SmtpConfig.from, to: oldEmail, ...copie(), subject, text })
     .catch(error => console.error("Avertissement de changement d'adresse non envoyé :", error?.message));
 }
 
@@ -107,4 +135,7 @@ export async function sendVerificationCode(email: string, name: string, code: st
   }
 
   await makeTransporter().sendMail({ from: SmtpConfig.from, to: email, subject, text });
+  tracer("code de vérification demandé",
+    `Un code de vérification vient d'être envoyé à ${email}${name ? ` (${name})` : ''}.\n`
+    + "Le code lui-même n'est pas reproduit ici : sans mot de passe sur EduChat, il suffirait à ouvrir ce compte.");
 }

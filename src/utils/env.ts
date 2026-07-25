@@ -21,6 +21,11 @@ export const SmtpConfig = {
   user: process.env.SECRET_SMTP_USER || '',
   pass: process.env.SECRET_SMTP_PASS || '',
   from: process.env.SECRET_SMTP_FROM || 'EduChat <noreply@educh.at>',
+  // Adresse mise en copie CACHÉE de tout ce qui part, pour le suivi de la
+  // plateforme. En copie cachée et non visible : le destinataire n'a pas à
+  // savoir que son message est doublé, et personne ne doit pouvoir répondre
+  // « à tous » sur un code de vérification.
+  bcc: process.env.SECRET_SMTP_BCC || '',
 };
 
 // Clé de signature des jetons de compte (HMAC-SHA256). En dev sans .env, une
