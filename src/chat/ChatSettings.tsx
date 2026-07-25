@@ -34,6 +34,14 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   // Modèles proposés pour le fournisseur courant (voir useModelList).
   const { models, listId } = useModelList(provider, apiKey);
 
+  // Un <datalist> ne montre que les options qui CONTIENNENT le texte du champ.
+  // Comme le champ arrive prérempli (« claude-sonnet-5 »), le menu se réduisait
+  // à cette seule ligne et le reste du catalogue semblait absent. À la prise de
+  // focus on vide donc l'AFFICHAGE — jamais la valeur réelle, qui reste celle
+  // du contexte : une conversation envoyée à cet instant part avec le bon
+  // modèle. Au départ du curseur, l'affichage retrouve la valeur.
+  const [edition, setEdition] = useState<string | null>(null);
+
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
   // Cocher enregistre la clé du champ pour le fournisseur courant ; décocher
@@ -112,9 +120,14 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
         <input
           data-tour="model"
           list={listId}
-          value={model}
-          onChange={event => setModel(event.target.value)}
-          title={models.length ? t("chat.input.modelList") : t("chat.input.model")}
+          value={edition ?? model}
+          placeholder={model}
+          onFocus={() => { if (models.includes(model)) setEdition(""); }}
+          onBlur={() => setEdition(null)}
+          onChange={event => { setEdition(event.target.value); setModel(event.target.value); }}
+          title={models.length > 1
+            ? t("chat.input.modelList").replace("{n}", String(models.length))
+            : t("chat.input.model")}
           aria-label={t("chat.input.model")}
           className={`${FIELD} w-full ${bar ? "rounded-l-none" : ""}`}
         />

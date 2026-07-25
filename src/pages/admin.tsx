@@ -44,6 +44,8 @@ type AdminComment = {
 // PRINCIPE (décision client) : on ne SUPPRIME jamais rien ici. Dépublier est
 // réversible (republier) ; archiver masque définitivement un prompt de cette
 // interface, mais la ligne et ses compteurs restent en base (facturation).
+type CatalogueRow = { provider: string; source: string; count: number; at: number };
+
 export default function AdminPage() {
   const account = typeof window !== "undefined" ? getAccount() : null;
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
@@ -61,6 +63,8 @@ export default function AdminPage() {
   // Éditeur de prompt (description + corps) — ouvert sur un nom de prompt.
   const [editing, setEditing] = useState<{ name: string; description: string; body: string } | null>(null);
   const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
+  const [catalogue, setCatalogue] = useState<CatalogueRow[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -73,6 +77,8 @@ export default function AdminPage() {
       .then(r => r.json()).then(data => setEtabs(data.etablissements ?? [])).catch(() => {});
     fetch("/api/admin/users", { headers: authHeaders() })
       .then(r => r.json()).then(data => setUsers(data.users ?? [])).catch(() => {});
+    fetch("/api/admin/models", { headers: authHeaders() })
+      .then(r => r.json()).then(data => setCatalogue(data.catalogue ?? [])).catch(() => {});
     fetch("/api/admin/comments", { headers: authHeaders() })
       .then(r => r.json())
       .then(data => { setComments(data.comments ?? []); setModeratedTotal(data.moderatedTotal ?? 0); })
@@ -448,6 +454,59 @@ export default function AdminPage() {
       </section>
 
       {/* ---- Facturation ---- */}
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Catalogue des modèles</h2>
+        <p className="mt-1 text-xs opacity-60">
+          La liste proposée dans le champ « Modèle » du chat. Elle se reconstruit toute seule
+          une fois par jour, à la première visite qui suit l&apos;échéance — il n&apos;y a pas de tâche
+          planifiée : rien ne tourne quand personne ne vient. Le bouton force la reconstruction
+          immédiate, utile après avoir ajouté une clé API dans educhat.env.
+        </p>
+        <p className="mt-1 text-xs opacity-60">
+          <b>native</b> = la liste publiée par l&apos;éditeur lui-même (exacte) ·{" "}
+          <b>openrouter</b> = déduite du catalogue public, pour les trois éditeurs dont
+          l&apos;identifiant s&apos;en déduit exactement ·{" "}
+          <b>defaut</b> = aucune clé côté serveur, seul le modèle par défaut est proposé —
+          la liste se complète alors avec la clé personnelle du visiteur.
+        </p>
+        <button
+          onClick={async () => {
+            setRefreshing(true); setMessage("");
+            try {
+              const response = await fetch("/api/admin/models", { method: "POST", headers: authHeaders() });
+              const data = await response.json();
+              if (!response.ok) throw new Error();
+              setCatalogue(data.catalogue ?? []);
+              setMessage("Catalogue reconstruit.");
+            } catch {
+              setMessage("Échec de la reconstruction du catalogue.");
+            } finally {
+              setRefreshing(false);
+            }
+          }}
+          disabled={refreshing}
+          className="mt-3 rounded bg-[#DC6521] px-3 py-1.5 text-sm font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
+          {refreshing ? "Reconstruction…" : "Rafraîchir maintenant"}
+        </button>
+        {catalogue.length > 0 && (
+          <table className="mt-3 w-full text-left text-xs">
+            <thead className="uppercase opacity-60">
+              <tr><th className="py-1">Fournisseur</th><th>Source</th><th className="text-right">Modèles</th><th className="text-right">Mis à jour</th></tr>
+            </thead>
+            <tbody>
+              {catalogue.map(row => (
+                <tr key={row.provider} className="border-b border-white/5">
+                  <td className="py-1">{row.provider}</td>
+                  <td className={row.source === "native" ? "text-green-400" : row.source === "defaut" ? "opacity-60" : ""}>{row.source}</td>
+                  <td className="text-right">{row.count}</td>
+                  <td className="text-right opacity-70">{row.at ? new Date(row.at).toLocaleString("fr-CH") : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       <section className="mt-10">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-bold">Facturation de la clé interne</h2>

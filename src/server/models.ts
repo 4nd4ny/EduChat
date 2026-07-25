@@ -239,3 +239,32 @@ export async function getModels(provider: ProviderId, key = ''): Promise<{ model
 
 /** Fournisseurs connus — utilisé par le rafraîchissement de fond éventuel. */
 export const CATALOGUE_PROVIDERS = PROVIDER_IDS;
+
+/** État du cache, pour l'administration : d'où vient chaque liste, et quand. */
+export function catalogueStatus(): Array<{ provider: ProviderId; source: Source | 'jamais'; count: number; at: number }> {
+  const cache = readCache();
+  return PROVIDER_IDS.map(provider => {
+    const entry = cache.entries[provider];
+    return {
+      provider,
+      source: entry?.source ?? 'jamais',
+      count: entry?.models.length ?? 0,
+      at: entry?.at ?? 0,
+    };
+  });
+}
+
+/**
+ * Reconstruction IMMÉDIATE de tout le catalogue, sans attendre l'échéance du
+ * jour. C'est ce que déclenche le bouton de l'administration : après avoir
+ * posé une clé qui manquait, on veut voir la vraie liste tout de suite plutôt
+ * que le lendemain.
+ */
+export async function refreshAllModels(): Promise<Array<{ provider: ProviderId; source: Source; count: number }>> {
+  openrouterIds = null;   // le catalogue public aussi doit être relu
+  echecs.clear();
+  return Promise.all(PROVIDER_IDS.map(async provider => {
+    const entry = await refresh(provider, String(DeveloperKeys[provider] || '').trim());
+    return { provider, source: entry.source, count: entry.models.length };
+  }));
+}
