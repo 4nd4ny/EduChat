@@ -82,8 +82,7 @@ export default function EtablissementPage() {
         <h1 className="mt-3 text-xl font-bold">Espace responsable d'établissement</h1>
         {state === "auth" ? (
           <p className="mt-3 text-sm opacity-80">
-            Identifiez-vous d'abord (sans mot de passe, par code email) :{" "}
-            <Link href="/verifier" className="underline">vérifier mon email</Link>.
+            Identifiez-vous d'abord : un code reçu par email, sans mot de passe.
           </p>
         ) : (
           <p className="mt-3 text-sm opacity-80">
@@ -92,7 +91,18 @@ export default function EtablissementPage() {
             rattacher depuis son interface (contact : blanvillain@harmonia.education).
           </p>
         )}
-        <Link href="/" className="mt-6 inline-block underline">Retour au catalogue</Link>
+        {/* Mêmes boutons, même allure que sur /duel : deux pages qui refusent
+            l'accès pour la même raison doivent se ressembler. */}
+        <div className="mt-6 flex justify-center gap-3">
+          {state === "auth" && (
+            <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+              Vérifier mon email
+            </Link>
+          )}
+          <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+            Retour au catalogue
+          </Link>
+        </div>
       </div>
     );
   }

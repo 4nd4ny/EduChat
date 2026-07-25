@@ -135,6 +135,18 @@ CREATE TABLE IF NOT EXISTS profile_deletions (
   PRIMARY KEY (email, conversation_id)
 );
 
+-- Changement d'adresse email en cours de vérification. La ligne vit le temps
+-- du code (15 min) ; l'ANCIENNE adresse est la clé, pour qu'une même personne
+-- ne puisse pas empiler les demandes, et parce que c'est elle qui identifie le
+-- compte tant que le changement n'est pas confirmé.
+CREATE TABLE IF NOT EXISTS email_changes (
+  old_email  TEXT PRIMARY KEY,
+  new_email  TEXT NOT NULL,
+  code_hash  TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0
+);
+
 -- Échelle de modèles par fournisseur, telle que l'administration l'a réglée.
 -- Absente = on suit la proposition du code (src/shared/ladder.ts). Trois
 -- barreaux au plus, du plus économe au plus fouillé ; un barreau vide arrête

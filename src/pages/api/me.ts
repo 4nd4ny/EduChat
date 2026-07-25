@@ -18,12 +18,28 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // écrit qu'à la vérification de l'email : on ne pouvait donc plus le
   // retirer — ni le redonner après un effacement total, qui le remet à zéro.
   if (req.method === 'PUT') {
-    if (typeof req.body?.syncOptin !== 'boolean') {
+    const syncOptin = typeof req.body?.syncOptin === 'boolean' ? req.body.syncOptin : undefined;
+    // Nom d'affichage : il n'est plus demandé à la vérification (on part de la
+    // partie locale de l'adresse), il se personnalise ici. Vide = on revient
+    // au nom dérivé, plutôt que d'afficher un compte sans nom.
+    const nameBrut = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 80) : undefined;
+    if (syncOptin === undefined && nameBrut === undefined) {
       return res.status(400).json({ error: { code: 'ERR_PROFILE_INVALID' } });
     }
-    getDb().prepare('UPDATE users SET sync_optin = ? WHERE email = ? AND verified_at IS NOT NULL')
-      .run(req.body.syncOptin ? 1 : 0, auth.email);
-    return res.status(200).json({ ok: true, syncOptin: req.body.syncOptin });
+    const db = getDb();
+    if (syncOptin !== undefined) {
+      db.prepare('UPDATE users SET sync_optin = ? WHERE email = ? AND verified_at IS NOT NULL')
+        .run(syncOptin ? 1 : 0, auth.email);
+    }
+    if (nameBrut !== undefined) {
+      const nom = nameBrut || auth.email.split('@')[0];
+      db.prepare('UPDATE users SET name = ? WHERE email = ? AND verified_at IS NOT NULL')
+        .run(nom, auth.email);
+      // Le nom d'auteur est dénormalisé sur les tuteurs : sans cette mise à
+      // jour, le catalogue continuerait d'afficher l'ancien.
+      db.prepare('UPDATE prompts SET author_name = ? WHERE author_email = ?').run(nom, auth.email);
+    }
+    return res.status(200).json({ ok: true });
   }
 
   const user = getDb().prepare(

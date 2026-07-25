@@ -14,7 +14,6 @@ export default function VerifierPage() {
   const router = useRouter();
   const t = useT();
   const [step, setStep] = useState<"request" | "confirm" | "done">("request");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   // Mémorisation des conversations : cochée PAR DÉFAUT — c'est l'intérêt
@@ -49,7 +48,7 @@ export default function VerifierPage() {
     setBusy(true); setError("");
     const response = await fetch("/api/verify/request", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email }),
+      body: JSON.stringify({ email }),
     });
     setBusy(false);
     if (!response.ok) {
@@ -103,10 +102,6 @@ export default function VerifierPage() {
 
       {step === "request" && (
         <form onSubmit={request} className="mt-6 flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">{t("verify.name")}
-            <input value={name} onChange={e => setName(e.target.value)} required maxLength={80}
-              className="rounded bg-tertiary p-2" autoComplete="name" />
-          </label>
           <label className="flex flex-col gap-1 text-sm">{t("verify.email")}
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
               className="rounded bg-tertiary p-2" autoComplete="email" />
@@ -155,7 +150,9 @@ export default function VerifierPage() {
       {step === "done" && (
         <div className="mt-6 flex flex-col gap-4">
           <p className="rounded border border-green-500/40 bg-green-500/10 p-3">
-            Adresse vérifiée — bienvenue{name ? `, ${name}` : ""} ! Vous pouvez maintenant publier des prompts socratiques.
+            Adresse vérifiée — bienvenue ! Vous pouvez maintenant publier des prompts socratiques.
+            Votre nom d'affichage reprend pour l'instant le début de votre adresse ; il se
+            personnalise depuis <Link href="/compte" className="underline">Mes données</Link>.
           </p>
           <Link href="/publier" className="rounded bg-[#DC6521] px-4 py-2 text-center font-bold hover:opacity-90">
             {t("verify.publish")}

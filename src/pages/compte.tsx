@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
-import { authHeaders, getAccount } from "../utils/account";
+import { authHeaders, getAccount, storeToken } from "../utils/account";
 import { buildProfile } from "../utils/profile";
 import { deleteServerConversations, deleteServerProfile } from "../utils/profileSync";
 import { providerDefaults } from "../shared/providers";
@@ -53,6 +53,13 @@ export default function ComptePage() {
   // sont alors celles d'avant, et il faut le dire.
   const [echec, setEchec] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Identité : nom d'affichage et adresse. Le nom n'est plus demandé à la
+  // vérification (il vient de la partie locale de l'adresse) : c'est ici
+  // qu'on le personnalise.
+  const [nom, setNom] = useState("");
+  const [nouvelEmail, setNouvelEmail] = useState("");
+  const [codeEmail, setCodeEmail] = useState("");
+  const [attenteCode, setAttenteCode] = useState(false);
 
   const charger = useCallback(async () => {
     // Le jeton local ne prouve rien (il n'est pas vérifié côté navigateur) :
@@ -66,7 +73,9 @@ export default function ComptePage() {
       const response = await fetch("/api/me/data", { headers: authHeaders() });
       if (response.status === 401) { setData(null); setState("anonymous"); return; }
       if (!response.ok) { setEchec(true); setState(avant => (avant === "loading" ? "anonymous" : avant)); return; }
-      setData(await response.json());
+      const recu = await response.json();
+      setData(recu);
+      setNom(recu?.identite?.name ?? "");
       setEchec(false);
       setState("ready");
     } catch {
@@ -159,6 +168,38 @@ export default function ComptePage() {
     }, t("compte.conv.deletedAll"));
   };
 
+  const enregistrerNom = () => agir(async () => {
+    const response = await fetch("/api/me", {
+      method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ name: nom }),
+    });
+    return response.ok;
+  }, t("compte.identity.nameSaved"));
+
+  const demanderChangementEmail = () => agir(async () => {
+    const response = await fetch("/api/me/email", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ newEmail: nouvelEmail.trim() }),
+    });
+    if (!response.ok) return false;
+    setAttenteCode(true);
+    return true;
+  }, t("compte.identity.codeSent"));
+
+  const confirmerChangementEmail = () => agir(async () => {
+    const response = await fetch("/api/me/email", {
+      method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ code: codeEmail.trim() }),
+    });
+    if (!response.ok) return false;
+    // Le jeton portait l'ancienne adresse : sans ce remplacement, la personne
+    // serait déconnectée d'un compte qui existe pourtant toujours.
+    const data = await response.json();
+    if (data?.token) storeToken(data.token);
+    setAttenteCode(false); setNouvelEmail(""); setCodeEmail("");
+    rafraichirTout(t("compte.identity.emailChanged"));
+  }, t("compte.identity.emailChanged"));
+
   const basculerSync = (valeur: boolean) => agir(async () => {
     const response = await fetch("/api/me", {
       method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -209,10 +250,25 @@ export default function ComptePage() {
           <h1 className="text-2xl font-bold">{t("compte.title")}</h1>
           <p className="mt-1 text-sm opacity-70">{identite.name} · {identite.email}</p>
         </div>
-        <button onClick={() => void exporter()} disabled={busy}
-          className="rounded bg-[#DC6521] px-4 py-2 text-sm font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
-          {t("compte.exportAll")}
-        </button>
+        {/* Pour l'administration, la première action n'est pas d'exporter ses
+            propres données — c'est d'administrer. L'export reste accessible,
+            en second. */}
+        {identite.isAdmin ? (
+          <div className="flex items-center gap-2">
+            <Link href="/admin"
+              className="rounded bg-[#DC6521] px-4 py-2 text-sm font-bold text-[#111827] hover:opacity-90">
+              {t("compte.administer")}
+            </Link>
+            <button onClick={() => void exporter()} disabled={busy} className={BOUTON}>
+              {t("compte.exportAll")}
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => void exporter()} disabled={busy}
+            className="rounded bg-[#DC6521] px-4 py-2 text-sm font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
+            {t("compte.exportAll")}
+          </button>
+        )}
       </div>
       <p className="mt-2 text-xs opacity-60">{t("compte.subtitle")}</p>
       {message && <p role="status" className="mt-3 rounded bg-tertiary px-3 py-2 text-sm">{message}</p>}
@@ -406,6 +462,47 @@ export default function ComptePage() {
         {data.anonymousPromptsWarning && (
           <p className="mt-2 text-xs opacity-60">{t("compte.prompts.anonymous")}</p>
         )}
+
+        <h3 className="mt-5 text-sm font-bold">{t("compte.identity.title")}</h3>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs">
+            {t("compte.identity.name")}
+            <input value={nom} onChange={event => setNom(event.target.value)} maxLength={80}
+              placeholder={identite.email.split("@")[0]}
+              className="w-56 rounded bg-tertiary px-2 py-1 text-sm" />
+          </label>
+          <button onClick={() => void enregistrerNom()} disabled={busy} className={BOUTON}>
+            {t("compte.identity.save")}
+          </button>
+          <span className="text-xs opacity-60">{t("compte.identity.nameHint")}</span>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs">
+            {t("compte.identity.email")}
+            <input value={nouvelEmail} onChange={event => setNouvelEmail(event.target.value)}
+              type="email" placeholder={identite.email} autoComplete="email"
+              className="w-72 rounded bg-tertiary px-2 py-1 text-sm" />
+          </label>
+          <button onClick={() => void demanderChangementEmail()}
+            disabled={busy || !nouvelEmail.trim()} className={BOUTON}>
+            {t("compte.identity.emailRequest")}
+          </button>
+        </div>
+        {attenteCode && (
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs">
+              {t("compte.identity.code")}
+              <input value={codeEmail} onChange={event => setCodeEmail(event.target.value)}
+                inputMode="numeric" placeholder="123-456"
+                className="w-32 rounded bg-tertiary px-2 py-1 text-sm" />
+            </label>
+            <button onClick={() => void confirmerChangementEmail()} disabled={busy || !codeEmail.trim()} className={BOUTON}>
+              {t("compte.identity.confirm")}
+            </button>
+          </div>
+        )}
+        <p className="mt-2 text-xs opacity-60">{t("compte.identity.emailHint")}</p>
 
         <h3 className="mt-5 text-sm font-bold">{t("compte.other.account")}</h3>
         <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">

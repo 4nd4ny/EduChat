@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
+import { getAccount } from "../utils/account";
 import { MdLockOpen, MdLockOutline, MdSchool, MdWifiTethering } from "react-icons/md";
 
 // Console de SESSION DE CLASSE (enseignant).
@@ -41,6 +42,11 @@ export default function SessionPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  // Console d'enseignant : tant que personne n'est identifié, on affiche l'état
+  // de la salle et rien d'autre. Le formulaire d'ouverture et le déploiement
+  // d'un tuteur ne concernent pas un visiteur de passage.
+  const [identifie, setIdentifie] = useState(false);
+  useEffect(() => { setIdentifie(!!getAccount()); }, []);
 
   const refresh = useCallback(() => {
     fetch("/api/session-status")
@@ -186,6 +192,24 @@ export default function SessionPage() {
         </ul>
       </section>
 
+      {!identifie && (
+        <div className="mt-6 text-center">
+          <p className="text-sm opacity-80">
+            Identifiez-vous pour ouvrir l'accès de la salle et déployer un tuteur sur la classe :
+            un code reçu par email, sans mot de passe.
+          </p>
+          <div className="mt-4 flex justify-center gap-3">
+            <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+              Vérifier mon email
+            </Link>
+            <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+              Retour au catalogue
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {identifie && (<>
       {/* --- Ouvrir / fermer --- */}
       <section className="mt-5 rounded-lg border border-white/15 bg-secondary p-4">
         <h2 className="font-bold">Ouvrir l'accès pour la salle</h2>
@@ -249,6 +273,8 @@ export default function SessionPage() {
           Appliquer à ma classe
         </button>
       </section>
+
+      </>)}
 
       {message && <p className="mt-4 rounded bg-green-950/40 p-3 text-sm text-green-200">{message}</p>}
       {error && <p role="alert" className="mt-4 rounded bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}

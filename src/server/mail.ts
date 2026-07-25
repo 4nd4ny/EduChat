@@ -42,6 +42,51 @@ export function notifyAdmin(subject: string, text: string): void {
     .catch(error => console.error('Notification admin non envoyée :', error?.message));
 }
 
+/**
+ * Code envoyé à la NOUVELLE adresse lors d'un changement.
+ */
+export async function sendEmailChangeCode(newEmail: string, code: string): Promise<void> {
+  const subject = 'EduChat — confirmez votre nouvelle adresse';
+  const text = [
+    'Vous avez demandé à rattacher votre compte EduChat à cette adresse.',
+    '',
+    `Votre code de confirmation : ${code}`,
+    '',
+    "Saisissez-le sur la page « Mes données » du compte concerné. Ce code expire dans 15 minutes.",
+    "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : rien ne changera.",
+  ].join('\n');
+  if (!SmtpConfig.host) {
+    console.log(`[DEV — SMTP non configuré] Code de changement d'adresse pour ${newEmail} : ${code}`);
+    return;
+  }
+  await makeTransporter().sendMail({ from: SmtpConfig.from, to: newEmail, subject, text });
+}
+
+/**
+ * Avertissement à l'ANCIENNE adresse. C'est la protection réelle du procédé :
+ * si le compte a été détourné, son titulaire l'apprend immédiatement, à une
+ * adresse que l'intrus ne contrôle pas. Jamais bloquant.
+ */
+export function sendEmailChangeWarning(oldEmail: string, newEmail: string): void {
+  const subject = 'EduChat — demande de changement d\'adresse sur votre compte';
+  const text = [
+    `Une demande de changement d'adresse vient d'être faite sur votre compte EduChat (${oldEmail}).`,
+    '',
+    `Nouvelle adresse demandée : ${newEmail}`,
+    '',
+    "Elle ne prendra effet que si le code envoyé à cette nouvelle adresse est confirmé.",
+    "Si vous n'êtes pas à l'origine de cette demande, écrivez immédiatement à l'administration :",
+    `${AdminEmails.join(', ') || 'blanvillain@harmonia.education'}`,
+  ].join('\n');
+  if (!SmtpConfig.host) {
+    console.log(`[DEV — SMTP non configuré] Avertissement de changement d'adresse à ${oldEmail} (vers ${newEmail})`);
+    return;
+  }
+  makeTransporter()
+    .sendMail({ from: SmtpConfig.from, to: oldEmail, subject, text })
+    .catch(error => console.error("Avertissement de changement d'adresse non envoyé :", error?.message));
+}
+
 export async function sendVerificationCode(email: string, name: string, code: string): Promise<void> {
   const link = `${SITE_URL}/verifier#${code}`;
   const subject = 'EduChat — votre code de vérification';

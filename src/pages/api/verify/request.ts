@@ -30,7 +30,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const email = String(req.body?.email ?? '').trim().toLowerCase();
-  const name = String(req.body?.name ?? '').trim().slice(0, 80);
+  // Le nom n'est plus demandé : redonner son nom à chaque vérification est
+  // inutile. On dérive un nom d'affichage de la partie locale de l'adresse
+  // (« prenom.nom@ecole.ch » → « prenom.nom ») ; il se personnalise ensuite
+  // depuis « Mes données ».
+  const name = (String(req.body?.name ?? '').trim() || email.split('@')[0] || '').slice(0, 80);
   if (!EMAIL_RE.test(email)) {
     // Seule erreur visible : un format d'adresse manifestement invalide.
     return res.status(400).json({ error: { code: 'ERR_EMAIL_INVALID' } });

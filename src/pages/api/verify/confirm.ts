@@ -65,7 +65,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       INSERT INTO users (email, name, verified_at, is_promptagogue, is_teacher, sync_optin, created_at)
       VALUES (@email, @name, @now, 1, @teacher, @optin, @now)
       ON CONFLICT(email) DO UPDATE SET
-        name = @name, verified_at = @now, sync_optin = @optin
+        -- Le nom d'un compte EXISTANT n'est jamais réécrit : il a pu être
+        -- personnalisé depuis « Mes données », et une simple re-vérification
+        -- ne doit pas le ramener à la partie locale de l'adresse.
+        name = CASE WHEN users.name != '' THEN users.name ELSE @name END,
+        verified_at = @now, sync_optin = @optin
     `).run({ email, name: row.name, now, teacher: isTeacher, optin: syncOptin });
   });
   tx();

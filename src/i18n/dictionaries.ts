@@ -269,6 +269,19 @@ export const fr = {
   'compte.retry': 'Réessayer',
   'compte.other.moderations': 'Commentaires modérés',
   'compte.other.moderationsHint': 'Approuver ou masquer un commentaire inscrit votre email à côté de celui-ci ; les commentaires n\'étant jamais supprimés, cette trace est conservée. Le détail figure dans l\'export.',
+  'compte.administer': 'Administrer',
+  'compte.identity.title': 'Mon identité',
+  'compte.identity.name': 'Nom affiché',
+  'compte.identity.nameHint': 'Repris du début de votre adresse si vous le laissez vide. C\'est aussi le nom d\'auteur affiché sur vos tuteurs.',
+  'compte.identity.save': 'Enregistrer',
+  'compte.identity.nameSaved': 'Nom enregistré.',
+  'compte.identity.email': 'Nouvelle adresse email',
+  'compte.identity.emailRequest': 'Recevoir un code',
+  'compte.identity.code': 'Code reçu',
+  'compte.identity.confirm': 'Confirmer',
+  'compte.identity.codeSent': 'Code envoyé à la nouvelle adresse. L\'ancienne a été prévenue de la demande.',
+  'compte.identity.emailChanged': 'Adresse changée.',
+  'compte.identity.emailHint': 'Votre adresse identifie le compte : le changement n\'est effectif qu\'après saisie du code envoyé à la nouvelle adresse, et l\'ancienne en est avertie. Vos tuteurs, votre profil et vos clés suivent.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -520,6 +533,19 @@ export const en: Record<TranslationKey, string> = {
   'compte.retry': 'Try again',
   'compte.other.moderations': 'Comments you moderated',
   'compte.other.moderationsHint': 'Approving or hiding a comment records your email next to it; as comments are never deleted, that trace is kept. The detail is in the export.',
+  'compte.administer': 'Administer',
+  'compte.identity.title': 'My identity',
+  'compte.identity.name': 'Display name',
+  'compte.identity.nameHint': 'Taken from the start of your address if left empty. It is also the author name shown on your tutors.',
+  'compte.identity.save': 'Save',
+  'compte.identity.nameSaved': 'Name saved.',
+  'compte.identity.email': 'New email address',
+  'compte.identity.emailRequest': 'Send me a code',
+  'compte.identity.code': 'Code received',
+  'compte.identity.confirm': 'Confirm',
+  'compte.identity.codeSent': 'Code sent to the new address. The old one has been warned of the request.',
+  'compte.identity.emailChanged': 'Address changed.',
+  'compte.identity.emailHint': 'Your address identifies the account: the change only takes effect once the code sent to the new address is entered, and the old one is warned. Your tutors, profile and keys follow.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -769,6 +795,19 @@ export const it: Record<TranslationKey, string> = {
   'compte.retry': 'Riprova',
   'compte.other.moderations': 'Commenti moderati',
   'compte.other.moderationsHint': 'Approvare o nascondere un commento registra la tua email accanto ad esso; poiché i commenti non vengono mai eliminati, questa traccia resta. Il dettaglio è nell\'esportazione.',
+  'compte.administer': 'Amministrare',
+  'compte.identity.title': 'La mia identità',
+  'compte.identity.name': 'Nome visualizzato',
+  'compte.identity.nameHint': 'Ripreso dall\'inizio del tuo indirizzo se lo lasci vuoto. È anche il nome d\'autore mostrato sui tuoi tutor.',
+  'compte.identity.save': 'Salva',
+  'compte.identity.nameSaved': 'Nome salvato.',
+  'compte.identity.email': 'Nuovo indirizzo email',
+  'compte.identity.emailRequest': 'Ricevi un codice',
+  'compte.identity.code': 'Codice ricevuto',
+  'compte.identity.confirm': 'Conferma',
+  'compte.identity.codeSent': 'Codice inviato al nuovo indirizzo. Il vecchio è stato avvisato della richiesta.',
+  'compte.identity.emailChanged': 'Indirizzo cambiato.',
+  'compte.identity.emailHint': 'Il tuo indirizzo identifica l\'account: il cambiamento diventa effettivo solo dopo aver inserito il codice inviato al nuovo indirizzo, e il vecchio ne viene avvisato. I tuoi tutor, il profilo e le chiavi seguono.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -1018,6 +1057,19 @@ export const de: Record<TranslationKey, string> = {
   'compte.retry': 'Erneut versuchen',
   'compte.other.moderations': 'Moderierte Kommentare',
   'compte.other.moderationsHint': 'Das Freigeben oder Ausblenden eines Kommentars vermerkt Ihre E-Mail daneben; da Kommentare nie gelöscht werden, bleibt diese Spur bestehen. Die Einzelheiten stehen im Export.',
+  'compte.administer': 'Verwalten',
+  'compte.identity.title': 'Meine Identität',
+  'compte.identity.name': 'Angezeigter Name',
+  'compte.identity.nameHint': 'Wird aus dem Anfang Ihrer Adresse übernommen, wenn Sie es leer lassen. Es ist auch der Autorenname auf Ihren Tutoren.',
+  'compte.identity.save': 'Speichern',
+  'compte.identity.nameSaved': 'Name gespeichert.',
+  'compte.identity.email': 'Neue E-Mail-Adresse',
+  'compte.identity.emailRequest': 'Code anfordern',
+  'compte.identity.code': 'Erhaltener Code',
+  'compte.identity.confirm': 'Bestätigen',
+  'compte.identity.codeSent': 'Code an die neue Adresse gesendet. Die alte wurde über die Anfrage informiert.',
+  'compte.identity.emailChanged': 'Adresse geändert.',
+  'compte.identity.emailHint': 'Ihre Adresse identifiziert das Konto: Die Änderung wird erst wirksam, wenn der an die neue Adresse gesendete Code eingegeben wurde, und die alte wird benachrichtigt. Ihre Tutoren, Ihr Profil und Ihre Schlüssel folgen mit.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;
