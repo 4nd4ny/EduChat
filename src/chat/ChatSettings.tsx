@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
-import { useModelList } from "./useModelList";
+import ModelField from "./ModelField";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -30,17 +30,6 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [hasAccount, setHasAccount] = useState(false);
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
-
-  // Modèles proposés pour le fournisseur courant (voir useModelList).
-  const { models, listId } = useModelList(provider, apiKey);
-
-  // Un <datalist> ne montre que les options qui CONTIENNENT le texte du champ.
-  // Comme le champ arrive prérempli (« claude-sonnet-5 »), le menu se réduisait
-  // à cette seule ligne et le reste du catalogue semblait absent. À la prise de
-  // focus on vide donc l'AFFICHAGE — jamais la valeur réelle, qui reste celle
-  // du contexte : une conversation envoyée à cet instant part avec le bon
-  // modèle. Au départ du curseur, l'affichage retrouve la valeur.
-  const [edition, setEdition] = useState<string | null>(null);
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
@@ -117,18 +106,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
       )}
 
       <Wrap label={t("chat.input.model")} width="w-40">
-        <input
-          data-tour="model"
-          list={listId}
-          value={edition ?? model}
-          placeholder={model}
-          onFocus={() => { if (models.includes(model)) setEdition(""); }}
-          onBlur={() => setEdition(null)}
-          onChange={event => { setEdition(event.target.value); setModel(event.target.value); }}
-          title={models.length > 1
-            ? t("chat.input.modelList").replace("{n}", String(models.length))
-            : t("chat.input.model")}
-          aria-label={t("chat.input.model")}
+        <ModelField
+          dataTour="model"
+          provider={provider}
+          apiKey={apiKey}
+          model={model}
+          onChange={setModel}
           className={`${FIELD} w-full ${bar ? "rounded-l-none" : ""}`}
         />
       </Wrap>
@@ -172,9 +155,6 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           <span className="opacity-70">{t("chat.input.rememberKey")}</span>
         </label>
       )}
-      <datalist id={listId}>
-        {models.map(name => <option key={name} value={name} />)}
-      </datalist>
 
       {keyError && <span role="alert" className="text-[10px] text-red-400">{keyError}</span>}
       {hasAccount && keysAvailable && keysOptin && !keySaved && apiKey.trim() && (
