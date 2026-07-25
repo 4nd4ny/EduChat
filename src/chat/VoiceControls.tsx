@@ -86,7 +86,7 @@ export default function VoiceControls({ onDictation }: { onDictation: (text: str
     fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ text: texte, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }),
+      body: JSON.stringify({ text: texte, locale: router.locale ?? "fr", ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }),
     })
       .then(response => (response.ok ? response.blob() : Promise.reject()))
       .then(blob => {

@@ -17,6 +17,39 @@ import { ERR } from '../../shared/providers';
 
 const MAX_CHARS = 2000;   // au-delà, on ne lit pas : c'est un cours, pas un livre
 
+// Voxtral impose de NOMMER une voix, et son catalogue est celui du compte.
+// Au 25 juillet 2026 il ne contient que de l'anglais (en_us, en_gb) : faire
+// lire du français par une voix anglaise serait pire que la synthèse du
+// téléphone, qui a de vraies voix françaises. On interroge donc le catalogue
+// et l'on ne répond QUE si une voix correspond à la langue demandée — sinon
+// 415, et le navigateur prend le relais. Le jour où Mistral publiera des voix
+// françaises, cela fonctionnera sans toucher au code.
+let voixConnues: { at: number; items: { slug: string; languages: string[] }[] } | null = null;
+
+async function voixPour(langue: string, apiKey: string): Promise<string | null> {
+  if (!voixConnues || Date.now() - voixConnues.at > 24 * 60 * 60 * 1000) {
+    try {
+      const r = await fetch('https://api.mistral.ai/v1/audio/voices', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      voixConnues = {
+        at: Date.now(),
+        items: (j.items ?? []).map((v: any) => ({
+          slug: String(v.slug ?? ''),
+          languages: (v.languages ?? []).map((l: any) => String(l)),
+        })).filter((v: any) => v.slug),
+      };
+    } catch {
+      return null;
+    }
+  }
+  const prefixe = langue.slice(0, 2).toLowerCase();
+  const correspond = voixConnues.items.find(v => v.languages.some(l => l.toLowerCase().startsWith(prefixe)));
+  return correspond?.slug ?? null;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -45,17 +78,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   if (!apiKey) return res.status(403).json({ error: { code: ERR.VOICE_KEY } });
 
+  const langue = String(req.body?.locale ?? 'fr').slice(0, 5);
+  const voice = await voixPour(langue, apiKey);
+  // Pas de voix dans cette langue : on le dit franchement, le navigateur lira.
+  if (!voice) return res.status(415).json({ error: { code: 'ERR_TTS_NO_VOICE' } });
+
   try {
     const upstream = await fetch('https://api.mistral.ai/v1/audio/speech', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'voxtral-mini-tts-latest', input: text }),
+      body: JSON.stringify({ model: 'voxtral-mini-tts-latest', input: text, voice }),
     });
     if (!upstream.ok) {
       console.error('Synthèse vocale refusée :', upstream.status, (await upstream.text()).slice(0, 200));
       return res.status(502).json({ error: { code: 'ERR_TTS_FAILED' } });
     }
-    const audio = Buffer.from(await upstream.arrayBuffer());
+    // La réponse est du JSON { audio_data: <base64 MP3> }, pas un flux audio.
+    const charge = await upstream.json();
+    const base64 = String(charge?.audio_data ?? '');
+    if (!base64) return res.status(502).json({ error: { code: 'ERR_TTS_FAILED' } });
+    const audio = Buffer.from(base64, 'base64');
 
     if (usedServerKey) {
       try {
