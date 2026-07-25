@@ -29,3 +29,6 @@ rate_limit.json
 
 # Outillage local de session (Claude Code)
 .claude/
+
+# Catalogue des modèles mis en cache à l'exécution (serveur de dev en local)
+models.json

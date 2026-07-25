@@ -28,6 +28,11 @@ export type ReasoningLevel = "low" | "medium" | "high";
 // avec la clé personnelle (OpenAI : gpt-4o-mini-transcribe/whisper ; Mistral :
 // Voxtral). La lecture des réponses, elle, passe par la synthèse vocale du
 // navigateur — aucun coût, aucune donnée envoyée.
+// Les MODÈLES par défaut ci-dessous sont un point de départ : le champ
+// « Modèle » du chat propose désormais le catalogue réel du fournisseur
+// (rafraîchi chaque jour, src/server/models.ts) tout en restant librement
+// éditable. Un défaut qui vieillit se corrige donc en deux clics.
+//
 // `wrng` : DRAPEAU ROUGE. Le sous-traitant est établi hors UE/EEE sans cadre
 // de transfert reconnu (fournisseurs chinois) : les données peuvent être
 // conservées et réutilisées sous une législation qui ne connaît ni le RGPD ni
@@ -37,7 +42,7 @@ export const providerDefaults: Record<ProviderId, {
   label: string; model: string; gdpr?: boolean; wrng?: boolean;
   images?: boolean; pdf?: boolean; voice?: boolean;
 }> = {
-  anthropic: { label: "Claude", model: "claude-sonnet-4-5", gdpr: true, images: true, pdf: true },
+  anthropic: { label: "Claude", model: "claude-sonnet-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash" },
   openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
@@ -50,9 +55,9 @@ export const providerDefaults: Record<ProviderId, {
   // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
   deepseek: { label: "DeepSeek", model: "deepseek-chat", wrng: true },
   qwen: { label: "Qwen", model: "qwen-plus", wrng: true },
-  kimi: { label: "Kimi", model: "moonshot-v1-8k", wrng: true },
-  glm: { label: "GLM", model: "glm-4-plus", wrng: true },
-  minimax: { label: "MiniMax", model: "MiniMax-Text-01", wrng: true },
+  kimi: { label: "Kimi", model: "kimi-k2", wrng: true },
+  glm: { label: "GLM", model: "glm-4.6", wrng: true },
+  minimax: { label: "MiniMax", model: "minimax-m2", wrng: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.

@@ -30,7 +30,21 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
 
+  // Modèles proposés pour le fournisseur courant : catalogue rafraîchi une
+  // fois par jour côté serveur. Le champ reste LIBRE — la liste n'est qu'une
+  // aide à la saisie, pour ne pas bloquer un modèle sorti ce matin.
+  const [models, setModels] = useState<string[]>([]);
+
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/models?provider=${encodeURIComponent(provider)}`)
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(data => { if (alive) setModels(Array.isArray(data.models) ? data.models : []); })
+      .catch(() => { if (alive) setModels([]); });
+    return () => { alive = false; };
+  }, [provider]);
 
   // Cocher enregistre la clé du champ pour le fournisseur courant ; décocher
   // efface TOUTES les clés mémorisées (le serveur ne doit pas garder un
@@ -107,9 +121,10 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
       <Wrap label={t("chat.input.model")} width="w-40">
         <input
           data-tour="model"
+          list="educhat-models"
           value={model}
           onChange={event => setModel(event.target.value)}
-          title={t("chat.input.model")}
+          title={models.length ? t("chat.input.modelList") : t("chat.input.model")}
           aria-label={t("chat.input.model")}
           className={`${FIELD} w-full ${bar ? "rounded-l-none" : ""}`}
         />
@@ -154,6 +169,10 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           <span className="opacity-70">{t("chat.input.rememberKey")}</span>
         </label>
       )}
+      <datalist id="educhat-models">
+        {models.map(name => <option key={name} value={name} />)}
+      </datalist>
+
       {keyError && <span role="alert" className="text-[10px] text-red-400">{keyError}</span>}
       {hasAccount && keysAvailable && keysOptin && !keySaved && apiKey.trim() && (
         <button type="button" onClick={() => void rememberCurrent()}
