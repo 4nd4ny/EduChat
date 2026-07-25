@@ -109,10 +109,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const bodyChanged = body !== row.body;
-    // Un brouillon s'affine sur place ; une édition d'un prompt PUBLIÉ crée une
-    // nouvelle version consultable (les conversations en cours restent sur la
-    // leur — bascule explicite, décision client n°9).
-    const bumpVersion = bodyChanged && row.status === 'published';
+    // TOUTE modification du texte crée une nouvelle version (décision client
+    // du 25 juillet) : l'historique reste lisible quel que soit l'état du
+    // prompt, et les conversations en cours restent sur la leur — la bascule
+    // demeure explicite (décision n°9).
+    const bumpVersion = bodyChanged;
     const version = bumpVersion ? row.version + 1 : row.version;
     db.transaction(() => {
       db.prepare('UPDATE prompts SET body = ?, description = ?, web_search = ?, version = ?, updated_at = ?, size_bytes = ? WHERE id = ?')
@@ -177,7 +178,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // le serveur l'interdit publié).
   if (action === 'rename') {
     if (!rights.isAdmin) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
-    if (row.status === 'published') return res.status(409).json({ error: { code: 'ERR_STATUS' } });
+    // Renommer un prompt PUBLIÉ est désormais permis (décision client du
+    // 25 juillet). Ce n'est pas anodin et l'interface le dit avant d'agir :
+    // le nom EST l'adresse publique (/p/nom), les liens déjà partagés
+    // tomberont, et les conversations en cours référencent l'ancien nom —
+    // elles perdront l'affichage de leur tuteur. Rien n'est détruit pour
+    // autant : l'id, les compteurs et les versions ne bougent pas.
     const newName = String(req.body?.newName ?? '').trim();
     if (!isValidPromptName(newName)) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
     if (newName !== row.name && getByName(newName)) return res.status(409).json({ error: { code: 'ERR_NAME_TAKEN' } });

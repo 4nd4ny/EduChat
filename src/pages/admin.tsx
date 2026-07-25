@@ -44,6 +44,8 @@ type AdminComment = {
 // PRINCIPE (décision client) : on ne SUPPRIME jamais rien ici. Dépublier est
 // réversible (republier) ; archiver masque définitivement un prompt de cette
 // interface, mais la ligne et ses compteurs restent en base (facturation).
+const BTN = "flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary";
+
 type CatalogueRow = { provider: string; source: string; count: number; at: number };
 type LadderRow = {
   provider: string; rungs: string[]; suggested: string[]; custom: boolean;
@@ -116,6 +118,40 @@ export default function AdminPage() {
     return true;
   };
 
+  const ouvrirEdition = (p: AdminPrompt) =>
+    setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body });
+
+  /**
+   * Dupliquer : un FORK, pas une version. Le nouveau tuteur naît en
+   * brouillon, avec sa propre URL secrète, et garde la filiation « inspiré
+   * de » — c'est ce qui distingue « faire évoluer » de « partir d'ici ».
+   */
+  const dupliquer = async () => {
+    if (!editing) return;
+    const nom = window.prompt(
+      `Nom du nouveau tuteur, copié depuis « ${editing.name} » ?\n` +
+      "Il naîtra en brouillon, avec la filiation « inspiré de » et son propre lien secret.",
+      `${editing.name}-2`);
+    if (!nom) return;
+    setMessage("");
+    const source = prompts.find(x => x.name === editing.name);
+    const response = await fetch("/api/prompts", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        name: nom.trim(), description: editing.description, body: editing.body,
+        language: source?.language || "fr", inspiredBy: editing.name,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(`Duplication impossible (${data?.error?.code ?? response.status}).`);
+      return;
+    }
+    setEditing(null);
+    setMessage(`« ${nom.trim()} » créé en brouillon, inspiré de « ${editing.name} ».`);
+    reload();
+  };
+
   const saveEdit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editing) return;
@@ -123,9 +159,13 @@ export default function AdminPage() {
     if (ok) setEditing(null);
   };
 
-  const rename = async (name: string) => {
+  const rename = async (name: string, publie: boolean) => {
     const newName = window.prompt(
-      `Nouveau nom pour « ${name} » ?\n(Prévu pour les prompts dépubliés : les conversations en cours référencent l'ancien nom.)`,
+      `Nouveau nom pour « ${name} » ?` + (publie
+        ? "\n\nATTENTION : ce tuteur est PUBLIÉ. Son nom est son adresse publique (/p/nom) : " +
+          "les liens déjà partagés tomberont, et les conversations en cours n'afficheront plus leur tuteur. " +
+          "Ses compteurs et ses versions, eux, sont conservés."
+        : ""),
       name);
     if (!newName || newName === name) return;
     await act(name, "rename", { newName });
@@ -259,8 +299,11 @@ export default function AdminPage() {
 
         <h2 className="mt-6 text-lg font-bold">Tous les prompts</h2>
         <p className="mt-1 text-xs opacity-60">
-          Rien n'est jamais supprimé : dépublier ⇄ republier, éditer/renommer un prompt dépublié,
-          archiver pour nettoyer cette liste (le prompt reste en base avec ses compteurs).
+          Rien n'est jamais supprimé. <b>Publié</b> : dépublier · modifier · renommer.
+          <b> Dépublié</b> : republier · modifier · archiver. Modifier crée toujours une nouvelle
+          version ; pour partir d'un tuteur sans le toucher, ouvrez « Modifier » puis
+          « Dupliquer ». Archiver ne fait que nettoyer cette liste — le tuteur reste en base
+          avec ses compteurs, et la facturation reste calculable.
         </p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {others.map(p => (
@@ -270,35 +313,41 @@ export default function AdminPage() {
                 <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
                 <span className="opacity-60">{p.usageCount} usages · {formatTokens(p.tokensTotal)}</span>
                 <span className="flex-grow" />
-                {p.status === "published" && (
-                  <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
-                    className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdVisibilityOff /> Dépublier</button>
-                )}
-                {/* Les trois mêmes boutons sur CHAQUE ligne, pour que l'œil
-                    n'ait pas à chercher. Ce que le serveur refuse reste
-                    visible mais désactivé, en disant pourquoi — c'est plus
-                    instructif qu'un bouton absent, et plus honnête qu'un
-                    bouton qui échouerait. */}
-                <button onClick={() => act(p.name, "republish")}
-                  disabled={p.status !== "retired"}
-                  title={p.status === "retired"
-                    ? "Republier au catalogue tel quel"
-                    : p.status === "published" ? "Déjà publié" : "Seul un tuteur dépublié se republie"}
-                  className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-30 disabled:hover:bg-transparent"><MdPublish /> Republier</button>
-                <button onClick={() => setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body })}
-                  title={p.status === "published"
-                    ? "Modifier : sur un tuteur publié, cela crée une NOUVELLE version (les conversations en cours gardent la leur)"
-                    : "Modifier la description et le prompt"}
-                  className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdEdit /> Modifier</button>
-                <button onClick={() => rename(p.name)}
-                  disabled={p.status === "published"}
-                  title={p.status === "published"
-                    ? "Dépubliez d'abord : le nom est l'adresse publique du tuteur (/p/nom) et les conversations en cours s'y réfèrent"
-                    : "Renommer"}
-                  className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-30 disabled:hover:bg-transparent"><MdDriveFileRenameOutline /> Renommer</button>
-                {p.status !== "published" && (
-                  <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
-                    className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                {/* Un état, un jeu d'actions — jamais de bouton désactivé :
+                    « republier » et « dépublier » sont les deux faces d'une
+                    même bascule, en montrer une seule dit déjà où l'on est.
+                      publié   → dépublier · modifier · renommer
+                      dépublié → republier · modifier · archiver
+                      brouillon/soumis → modifier · renommer · archiver
+                    (la publication d'un prompt soumis se fait plus haut,
+                    dans la file de validation). */}
+                {p.status === "published" ? (
+                  <>
+                    <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
+                      className={BTN}><MdVisibilityOff /> Dépublier</button>
+                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
+                      className={BTN}><MdEdit /> Modifier</button>
+                    <button onClick={() => rename(p.name, true)} title="Renommer — attention : le nom est l'adresse publique du tuteur"
+                      className={BTN}><MdDriveFileRenameOutline /> Renommer</button>
+                  </>
+                ) : p.status === "retired" ? (
+                  <>
+                    <button onClick={() => act(p.name, "republish")} title="Republier au catalogue tel quel"
+                      className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> Republier</button>
+                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
+                      className={BTN}><MdEdit /> Modifier</button>
+                    <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
+                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
+                      className={BTN}><MdEdit /> Modifier</button>
+                    <button onClick={() => rename(p.name, false)} title="Renommer"
+                      className={BTN}><MdDriveFileRenameOutline /> Renommer</button>
+                    <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
+                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                  </>
                 )}
               </div>
               {editing?.name === p.name && (
@@ -312,7 +361,12 @@ export default function AdminPage() {
                     rows={12} className="rounded bg-tertiary p-2 font-mono text-xs leading-relaxed" />
                   <div className="flex gap-2">
                     <button type="submit" className="rounded bg-[#DC6521] px-3 py-1.5 text-xs font-bold hover:opacity-90">
-                      Enregistrer (nouvelle version si publié)
+                      Enregistrer — nouvelle version
+                    </button>
+                    <button type="button" onClick={() => void dupliquer()}
+                      title="Créer un tuteur SÉPARÉ à partir de ce texte, sans toucher à l'original"
+                      className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">
+                      Dupliquer — nouveau tuteur
                     </button>
                     <button type="button" onClick={() => setEditing(null)}
                       className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">Annuler</button>
