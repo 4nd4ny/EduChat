@@ -131,12 +131,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ ok: true, deleted: ids.length });
     }
 
-    // Effacement TOTAL. Retirer aussi le consentement, sinon la sauvegarde
-    // automatique (toutes les 15 s) recréerait le profil dans la minute :
-    // l'effacement doit tenir dans le temps, pas seulement à l'instant du clic.
+    // Effacement TOTAL.
+    //
+    // Deux précautions, toutes deux apprises d'un scénario à deux appareils :
+    //  - retirer le consentement, sinon la sauvegarde automatique (toutes les
+    //    15 s) recréerait le profil dans la minute ;
+    //  - poser une pierre tombale sur CHAQUE conversation effacée, et surtout
+    //    ne pas toucher à celles déjà posées. Le portable resté fermé garde sa
+    //    copie : sans ces marqueurs, il la renverrait dès que la sauvegarde
+    //    est réactivée — et la page a promis le contraire.
+    const row = db.prepare('SELECT data FROM profiles WHERE email = ?').get(auth.email) as
+      { data: string } | undefined;
+    let ids: string[] = [];
+    if (row) {
+      try {
+        const conversations = JSON.parse(row.data)?.conversations;
+        if (conversations && typeof conversations === 'object') ids = Object.keys(conversations);
+      } catch {
+        /* profil illisible : rien à marquer, il n'y a plus rien à protéger */
+      }
+    }
+    const now = Date.now();
+    const marquer = db.prepare(
+      'INSERT OR REPLACE INTO profile_deletions (email, conversation_id, deleted_at) VALUES (?, ?, ?)');
     db.transaction(() => {
+      for (const id of ids) marquer.run(auth.email, String(id).slice(0, 64), now);
       db.prepare('DELETE FROM profiles WHERE email = ?').run(auth.email);
-      db.prepare('DELETE FROM profile_deletions WHERE email = ?').run(auth.email);
       db.prepare('UPDATE users SET sync_optin = 0 WHERE email = ?').run(auth.email);
     })();
     return res.status(200).json({ ok: true, syncDisabled: true });

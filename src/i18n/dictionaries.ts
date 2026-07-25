@@ -263,6 +263,10 @@ export const fr = {
   'compte.prompts.retireConfirm': 'Retirer « {name} » du catalogue ? Il reste dans la base et vous pourrez le republier. Sa filiation et les séances de classe qui l\'utilisent cesseront de l\'afficher.',
   'compte.prompts.retired': 'Tuteur dépublié.',
   'compte.prompts.republished': 'Tuteur republié.',
+  'compte.stale': 'Les informations affichées datent d\'avant votre dernière action : le serveur n\'a pas répondu.',
+  'compte.retry': 'Réessayer',
+  'compte.other.moderations': 'Commentaires modérés',
+  'compte.other.moderationsHint': 'Approuver ou masquer un commentaire inscrit votre email à côté de celui-ci ; les commentaires n\'étant jamais supprimés, cette trace est conservée. Le détail figure dans l\'export.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -508,6 +512,10 @@ export const en: Record<TranslationKey, string> = {
   'compte.prompts.retireConfirm': 'Remove “{name}” from the catalogue? It stays in the database and you can republish it. Its lineage and the class sessions using it will stop showing it.',
   'compte.prompts.retired': 'Tutor unpublished.',
   'compte.prompts.republished': 'Tutor republished.',
+  'compte.stale': 'The information shown predates your last action: the server did not answer.',
+  'compte.retry': 'Try again',
+  'compte.other.moderations': 'Comments you moderated',
+  'compte.other.moderationsHint': 'Approving or hiding a comment records your email next to it; as comments are never deleted, that trace is kept. The detail is in the export.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -751,6 +759,10 @@ export const it: Record<TranslationKey, string> = {
   'compte.prompts.retireConfirm': 'Togliere « {name} » dal catalogo? Resta nel database e potrai ripubblicarlo. La sua filiazione e le lezioni che lo usano smetteranno di mostrarlo.',
   'compte.prompts.retired': 'Tutor depubblicato.',
   'compte.prompts.republished': 'Tutor ripubblicato.',
+  'compte.stale': 'Le informazioni mostrate sono precedenti alla tua ultima azione: il server non ha risposto.',
+  'compte.retry': 'Riprova',
+  'compte.other.moderations': 'Commenti moderati',
+  'compte.other.moderationsHint': 'Approvare o nascondere un commento registra la tua email accanto ad esso; poiché i commenti non vengono mai eliminati, questa traccia resta. Il dettaglio è nell\'esportazione.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -994,6 +1006,10 @@ export const de: Record<TranslationKey, string> = {
   'compte.prompts.retireConfirm': '„{name}“ aus dem Katalog nehmen? Er bleibt in der Datenbank und Sie können ihn wieder veröffentlichen. Seine Abstammung und die Unterrichtsstunden, die ihn nutzen, zeigen ihn nicht mehr an.',
   'compte.prompts.retired': 'Tutor zurückgezogen.',
   'compte.prompts.republished': 'Tutor wieder veröffentlicht.',
+  'compte.stale': 'Die angezeigten Angaben stammen von vor Ihrer letzten Aktion: Der Server hat nicht geantwortet.',
+  'compte.retry': 'Erneut versuchen',
+  'compte.other.moderations': 'Moderierte Kommentare',
+  'compte.other.moderationsHint': 'Das Freigeben oder Ausblenden eines Kommentars vermerkt Ihre E-Mail daneben; da Kommentare nie gelöscht werden, bleibt diese Spur bestehen. Die Einzelheiten stehen im Export.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;

@@ -19,6 +19,7 @@ import { listUserKeys } from './userKeys';
 import type { ProviderId } from '../shared/providers';
 
 const QUOTA_AUTEUR_BYTES = 1024 * 1024;   // même plafond que /api/prompts
+const MAX_EXPORT_BODY_BYTES = 8 * 1024 * 1024;  // borne de l'export, en mémoire
 
 export type ConversationResume = {
   id: string;
@@ -51,6 +52,7 @@ export type AccountData = {
     etablissement: { id: number; name: string; monthTokens: number } | null;
   };
   keys: { provider: ProviderId; updatedAt: number; readable: boolean }[];
+  moderations: number;
   conversations: ConversationResume[];
   deletedConversations: number;
   prompts: PromptResume[];
@@ -150,6 +152,13 @@ export function collectAccountData(email: string): AccountData {
   const effacees = db.prepare('SELECT COUNT(*) AS n FROM profile_deletions WHERE email = ?')
     .get(email) as { n: number };
 
+  // Modérer un commentaire inscrit son email dans comments.moderated_by, et
+  // un commentaire n'est jamais supprimé : c'est une donnée personnelle
+  // conservée sans limite. La taire ici, c'est répondre faux à une demande
+  // d'accès.
+  const moderations = db.prepare(
+    'SELECT COUNT(*) AS n FROM comments WHERE moderated_by = ?').get(email) as { n: number };
+
   return {
     identite: {
       email,
@@ -170,6 +179,7 @@ export function collectAccountData(email: string): AccountData {
       etablissement,
     },
     keys: listUserKeys(email),
+    moderations: moderations.n,
     conversations: resumeConversations(profile),
     deletedConversations: effacees.n,
     prompts,
@@ -191,10 +201,29 @@ export function collectAccountExport(email: string) {
   const donnees = collectAccountData(email);
   const { profile, updatedAt } = lireProfil(email);
 
+  // Les versions successives ne sont plafonnées par RIEN (le quota d'auteur
+  // ne compte que la version courante) : un tuteur souvent retouché peut en
+  // accumuler des centaines, à 256 ko pièce. On borne donc l'export en
+  // OCTETS, en commençant par les plus récentes, et on dit franchement ce
+  // qui a été laissé de côté plutôt que de faire tomber le serveur.
   const versions = db.prepare(`
     SELECT p.name AS promptName, v.version, v.body, v.created_at AS createdAt
     FROM prompt_versions v JOIN prompts p ON p.id = v.prompt_id
-    WHERE p.author_email = ? ORDER BY p.name, v.version`).all(email);
+    WHERE p.author_email = ? ORDER BY v.created_at DESC`).all(email) as
+    { promptName: string; version: number; body: string; createdAt: number }[];
+
+  const retenues: typeof versions = [];
+  const allegees: { promptName: string; version: number; createdAt: number; bytes: number }[] = [];
+  let cumul = 0;
+  for (const v of versions) {
+    const taille = Buffer.byteLength(v.body ?? '', 'utf8');
+    if (cumul + taille <= MAX_EXPORT_BODY_BYTES) {
+      retenues.push(v);
+      cumul += taille;
+    } else {
+      allegees.push({ promptName: v.promptName, version: v.version, createdAt: v.createdAt, bytes: taille });
+    }
+  }
 
   const corps = db.prepare(
     'SELECT name, language, description, body FROM prompts WHERE author_email = ? ORDER BY name')
@@ -214,6 +243,10 @@ export function collectAccountExport(email: string) {
     profilSynchronise: profile ?? null,
     profilMisAJour: updatedAt,
     tuteurs: corps,
-    versionsDesTuteurs: versions,
+    versionsDesTuteurs: retenues,
+    versionsNonDetaillees: allegees,
+    moderations: db.prepare(
+      'SELECT id, prompt_id AS promptId, status, moderated_at AS moderatedAt FROM comments WHERE moderated_by = ? ORDER BY moderated_at DESC')
+      .all(email),
   };
 }

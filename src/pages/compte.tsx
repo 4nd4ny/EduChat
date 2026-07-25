@@ -49,25 +49,52 @@ export default function ComptePage() {
   const [data, setData] = useState<AccountData | null>(null);
   const [choisies, setChoisies] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  // Vrai quand le dernier rafraîchissement a échoué : les données affichées
+  // sont alors celles d'avant, et il faut le dire.
+  const [echec, setEchec] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const charger = useCallback(async () => {
     // Le jeton local ne prouve rien (il n'est pas vérifié côté navigateur) :
     // c'est la réponse du serveur qui décide de l'état de la page.
+    //
+    // Mais SEUL un 401 signifie « pas identifié ». Un 429 ou une coupure de
+    // réseau afficheraient sinon « identifiez-vous » à quelqu'un qui l'est —
+    // et effaceraient sous ses yeux le compte rendu de l'action qui vient de
+    // réussir.
     try {
       const response = await fetch("/api/me/data", { headers: authHeaders() });
-      if (!response.ok) { setState("anonymous"); return; }
+      if (response.status === 401) { setData(null); setState("anonymous"); return; }
+      if (!response.ok) { setEchec(true); setState(avant => (avant === "loading" ? "anonymous" : avant)); return; }
       setData(await response.json());
+      setEchec(false);
       setState("ready");
     } catch {
-      setState("anonymous");
+      setEchec(true);
+      setState(avant => (avant === "loading" ? "anonymous" : avant));
     }
   }, []);
 
   useEffect(() => {
+    // Un effacement recharge la page (voir rafraichirTout) : le compte rendu
+    // doit lui survivre, sans quoi l'utilisateur ne saurait pas que c'est
+    // fait.
+    const garde = sessionStorage.getItem("educhat-compte-message");
+    if (garde) { setMessage(garde); sessionStorage.removeItem("educhat-compte-message"); }
     if (!getAccount()) { setState("anonymous"); return; }
     void charger();
   }, [charger]);
+
+  /**
+   * Rechargement complet après un effacement. Le contexte du chat garde en
+   * mémoire la liste des conversations, lue une seule fois au démarrage : sans
+   * cela, l'historique continuerait d'afficher une conversation effacée, et
+   * cliquer dessus renverrait sur une page vide.
+   */
+  const rafraichirTout = (compteRendu: string) => {
+    sessionStorage.setItem("educhat-compte-message", compteRendu);
+    window.location.reload();
+  };
 
   const agir = async (action: () => Promise<boolean | void>, succes: string) => {
     setBusy(true); setMessage("");
@@ -118,14 +145,18 @@ export default function ComptePage() {
     if (!choisies.length || !window.confirm(t("compte.conv.confirm").replace("{n}", String(choisies.length)))) return;
     void agir(async () => {
       const ok = await deleteServerConversations(choisies);
-      setChoisies([]);
-      return ok;
+      if (!ok) return false;
+      rafraichirTout(t("compte.conv.deleted"));
     }, t("compte.conv.deleted"));
   };
 
   const toutSupprimer = () => {
     if (!window.confirm(t("compte.conv.deleteAllConfirm"))) return;
-    void agir(() => deleteServerProfile(), t("compte.conv.deletedAll"));
+    void agir(async () => {
+      const ok = await deleteServerProfile();
+      if (!ok) return false;
+      rafraichirTout(t("compte.conv.deletedAll"));
+    }, t("compte.conv.deletedAll"));
   };
 
   const basculerSync = (valeur: boolean) => agir(async () => {
@@ -185,6 +216,12 @@ export default function ComptePage() {
       </div>
       <p className="mt-2 text-xs opacity-60">{t("compte.subtitle")}</p>
       {message && <p role="status" className="mt-3 rounded bg-tertiary px-3 py-2 text-sm">{message}</p>}
+      {echec && (
+        <p role="alert" className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          {t("compte.stale")}{" "}
+          <button onClick={() => void charger()} className="underline">{t("compte.retry")}</button>
+        </p>
+      )}
 
       {/* 1 — Consommation ------------------------------------------------ */}
       <Section numero={1} titre={t("compte.usage.title")}>
@@ -313,13 +350,20 @@ export default function ComptePage() {
                 <button onClick={supprimerChoisies} disabled={busy || !choisies.length} className={DANGER}>
                   {t("compte.conv.deleteSelected").replace("{n}", String(choisies.length))}
                 </button>
-                <button onClick={toutSupprimer} disabled={busy} className={DANGER}>
-                  {t("compte.conv.deleteAll")}
-                </button>
                 <span className="text-xs opacity-60">{t("compte.conv.deleteHint")}</span>
               </div>
             </>
           )}
+        {/* Hors du tableau : effacer la DERNIÈRE conversation ne doit pas
+            emporter le seul bouton capable de supprimer ce qui reste du
+            profil (favoris, notes, compteur de jetons). */}
+        {consommation.profileUpdatedAt !== null && (
+          <div className="mt-3 border-t border-white/10 pt-3">
+            <button onClick={toutSupprimer} disabled={busy} className={DANGER}>
+              {t("compte.conv.deleteAll")}
+            </button>
+          </div>
+        )}
         {data.deletedConversations > 0 && (
           <p className="mt-3 text-xs opacity-60">
             {t("compte.conv.tombstones").replace("{n}", String(data.deletedConversations))}
@@ -377,6 +421,9 @@ export default function ComptePage() {
             <dd>{date(identite.createdAt)}</dd></div>
           <div><dt className="text-xs uppercase opacity-60">{t("compte.other.verified")}</dt>
             <dd>{date(identite.verifiedAt)}</dd></div>
+          <div><dt className="text-xs uppercase opacity-60">{t("compte.other.moderations")}</dt>
+            <dd>{data.moderations}</dd>
+            <p className="text-xs opacity-60">{t("compte.other.moderationsHint")}</p></div>
         </dl>
         <p className="mt-3 text-xs opacity-60">{t("compte.other.rest")}</p>
       </Section>
