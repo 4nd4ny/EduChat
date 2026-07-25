@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
-import { MdAdd, MdDelete, MdSchool } from "react-icons/md";
+import { MdAdd, MdDelete, MdSchool, MdSettings } from "react-icons/md";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 
@@ -76,16 +76,19 @@ export default function EtablissementPage() {
 
   if (state === "auth" || state === "none") {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center text-primary">
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
         <Head><title>Mon établissement — EduChat</title></Head>
-        <MdSchool className="mx-auto text-4xl opacity-40" />
-        <h1 className="mt-3 text-xl font-bold">Espace responsable d'établissement</h1>
+        {/* Même allure que la garde d'accès de /duel, et l'engrenage de la
+            tuile « Établissement » de l'accueil : une même porte doit se
+            reconnaître d'une page à l'autre. */}
+        <MdSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
+        <h1 className="text-2xl font-bold">Espace responsable d'établissement</h1>
         {state === "auth" ? (
-          <p className="mt-3 text-sm opacity-80">
+          <p className="mt-3 opacity-80">
             Identifiez-vous d'abord : un code reçu par email, sans mot de passe.
           </p>
         ) : (
-          <p className="mt-3 text-sm opacity-80">
+          <p className="mt-3 opacity-80">
             Votre compte n'est rattaché à aucun établissement. Demandez à l'administrateur
             d'EduChat de vous désigner responsable de votre école — il lui suffit de vous
             rattacher depuis son interface (contact : blanvillain@harmonia.education).

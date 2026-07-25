@@ -274,17 +274,28 @@ export default function AdminPage() {
                   <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
                     className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdVisibilityOff /> Dépublier</button>
                 )}
-                {p.status === "retired" && (
-                  <>
-                    <button onClick={() => act(p.name, "republish")} title="Republier au catalogue tel quel"
-                      className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> Republier</button>
-                    <button onClick={() => setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body })}
-                      title="Modifier la description et le prompt"
-                      className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdEdit /> Modifier</button>
-                    <button onClick={() => rename(p.name)} title="Renommer (prompt dépublié uniquement)"
-                      className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdDriveFileRenameOutline /> Renommer</button>
-                  </>
-                )}
+                {/* Les trois mêmes boutons sur CHAQUE ligne, pour que l'œil
+                    n'ait pas à chercher. Ce que le serveur refuse reste
+                    visible mais désactivé, en disant pourquoi — c'est plus
+                    instructif qu'un bouton absent, et plus honnête qu'un
+                    bouton qui échouerait. */}
+                <button onClick={() => act(p.name, "republish")}
+                  disabled={p.status !== "retired"}
+                  title={p.status === "retired"
+                    ? "Republier au catalogue tel quel"
+                    : p.status === "published" ? "Déjà publié" : "Seul un tuteur dépublié se republie"}
+                  className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10 disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-30 disabled:hover:bg-transparent"><MdPublish /> Republier</button>
+                <button onClick={() => setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body })}
+                  title={p.status === "published"
+                    ? "Modifier : sur un tuteur publié, cela crée une NOUVELLE version (les conversations en cours gardent la leur)"
+                    : "Modifier la description et le prompt"}
+                  className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary"><MdEdit /> Modifier</button>
+                <button onClick={() => rename(p.name)}
+                  disabled={p.status === "published"}
+                  title={p.status === "published"
+                    ? "Dépubliez d'abord : le nom est l'adresse publique du tuteur (/p/nom) et les conversations en cours s'y réfèrent"
+                    : "Renommer"}
+                  className="flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary disabled:cursor-not-allowed disabled:border-white/10 disabled:opacity-30 disabled:hover:bg-transparent"><MdDriveFileRenameOutline /> Renommer</button>
                 {p.status !== "published" && (
                   <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
                     className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
