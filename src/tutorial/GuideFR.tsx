@@ -147,7 +147,7 @@ export default function GuideFR() {
           <li><b>Soumis</b> : entre dans la file de validation, visible des validateurs seulement.</li>
           <li><b>Validation a priori</b> : un <b>administrateur ou n'importe quel promptagogue vérifié</b> relit le prompt et le publie. Ce choix communautaire protège les élèves (public mineur) tout en évitant le goulot d'un validateur unique — il filtre surtout les propositions anonymes.</li>
           <li><b>Publié</b> : au catalogue, utilisable par tous, compteurs actifs.</li>
-          <li><b>Dépublié</b> : retiré du catalogue mais conservé — l'auteur ou l'administration peut le <b>republier</b>, l'administration peut aussi l'<b>éditer, le renommer</b>, ou l'<b>archiver</b> (masqué définitivement de l'interface d'administration, mais conservé en base : rien n'est jamais supprimé, les statistiques de consommation restent exactes).</li>
+          <li><b>Dépublié</b> : retiré du catalogue mais conservé — l'auteur ou l'administration peut le <b>republier</b>, et l'administration l'<b>archiver</b> — pour le retoucher, il faut d'abord le republier (masqué définitivement de l'interface d'administration, mais conservé en base : rien n'est jamais supprimé, les statistiques de consommation restent exactes).</li>
         </ul>
       </Section>
 

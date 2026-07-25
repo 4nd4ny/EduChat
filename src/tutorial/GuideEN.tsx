@@ -142,7 +142,7 @@ export default function GuideEN() {
           <li><b>Submitted</b>: joins the validation queue, visible to validators only.</li>
           <li><b>A-priori validation</b>: an <b>administrator or any verified promptagogue</b> reviews the prompt and publishes it. This community choice protects students (a minor audience) while avoiding a single-validator bottleneck — it mostly filters anonymous proposals.</li>
           <li><b>Published</b>: in the catalogue, usable by everyone, counters active.</li>
-          <li><b>Unpublished</b>: removed from the catalogue but kept — the author or the administration can <b>republish</b> it; the administration can also <b>edit, rename</b> or <b>archive</b> it (permanently hidden from the admin interface, yet kept in the database: nothing is ever deleted, so consumption statistics stay exact).</li>
+          <li><b>Unpublished</b>: removed from the catalogue but kept — the author or the administration can <b>republish</b> it, and the administration <b>archive</b> it — to amend it, republish it first (permanently hidden from the admin interface, yet kept in the database: nothing is ever deleted, so consumption statistics stay exact).</li>
         </ul>
       </Section>
 

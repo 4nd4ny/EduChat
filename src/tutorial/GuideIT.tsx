@@ -142,7 +142,7 @@ export default function GuideIT() {
           <li><b>Inviato</b>: entra nella coda di validazione, visibile solo ai validatori.</li>
           <li><b>Validazione a priori</b>: un <b>amministratore o qualsiasi promptagogo verificato</b> rilegge il prompt e lo pubblica. Questa scelta comunitaria protegge gli studenti (pubblico minorenne) evitando il collo di bottiglia di un validatore unico — filtra soprattutto le proposte anonime.</li>
           <li><b>Pubblicato</b>: nel catalogo, utilizzabile da tutti, contatori attivi.</li>
-          <li><b>Ritirato</b>: rimosso dal catalogo ma conservato — l'autore o l'amministrazione può <b>ripubblicarlo</b>; l'amministrazione può anche <b>modificarlo, rinominarlo</b> o <b>archiviarlo</b> (nascosto definitivamente dall'interfaccia di amministrazione, ma conservato nel database: niente viene mai cancellato, le statistiche di consumo restano esatte).</li>
+          <li><b>Ritirato</b>: rimosso dal catalogo ma conservato — l'autore o l'amministrazione può <b>ripubblicarlo</b>, e l'amministrazione <b>archiviarlo</b> — per ritoccarlo bisogna prima ripubblicarlo (nascosto definitivamente dall'interfaccia di amministrazione, ma conservato nel database: niente viene mai cancellato, le statistiche di consumo restano esatte).</li>
         </ul>
       </Section>
 

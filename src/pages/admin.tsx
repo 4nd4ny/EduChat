@@ -1,8 +1,8 @@
 import Head from "next/head";
 import Link from "next/link";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  MdArchive, MdCheck, MdDownload, MdDriveFileRenameOutline,
+  MdArchive, MdCheck, MdDownload,
   MdEdit, MdPublish, MdVisibilityOff, MdAdminPanelSettings,
 } from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
@@ -44,6 +44,25 @@ type AdminComment = {
 // PRINCIPE (décision client) : on ne SUPPRIME jamais rien ici. Dépublier est
 // réversible (republier) ; archiver masque définitivement un prompt de cette
 // interface, mais la ligne et ses compteurs restent en base (facturation).
+/**
+ * Traduire les refus du serveur en phrases qui disent quoi faire. Un code brut
+ * (« ERR_NAME_TAKEN ») envoie chercher un prompt qui, s'il est archivé, est
+ * invisible de cette liste : sans cette phrase, l'impasse est indéchiffrable.
+ */
+function expliquer(code: string): string {
+  const table: Record<string, string> = {
+    ERR_NAME_TAKEN: "ce nom est déjà pris — y compris, éventuellement, par un tuteur ARCHIVÉ, donc invisible dans cette liste",
+    ERR_NAME_INVALID: "nom invalide : au moins deux caractères, lettres et chiffres, espace, apostrophe ou tiret — ni tiret bas, ni parenthèse, ni point",
+    ERR_RATE_LIMIT: "trop de requêtes en une minute, réessayez dans un instant",
+    ERR_ARCHIVED: "ce tuteur est archivé : il est figé définitivement",
+    ERR_STATUS: "cette action ne convient pas à l'état actuel du tuteur",
+    ERR_FORBIDDEN: "droits insuffisants",
+    ERR_BODY_TOO_SHORT: "le texte du tuteur est trop court",
+    ERR_QUOTA_USER: "quota de l'auteur dépassé",
+  };
+  return table[code] ?? code;
+}
+
 const BTN = "flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary";
 
 type CatalogueRow = { provider: string; source: string; count: number; at: number };
@@ -67,12 +86,19 @@ export default function AdminPage() {
   });
   const [expanded, setExpanded] = useState<string | null>(null);
   // Éditeur de prompt (description + corps) — ouvert sur un nom de prompt.
-  const [editing, setEditing] = useState<{ name: string; description: string; body: string } | null>(null);
+  // « name » = l'identifiant d'ORIGINE (celui que l'API doit cibler),
+  // « nom » = ce que l'administration a tapé. Les distinguer est ce qui rend
+  // le renommage possible depuis le formulaire.
+  const [editing, setEditing] = useState<
+    { name: string; nom: string; description: string; body: string } | null>(null);
   const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
   const [catalogue, setCatalogue] = useState<CatalogueRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [ladders, setLadders] = useState<LadderRow[]>([]);
   const [ladderEdit, setLadderEdit] = useState<Record<string, string[]>>({});
+  // Dernier code d'erreur renvoyé par act() : saveEdit en a besoin pour dire
+  // POURQUOI un renommage a échoué, alors qu'il écrase le message de act().
+  const dernierCode = useRef("");
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -111,15 +137,20 @@ export default function AdminPage() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage(`Échec de « ${action} » sur ${name} (${data?.error?.code ?? response.status}).`);
+      const code = String(data?.error?.code ?? response.status);
+      dernierCode.current = code;
+      setMessage(`Échec de « ${action} » sur ${name} (${expliquer(code)}).`);
       return false;
     }
+    dernierCode.current = "";
     reload();
     return true;
   };
 
   const ouvrirEdition = (p: AdminPrompt) =>
-    setEditing(editing?.name === p.name ? null : { name: p.name, description: p.description, body: p.body });
+    setEditing(editing?.name === p.name
+      ? null
+      : { name: p.name, nom: p.name, description: p.description, body: p.body });
 
   /**
    * Dupliquer : un FORK, pas une version. Le nouveau tuteur naît en
@@ -152,23 +183,42 @@ export default function AdminPage() {
     reload();
   };
 
+  /**
+   * Enregistrer : le CONTENU d'abord, le nom ensuite.
+   *
+   * Cet ordre n'est pas indifférent. Renommer d'abord ferait porter
+   * l'édition suivante sur un identifiant qui vient de changer ; et si le
+   * nouveau nom est déjà pris, on aurait renoncé au renommage APRÈS avoir
+   * écrit le texte — au moins le travail de rédaction est sauvé.
+   */
   const saveEdit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editing) return;
-    const ok = await act(editing.name, "edit", { description: editing.description, body: editing.body });
-    if (ok) setEditing(null);
-  };
+    const nouveauNom = editing.nom.trim();
+    // Statut RELU dans la liste, jamais figé à l'ouverture : le formulaire
+    // reste ouvert si l'on dépublie depuis la ligne juste au-dessus, et
+    // l'avertissement mentirait alors sur l'état réel.
+    const publie = prompts.find(x => x.name === editing.name)?.status === "published";
+    if (!nouveauNom) { setMessage("Le nom ne peut pas être vide."); return; }
 
-  const rename = async (name: string, publie: boolean) => {
-    const newName = window.prompt(
-      `Nouveau nom pour « ${name} » ?` + (publie
-        ? "\n\nATTENTION : ce tuteur est PUBLIÉ. Son nom est son adresse publique (/p/nom) : " +
-          "les liens déjà partagés tomberont, et les conversations en cours n'afficheront plus leur tuteur. " +
-          "Ses compteurs et ses versions, eux, sont conservés."
-        : ""),
-      name);
-    if (!newName || newName === name) return;
-    await act(name, "rename", { newName });
+    if (nouveauNom !== editing.name && publie && !window.confirm(
+      `Renommer « ${editing.name} » en « ${nouveauNom} » ?\n\n` +
+      "ATTENTION : ce tuteur est PUBLIÉ. Son nom est son adresse publique (/p/nom) : " +
+      "les liens déjà partagés tomberont, et les conversations en cours n'afficheront plus leur tuteur. " +
+      "Ses compteurs et ses versions, eux, sont conservés.")) return;
+
+    if (!await act(editing.name, "edit", { description: editing.description, body: editing.body })) return;
+    if (nouveauNom !== editing.name && !await act(editing.name, "rename", { newName: nouveauNom })) {
+      // Le texte est enregistré, le nom non. Deux choses à ne pas perdre ici :
+      // la RAISON du refus (sans elle, « ça n'a pas marché » ne mène nulle
+      // part) et le formulaire OUVERT, pour que le nom saisi reste corrigeable
+      // au lieu d'être à retaper de mémoire.
+      setMessage(
+        `Texte enregistré, mais « ${editing.name} » n'a pas pu être renommé en « ${nouveauNom} » : ` +
+        expliquer(dernierCode.current || "inconnu"));
+      return;
+    }
+    setEditing(null);
   };
 
   const archive = async (name: string) => {
@@ -311,10 +361,12 @@ export default function AdminPage() {
 
         <h2 className="mt-6 text-lg font-bold">Tous les prompts</h2>
         <p className="mt-1 text-xs opacity-60">
-          Rien n'est jamais supprimé. <b>Publié</b> : dépublier · modifier · renommer.
-          <b> Dépublié</b> : republier · modifier · archiver. Modifier crée toujours une nouvelle
-          version ; pour partir d'un tuteur sans le toucher, ouvrez « Modifier » puis
-          « Dupliquer ». Archiver ne fait que nettoyer cette liste — le tuteur reste en base
+          Rien n'est jamais supprimé. <b>Publié</b> : dépublier · modifier. <b>Dépublié</b> :
+          republier · archiver — pour retoucher un tuteur dépublié, republiez-le d'abord.
+          « Modifier » couvre le nom, la description et le texte ; retoucher le TEXTE crée une
+          nouvelle version (le nom et la description sont corrigés sur place). Pour partir d'un
+          tuteur sans le toucher, ouvrez « Modifier » puis « Dupliquer » — donc republiez-le
+          d'abord s'il est dépublié. Archiver ne fait que nettoyer cette liste — le tuteur reste en base
           avec ses compteurs, et la facturation reste calculable.
         </p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
@@ -328,35 +380,31 @@ export default function AdminPage() {
                 {/* Un état, un jeu d'actions — jamais de bouton désactivé :
                     « republier » et « dépublier » sont les deux faces d'une
                     même bascule, en montrer une seule dit déjà où l'on est.
-                      publié   → dépublier · modifier · renommer
-                      dépublié → republier · modifier · archiver
-                      brouillon/soumis → modifier · renommer · archiver
-                    (la publication d'un prompt soumis se fait plus haut,
-                    dans la file de validation). */}
+                      publié           → dépublier · modifier
+                      dépublié         → republier · archiver
+                      brouillon/soumis → modifier · archiver
+                    Un tuteur dépublié n'est pas modifiable : on le republie
+                    d'abord (décision client). « Modifier » couvre le nom, la
+                    description et le texte ; la publication d'un prompt soumis
+                    se fait plus haut, dans la file de validation. */}
                 {p.status === "published" ? (
                   <>
                     <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
                       className={BTN}><MdVisibilityOff /> Dépublier</button>
-                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
+                    <button onClick={() => ouvrirEdition(p)} title="Modifier le nom, la description et le texte : crée une nouvelle version"
                       className={BTN}><MdEdit /> Modifier</button>
-                    <button onClick={() => rename(p.name, true)} title="Renommer — attention : le nom est l'adresse publique du tuteur"
-                      className={BTN}><MdDriveFileRenameOutline /> Renommer</button>
                   </>
                 ) : p.status === "retired" ? (
                   <>
                     <button onClick={() => act(p.name, "republish")} title="Republier au catalogue tel quel"
                       className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> Republier</button>
-                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
-                      className={BTN}><MdEdit /> Modifier</button>
                     <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
                       className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
                   </>
                 ) : (
                   <>
-                    <button onClick={() => ouvrirEdition(p)} title="Modifier : crée une nouvelle version"
+                    <button onClick={() => ouvrirEdition(p)} title="Modifier le nom, la description et le texte : crée une nouvelle version"
                       className={BTN}><MdEdit /> Modifier</button>
-                    <button onClick={() => rename(p.name, false)} title="Renommer"
-                      className={BTN}><MdDriveFileRenameOutline /> Renommer</button>
                     <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
                       className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
                   </>
@@ -364,6 +412,19 @@ export default function AdminPage() {
               </div>
               {editing?.name === p.name && (
                 <form onSubmit={saveEdit} className="mt-2 flex flex-col gap-2 rounded border border-white/10 bg-secondary p-3">
+                  <label className="flex flex-col gap-1 text-xs opacity-70">
+                    Identifiant du tuteur — c&apos;est son adresse publique (/p/nom)
+                    <input value={editing.nom}
+                      onChange={e => setEditing({ ...editing, nom: e.target.value })}
+                      maxLength={64} className="rounded bg-tertiary p-2 font-mono text-sm text-primary" />
+                  </label>
+                  {prompts.find(x => x.name === editing.name)?.status === "published" && editing.nom.trim() !== editing.name && (
+                    <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                      Ce tuteur est <b>publié</b> : le renommer fera tomber les liens déjà partagés,
+                      et les conversations en cours n&apos;afficheront plus leur tuteur. Compteurs et
+                      versions sont conservés.
+                    </p>
+                  )}
                   <input value={editing.description}
                     onChange={e => setEditing({ ...editing, description: e.target.value })}
                     maxLength={500} placeholder="Description (catalogue)"
@@ -373,7 +434,7 @@ export default function AdminPage() {
                     rows={12} className="rounded bg-tertiary p-2 font-mono text-xs leading-relaxed" />
                   <div className="flex gap-2">
                     <button type="submit" className="rounded bg-[#DC6521] px-3 py-1.5 text-xs font-bold hover:opacity-90">
-                      Enregistrer — nouvelle version
+                      Enregistrer
                     </button>
                     <button type="button" onClick={() => void dupliquer()}
                       title="Créer un tuteur SÉPARÉ à partir de ce texte, sans toucher à l'original"

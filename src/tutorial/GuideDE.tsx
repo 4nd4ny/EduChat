@@ -142,7 +142,7 @@ export default function GuideDE() {
           <li><b>Eingereicht</b>: kommt in die Freigabe-Warteschlange, nur für Prüfende sichtbar.</li>
           <li><b>A-priori-Freigabe</b>: Ein <b>Administrator oder jede verifizierte Promptagogin / jeder verifizierte Promptagoge</b> liest den Prompt gegen und veröffentlicht ihn. Diese Gemeinschaftslösung schützt die Schüler (minderjähriges Publikum) und vermeidet den Engpass eines einzelnen Prüfers — sie filtert vor allem anonyme Vorschläge.</li>
           <li><b>Veröffentlicht</b>: im Katalog, für alle nutzbar, Zähler aktiv.</li>
-          <li><b>Zurückgezogen</b>: aus dem Katalog entfernt, aber erhalten — Autor oder Administration können ihn <b>wieder veröffentlichen</b>; die Administration kann ihn auch <b>bearbeiten, umbenennen</b> oder <b>archivieren</b> (dauerhaft aus der Admin-Oberfläche ausgeblendet, aber in der Datenbank erhalten: nichts wird je gelöscht, die Verbrauchsstatistiken bleiben exakt).</li>
+          <li><b>Zurückgezogen</b>: aus dem Katalog entfernt, aber erhalten — Autor oder Administration können ihn <b>wieder veröffentlichen</b>, die Administration ihn <b>archivieren</b> — zum Überarbeiten muss er zuerst wieder veröffentlicht werden (dauerhaft aus der Admin-Oberfläche ausgeblendet, aber in der Datenbank erhalten: nichts wird je gelöscht, die Verbrauchsstatistiken bleiben exakt).</li>
         </ul>
       </Section>
 
