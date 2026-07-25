@@ -13,8 +13,8 @@ export const fr = {
   // Catalogue (accueil)
   'home.tagline': 'Explorez nos tuteurs socratiques — Proposez le vôtre',
 
-  // Navigation par profil (accueil) : ligne 1 les profils, ligne 2 le
-  // raccourci du profil choisi + les entrées de service, ligne 3 les langues.
+  // Navigation par profil (accueil) : une ligne de quatre profils, chacun
+  // ouvrant directement son espace de travail.
   'nav.learner': 'Apprenant',
   'nav.teacher': 'Enseignant',
   'nav.school': 'Établissement',
@@ -26,19 +26,11 @@ export const fr = {
   'nav.guide': 'Guide',
   'nav.hint': "La création d'un compte est facultative. Elle permet de retrouver vos données lorsque vous changez de navigateur.",
 
-  // Barre de navigation commune (titres de page et libellés d'icônes)
+  // Barre de navigation commune (libellés des icônes)
   'header.home': 'Accueil',
   'header.services': 'Services',
   'header.language': 'Langue',
   'header.privacyTitle': 'Confidentialité et RGPD',
-  'header.chat': 'Chat',
-  'header.school': 'Espace établissement',
-  'header.etab': 'Mon établissement',
-  'header.etabGuide': 'Guide des établissements',
-  'header.admin': 'Administration',
-  'header.police': 'Gestion de classe',
-  'header.draft': 'Atelier du brouillon',
-  'header.tutor': 'Fiche du tuteur',
 
   // Fréquentation du site (bandeau du bas)
   'stats.account': 'compte',
@@ -200,14 +192,6 @@ export const en: Record<TranslationKey, string> = {
   'header.services': 'Services',
   'header.language': 'Language',
   'header.privacyTitle': 'Privacy and GDPR',
-  'header.chat': 'Chat',
-  'header.school': 'School area',
-  'header.etab': 'My school',
-  'header.etabGuide': 'Schools guide',
-  'header.admin': 'Administration',
-  'header.police': 'Classroom management',
-  'header.draft': 'Draft workshop',
-  'header.tutor': 'Tutor page',
   'stats.account': 'account',
   'stats.accounts': 'accounts',
   'stats.prompt': 'tutor',
@@ -357,14 +341,6 @@ export const it: Record<TranslationKey, string> = {
   'header.services': 'Servizi',
   'header.language': 'Lingua',
   'header.privacyTitle': 'Privacy e GDPR',
-  'header.chat': 'Chat',
-  'header.school': 'Area istituti',
-  'header.etab': 'Il mio istituto',
-  'header.etabGuide': 'Guida degli istituti',
-  'header.admin': 'Amministrazione',
-  'header.police': 'Gestione della classe',
-  'header.draft': 'Officina della bozza',
-  'header.tutor': 'Scheda del tutor',
   'stats.account': 'account',
   'stats.accounts': 'account',
   'stats.prompt': 'tutor',
@@ -512,14 +488,6 @@ export const de: Record<TranslationKey, string> = {
   'header.services': 'Dienste',
   'header.language': 'Sprache',
   'header.privacyTitle': 'Datenschutz und DSGVO',
-  'header.chat': 'Chat',
-  'header.school': 'Schulbereich',
-  'header.etab': 'Meine Schule',
-  'header.etabGuide': 'Schul-Leitfaden',
-  'header.admin': 'Verwaltung',
-  'header.police': 'Klassenführung',
-  'header.draft': 'Entwurfs-Werkstatt',
-  'header.tutor': 'Tutor-Seite',
   'stats.account': 'Konto',
   'stats.accounts': 'Konten',
   'stats.prompt': 'Tutor',

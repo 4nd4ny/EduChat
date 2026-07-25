@@ -56,9 +56,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const toggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
 
   // Sur mobile la sidebar coulisse par-dessus le contenu, mais JAMAIS par-dessus
-  // la barre de navigation (top-16) : celle-ci reste toujours atteignable.
+  // la barre de navigation (60 px) : celle-ci reste toujours atteignable.
   const getSidebarClasses = useCallback((isOpen: boolean) => `
-    ${isMobile ? 'fixed bottom-0 top-16 left-0 z-30 transition-transform duration-300 ease-in-out transform' : ''}
+    ${isMobile ? 'fixed bottom-0 top-[60px] left-0 z-30 transition-transform duration-300 ease-in-out transform' : ''}
     ${isMobile && !isOpen ? '-translate-x-[calc(100%+4px)]' : 'translate-x-0'}
   `, [isMobile]);
 
@@ -83,11 +83,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {hasChatSidebar ? (
         (() => {
           const chatShell = (
-            // Coquille de chat : la barre de navigation occupe 4 rem en tête,
+            // Coquille de chat : la barre de navigation occupe 60 px en tête,
             // le reste de la hauteur revient à la conversation.
             <div className="max-w-screen relative flex h-screen max-h-screen w-screen flex-col overflow-hidden">
               <SiteHeader />
-              <div className="flex h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]">
+              <div className="flex h-[calc(100vh-60px)] max-h-[calc(100vh-60px)]">
                 <>
                   {isMobile && (
                     <div>
