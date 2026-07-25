@@ -82,7 +82,27 @@ export const DeveloperKeys: Record<string, string | undefined> = {
   // Aucune clé serveur pour les fournisseurs à drapeau rouge (DeepSeek,
   // Qwen, Kimi, GLM, MiniMax) : ils ne sont accessibles qu'en clé
   // PERSONNELLE, et la route de complétion refuse de les servir sur la clé
-  // interne d'un établissement.
+  // interne d'un établissement. Voir CatalogueKeys ci-dessous : lire une
+  // liste de modèles n'est pas converser.
+};
+
+/**
+ * Clés utilisées UNIQUEMENT pour lire les CATALOGUES de modèles.
+ *
+ * Séparées de DeveloperKeys à dessein. Interroger « /models » n'envoie aucune
+ * donnée d'élève : c'est une lecture de métadonnées, et elle est nécessaire
+ * pour que le champ « Modèle » propose autre chose qu'une seule ligne à qui
+ * apporte sa propre clé DeepSeek ou Qwen. Converser, en revanche, reste
+ * interdit sur la clé interne pour ces fournisseurs — d'où deux tables plutôt
+ * qu'un drapeau, pour qu'aucune inattention ne puisse les confondre.
+ */
+export const CatalogueKeys: Record<string, string | undefined> = {
+  ...DeveloperKeys,
+  deepseek: process.env.SECRET_DEEPSEEK_API_KEY,
+  qwen: process.env.SECRET_QWEN_API_KEY,
+  kimi: process.env.SECRET_KIMI_API_KEY,
+  glm: process.env.SECRET_GLM_API_KEY,
+  minimax: process.env.SECRET_MINIMAX_API_KEY,
 };
 
 // Budget quotidien du repli GRATUIT public, en USD — le plafond réel est posé

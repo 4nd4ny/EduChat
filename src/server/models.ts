@@ -24,7 +24,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { DataDir, DeveloperKeys } from '../utils/env';
+import { DataDir, CatalogueKeys } from '../utils/env';
 import { PROVIDER_IDS, providerDefaults, type ProviderId } from '../shared/providers';
 
 const CACHE_FILE = path.join(DataDir, 'models.json');
@@ -223,7 +223,7 @@ function refresh(provider: ProviderId, key: string): Promise<Entry> {
  * l'ancien et on rafraîchit en arrière-plan ; s'il est vide, on attend.
  */
 export async function getModels(provider: ProviderId, key = ''): Promise<{ models: string[]; updatedAt: number; source: Source }> {
-  const cle = (key || String(DeveloperKeys[provider] || '')).trim();
+  const cle = (key || String(CatalogueKeys[provider] || '')).trim();
   const cache = readCache();
   const entry = cache.entries[provider];
   const perime = !entry || Date.now() - entry.at > TTL_MS;
@@ -272,7 +272,7 @@ export async function refreshAllModels(): Promise<Array<{ provider: ProviderId; 
   openrouterIds = null;   // le catalogue public aussi doit être relu
   echecs.clear();
   return Promise.all(PROVIDER_IDS.map(async provider => {
-    const entry = await refresh(provider, String(DeveloperKeys[provider] || '').trim());
+    const entry = await refresh(provider, String(CatalogueKeys[provider] || '').trim());
     return { provider, source: entry.source, count: entry.models.length };
   }));
 }
