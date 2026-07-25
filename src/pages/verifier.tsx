@@ -163,13 +163,18 @@ export default function VerifierPage() {
           <Link href="/" className="text-center text-sm underline opacity-70">Retour au catalogue</Link>
           <button
             onClick={async () => {
-              if (window.confirm("Supprimer définitivement votre profil synchronisé du serveur ? (Vos données locales sont conservées.)")) {
-                alert((await deleteServerProfile()) ? "Profil serveur supprimé." : "Échec de la suppression.");
+              if (window.confirm("Supprimer définitivement votre profil synchronisé du serveur ?\n\nVos données locales sont conservées, et la sauvegarde automatique sera DÉSACTIVÉE — sans quoi vos navigateurs recréeraient le profil dans la minute. Vous pourrez la réactiver depuis « Mes données ».")) {
+                alert((await deleteServerProfile())
+                  ? "Profil serveur supprimé. La sauvegarde automatique est désactivée : la case se recoche depuis « Mes données »."
+                  : "Échec de la suppression.");
               }
             }}
             className="text-center text-xs underline opacity-50 hover:opacity-100">
             Supprimer mon profil synchronisé du serveur
           </button>
+          <Link href="/compte" className="text-center text-xs underline opacity-50 hover:opacity-100">
+            Voir toutes mes données (consommation, clés, conversations, tuteurs)
+          </Link>
         </div>
       )}
 
