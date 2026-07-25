@@ -96,7 +96,7 @@ const OPENAI_COMPATIBLE_URL: Partial<Record<ProviderId, string>> = {
   qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
   kimi: 'https://api.moonshot.ai/v1/chat/completions',
   glm: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-  minimax: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
+  minimax: 'https://api.minimax.io/v1/text/chatcompletion_v2',
 };
 
 /** Le fournisseur parle-t-il le dialecte « chat/completions » d'OpenAI ? */

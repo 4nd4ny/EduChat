@@ -55,9 +55,9 @@ export const providerDefaults: Record<ProviderId, {
   // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
   deepseek: { label: "DeepSeek", model: "deepseek-chat", wrng: true },
   qwen: { label: "Qwen", model: "qwen-plus", wrng: true },
-  kimi: { label: "Kimi", model: "kimi-k2", wrng: true },
+  kimi: { label: "Kimi", model: "kimi-k2.5", wrng: true },
   glm: { label: "GLM", model: "glm-4.6", wrng: true },
-  minimax: { label: "MiniMax", model: "minimax-m2", wrng: true },
+  minimax: { label: "MiniMax", model: "MiniMax-M2.5", wrng: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.

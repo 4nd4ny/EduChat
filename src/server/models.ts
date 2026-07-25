@@ -1,17 +1,22 @@
-// Catalogue des modèles disponibles, par fournisseur.
+// Catalogue des modèles proposés, par fournisseur.
 //
 // Le champ « Modèle » du chat reste librement éditable — c'est ce qui permet
-// d'utiliser un modèle sorti ce matin — mais il propose désormais une LISTE,
-// pour éviter la faute de frappe qui produit un 404 incompréhensible.
+// d'utiliser un modèle sorti ce matin — mais il propose une LISTE, pour
+// éviter la faute de frappe qui produit un 404 incompréhensible.
 //
-// Deux sources, par ordre de fiabilité :
-//  1. l'API du fournisseur lui-même (/v1/models), quand le serveur dispose de
-//     sa clé : ce sont les identifiants NATIFS, exacts par construction ;
-//  2. à défaut, le catalogue PUBLIC d'OpenRouter (aucune clé requise), qui
-//     recense les modèles de presque tous ces éditeurs sous la forme
-//     « éditeur/modèle » — on retire le préfixe pour retrouver l'identifiant
-//     natif. Approximation assumée : ces identifiants sont INDICATIFS, d'où
-//     le maintien de la saisie libre.
+// RÈGLE ABSOLUE : ne proposer que des identifiants que le fournisseur
+// accepterait VRAIMENT. Une liste qui a l'air officielle et qui échoue est
+// PIRE qu'un champ vide, parce qu'on lui fait confiance. D'où une seule
+// source de vérité : la liste NATIVE du fournisseur (/v1/models), interrogée
+// avec la clé du serveur si elle existe, sinon avec celle du visiteur qui
+// vient justement de la saisir.
+//
+// Les identifiants d'OpenRouter ne sont PAS ceux des éditeurs : OpenRouter
+// écrit « anthropic/claude-haiku-4.5 » là où Anthropic attend
+// « claude-haiku-4-5 », « qwen/qwen-2.5-72b-instruct » là où DashScope attend
+// « qwen2.5-72b-instruct ». Son catalogue ne sert donc qu'à trois
+// fournisseurs dont l'identifiant se déduit exactement du sien — et à
+// lui-même, où le « éditeur/modèle » complet est la bonne écriture.
 //
 // Le résultat est mis en cache dans un simple fichier JSON du volume de
 // données, rafraîchi au plus une fois par jour et JAMAIS de façon bloquante :
@@ -19,8 +24,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { DataDir } from '../utils/env';
-import { DeveloperKeys } from '../utils/env';
+import { DataDir, DeveloperKeys } from '../utils/env';
 import { PROVIDER_IDS, providerDefaults, type ProviderId } from '../shared/providers';
 
 const CACHE_FILE = path.join(DataDir, 'models.json');
@@ -31,41 +35,66 @@ const FETCH_TIMEOUT_MS = 12_000;
 // de liste du tout.
 const MAX_PER_PROVIDER = 500;
 
-type Cache = { fetchedAt: number; providers: Partial<Record<ProviderId, string[]>> };
+/** D'où vient la liste — utile pour savoir si une clé peut l'améliorer. */
+type Source = 'native' | 'openrouter' | 'defaut';
+type Entry = { at: number; source: Source; models: string[] };
+type Cache = { entries: Partial<Record<ProviderId, Entry>> };
 
 let memory: Cache | null = null;
-let refreshing = false;
+/** Une seule interrogation en vol par fournisseur (démarrage à froid). */
+const inflight = new Map<ProviderId, Promise<Entry>>();
+/** Dernier essai natif infructueux, pour ne pas marteler l'éditeur. */
+const echecs = new Map<ProviderId, number>();
+const RETRY_MS = 60_000;
 
-/** Préfixe d'éditeur OpenRouter → fournisseur EduChat. */
-const VENDOR_TO_PROVIDER: Record<string, ProviderId> = {
-  openai: 'openai',
-  anthropic: 'anthropic',
-  google: 'gemini',
-  'x-ai': 'grok',
-  mistralai: 'mistral',
-  deepseek: 'deepseek',
-  qwen: 'qwen',
-  moonshotai: 'kimi',
-  'z-ai': 'glm',
-  thudm: 'glm',
-  minimax: 'minimax',
-};
-
-/** Endpoint natif de listage, pour les fournisseurs dont le serveur a la clé. */
-const NATIVE_LIST: Partial<Record<ProviderId, { url: string; auth: 'bearer' | 'x-api-key' | 'x-goog' }>> = {
+/**
+ * Endpoint natif de listage. `key: false` = catalogue public.
+ * Les cinq fournisseurs chinois parlent le dialecte OpenAI : leur base
+ * expose donc /models comme les autres.
+ */
+const NATIVE: Partial<Record<ProviderId, { url: string; auth: 'bearer' | 'x-api-key' | 'x-goog' | 'aucune' }>> = {
   openai: { url: 'https://api.openai.com/v1/models', auth: 'bearer' },
   anthropic: { url: 'https://api.anthropic.com/v1/models', auth: 'x-api-key' },
   mistral: { url: 'https://api.mistral.ai/v1/models', auth: 'bearer' },
   grok: { url: 'https://api.x.ai/v1/models', auth: 'bearer' },
   gemini: { url: 'https://generativelanguage.googleapis.com/v1beta/models', auth: 'x-goog' },
+  openrouter: { url: 'https://openrouter.ai/api/v1/models', auth: 'aucune' },
+  deepseek: { url: 'https://api.deepseek.com/models', auth: 'bearer' },
+  qwen: { url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models', auth: 'bearer' },
+  kimi: { url: 'https://api.moonshot.ai/v1/models', auth: 'bearer' },
+  glm: { url: 'https://open.bigmodel.cn/api/paas/v4/models', auth: 'bearer' },
+  minimax: { url: 'https://api.minimax.io/v1/models', auth: 'bearer' },
 };
+
+/**
+ * Fournisseurs dont l'identifiant natif est EXACTEMENT le suffixe de la
+ * référence OpenRouter (« openai/gpt-5 » → « gpt-5 »). Vérifié un par un :
+ * pour tous les autres, la transformation serait une devinette.
+ */
+const FROM_OPENROUTER: Partial<Record<ProviderId, string>> = {
+  openai: 'openai/',
+  gemini: 'google/',
+  grok: 'x-ai/',
+};
+
+/**
+ * Modèles qui ne répondent pas à une conversation : plongements, audio,
+ * image, modération, complétion brute. Les proposer, c'est offrir une
+ * erreur 400 en libre-service.
+ */
+const NON_CONVERSATIONNEL = [
+  'embed', 'whisper', 'tts', '-audio', 'audio-', 'realtime', 'transcribe', 'speech',
+  'moderation', 'dall-e', 'imagen', 'veo-', 'sora', 'image', 'rerank', 'guard',
+  'babbage', 'davinci', 'ocr', 'similarity', 'search-query', 'search-document',
+];
 
 function readCache(): Cache {
   if (memory) return memory;
   try {
-    memory = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Cache;
+    const parsed = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Cache;
+    memory = parsed && typeof parsed === 'object' && parsed.entries ? parsed : { entries: {} };
   } catch {
-    memory = { fetchedAt: 0, providers: {} };
+    memory = { entries: {} };
   }
   return memory;
 }
@@ -108,72 +137,105 @@ function idsFrom(data: any): string[] {
   return [];
 }
 
-/** Reconstruit tout le catalogue. Ne lève jamais. */
-async function refresh(): Promise<Cache> {
-  const providers: Partial<Record<ProviderId, string[]>> = {};
+/** Catalogue public d'OpenRouter, mémorisé le temps d'un rafraîchissement. */
+let openrouterIds: { at: number; ids: string[] } | null = null;
+async function openrouterCatalogue(): Promise<string[]> {
+  if (openrouterIds && Date.now() - openrouterIds.at < TTL_MS) return openrouterIds.ids;
+  const ids = idsFrom(await fetchJson('https://openrouter.ai/api/v1/models', {}));
+  if (ids.length) openrouterIds = { at: Date.now(), ids };
+  return ids;
+}
 
-  // 1. Catalogue public OpenRouter — la source qui couvre tout le monde.
-  const openrouter = await fetchJson('https://openrouter.ai/api/v1/models', {});
-  const openrouterIds = idsFrom(openrouter);
-  if (openrouterIds.length) {
-    providers.openrouter = openrouterIds;
-    for (const id of openrouterIds) {
-      const [vendor, ...rest] = id.split('/');
-      const target = VENDOR_TO_PROVIDER[vendor];
-      if (!target || !rest.length) continue;
+function headersFor(auth: string, key: string): Record<string, string> {
+  if (auth === 'x-api-key') return { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+  if (auth === 'x-goog') return { 'x-goog-api-key': key };
+  if (auth === 'bearer') return { Authorization: `Bearer ${key}` };
+  return {};
+}
+
+/** Nettoie, garantit le modèle par défaut, trie et borne. */
+function finalise(provider: ProviderId, models: string[]): string[] {
+  const retenus = models.filter(id => {
+    const bas = id.toLowerCase();
+    return !NON_CONVERSATIONNEL.some(mot => bas.includes(mot));
+  });
+  // Le modèle par défaut est TOUJOURS proposé, même catalogue vide : c'est
+  // celui que le champ contient à l'ouverture.
+  const uniques = new Set([...retenus, providerDefaults[provider].model]);
+  return Array.from(uniques)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, MAX_PER_PROVIDER);
+}
+
+/** Reconstruit la liste d'UN fournisseur. Ne lève jamais. */
+async function build(provider: ProviderId, key: string): Promise<Entry> {
+  const native = NATIVE[provider];
+  if (native && (key || native.auth === 'aucune')) {
+    const ids = idsFrom(await fetchJson(native.url, headersFor(native.auth, key)));
+    if (ids.length) return { at: Date.now(), source: 'native', models: finalise(provider, ids) };
+  }
+
+  const prefixe = FROM_OPENROUTER[provider];
+  if (prefixe) {
+    const ids = (await openrouterCatalogue())
+      .filter(id => id.startsWith(prefixe))
       // « :free », « :nitro »… sont des variantes de routage propres à
       // OpenRouter : elles n'existent pas chez l'éditeur d'origine.
-      const native = rest.join('/').split(':')[0];
-      (providers[target] ??= []).push(native);
-    }
+      .map(id => id.slice(prefixe.length).split(':')[0]);
+    if (ids.length) return { at: Date.now(), source: 'openrouter', models: finalise(provider, ids) };
   }
 
-  // 2. Listes NATIVES quand le serveur a la clé : elles font autorité.
-  await Promise.all(Object.entries(NATIVE_LIST).map(async ([id, source]) => {
-    const provider = id as ProviderId;
-    const key = String(DeveloperKeys[provider] || '').trim();
-    if (!key) return;
-    const headers: Record<string, string> = source.auth === 'bearer'
-      ? { Authorization: `Bearer ${key}` }
-      : source.auth === 'x-api-key'
-        ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' }
-        : { 'x-goog-api-key': key };
-    const ids = idsFrom(await fetchJson(source.url, headers));
-    if (ids.length) providers[provider] = ids;
-  }));
+  // Sans clé et sans source fiable, une seule certitude : le défaut.
+  return { at: Date.now(), source: 'defaut', models: finalise(provider, []) };
+}
 
-  // 3. Le modèle par défaut est TOUJOURS proposé, même catalogue vide.
-  for (const provider of PROVIDER_IDS) {
-    const list = new Set([...(providers[provider] ?? []), providerDefaults[provider].model]);
-    providers[provider] = Array.from(list)
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b))
-      .slice(0, MAX_PER_PROVIDER);
-  }
-
-  const cache: Cache = { fetchedAt: Date.now(), providers };
-  writeCache(cache);
-  return cache;
+function refresh(provider: ProviderId, key: string): Promise<Entry> {
+  const encours = inflight.get(provider);
+  if (encours) return encours;
+  const promesse = build(provider, key)
+    .then(entry => {
+      const cache = readCache();
+      cache.entries[provider] = entry;
+      writeCache(cache);
+      return entry;
+    })
+    .catch(() => ({ at: Date.now(), source: 'defaut' as Source, models: finalise(provider, []) }))
+    .finally(() => { inflight.delete(provider); });
+  inflight.set(provider, promesse);
+  return promesse;
 }
 
 /**
- * Liste pour un fournisseur. Ne bloque jamais plus que nécessaire : si le
- * cache est périmé, on renvoie l'ancien et on rafraîchit en arrière-plan ;
- * s'il est vide (premier appel), on attend le rafraîchissement.
+ * Liste pour un fournisseur. `key` est la clé du visiteur, quand il en a
+ * saisi (ou mémorisé) une : elle ne sert qu'à demander au fournisseur sa
+ * propre liste, n'est jamais journalisée ni conservée.
+ *
+ * Ne bloque jamais plus que nécessaire : si le cache est périmé, on renvoie
+ * l'ancien et on rafraîchit en arrière-plan ; s'il est vide, on attend.
  */
-export async function getModels(provider: ProviderId): Promise<{ models: string[]; updatedAt: number }> {
-  let cache = readCache();
-  const stale = Date.now() - cache.fetchedAt > TTL_MS;
+export async function getModels(provider: ProviderId, key = ''): Promise<{ models: string[]; updatedAt: number; source: Source }> {
+  const cle = (key || String(DeveloperKeys[provider] || '')).trim();
+  const cache = readCache();
+  const entry = cache.entries[provider];
+  const perime = !entry || Date.now() - entry.at > TTL_MS;
 
-  if (!cache.fetchedAt) {
-    cache = await refresh();
-  } else if (stale && !refreshing) {
-    refreshing = true;
-    void refresh().finally(() => { refreshing = false; });
+  // Une clé vient d'apparaître alors que la liste en cache n'était qu'un
+  // repli : on peut faire mieux TOUT DE SUITE, sans attendre l'échéance du
+  // jour. Mais une clé fautive ne doit pas relancer un appel à chaque
+  // frappe — d'où la minute de purgatoire.
+  const echoueRecemment = Date.now() - (echecs.get(provider) ?? 0) < RETRY_MS;
+  const ameliorable = !!cle && !!NATIVE[provider] && entry?.source !== 'native' && !echoueRecemment;
+
+  if (!entry || ameliorable) {
+    const frais = await refresh(provider, cle);
+    if (cle && frais.source !== 'native') echecs.set(provider, Date.now());
+    return { models: frais.models, updatedAt: frais.at, source: frais.source };
   }
+  if (perime) void refresh(provider, cle);
 
-  return {
-    models: cache.providers[provider] ?? [providerDefaults[provider].model],
-    updatedAt: cache.fetchedAt,
-  };
+  return { models: entry.models, updatedAt: entry.at, source: entry.source };
 }
+
+/** Fournisseurs connus — utilisé par le rafraîchissement de fond éventuel. */
+export const CATALOGUE_PROVIDERS = PROVIDER_IDS;
