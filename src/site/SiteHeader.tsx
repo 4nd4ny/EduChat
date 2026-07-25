@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { MdAccountCircle, MdHelpOutline, MdHome, MdLanguage, MdOutlinePrivacyTip, MdTune } from "react-icons/md";
 import ChatSettings from "../chat/ChatSettings";
 import { useT } from "../i18n/useT";
+import { getAccount } from "../utils/account";
 
 // Barre de navigation commune à TOUTES les pages (60 px) : accueil à gauche,
 // services à droite (langue, confidentialité, guide, compte). C'est la seule
@@ -102,6 +103,39 @@ function ChatSettingsSlot() {
   );
 }
 
+/**
+ * Icône de compte, à gauche, juste après l'accueil : c'est la porte d'entrée
+ * des données personnelles, elle mérite la place la plus stable de la barre.
+ *
+ * Non identifié, elle mène à la vérification d'email — inchangé. Identifié,
+ * elle mène à « mes données », où l'on voit et récupère ce que le serveur
+ * conserve. La destination ne peut être connue qu'au montage (le jeton vit
+ * dans le navigateur) : l'icône est la même dans les deux cas, seule la
+ * destination change, sans clignotement.
+ */
+function AccountLink() {
+  const t = useT();
+  const [connecte, setConnecte] = useState(false);
+
+  // La barre ne se remonte pas d'une page à l'autre : sans écouter
+  // « accountChanged », l'icône continuerait de pointer sur /verifier juste
+  // après une identification réussie — elle passerait pour cassée.
+  useEffect(() => {
+    const relire = () => setConnecte(!!getAccount());
+    relire();
+    window.addEventListener("accountChanged", relire);
+    return () => window.removeEventListener("accountChanged", relire);
+  }, []);
+
+  return (
+    <Link href={connecte ? "/compte" : "/verifier"} className={ICON}
+      title={connecte ? t("header.myDataTitle") : t("home.accountTitle")}
+      aria-label={connecte ? t("header.myData") : t("home.account")}>
+      <MdAccountCircle />
+    </Link>
+  );
+}
+
 export default function SiteHeader() {
   const t = useT();
   const { pathname } = useRouter();
@@ -111,9 +145,12 @@ export default function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 h-[60px] shrink-0 border-b border-white/10 bg-secondary/95 backdrop-blur">
       <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-1 px-2 sm:px-4">
-        <Link href="/" className={ICON} title={t("header.home")} aria-label={t("header.home")}>
-          <MdHome />
-        </Link>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Link href="/" className={ICON} title={t("header.home")} aria-label={t("header.home")}>
+            <MdHome />
+          </Link>
+          <AccountLink />
+        </div>
         {isChat && <ChatSettingsSlot />}
         <nav className="flex items-center gap-0.5" aria-label={t("header.services")}>
           <LanguageMenu />
@@ -122,9 +159,6 @@ export default function SiteHeader() {
           </Link>
           <Link href="/tutoriel" className={ICON} title={t("nav.guide")} aria-label={t("nav.guide")}>
             <MdHelpOutline />
-          </Link>
-          <Link href="/verifier" className={ICON} title={t("home.accountTitle")} aria-label={t("home.account")}>
-            <MdAccountCircle />
           </Link>
         </nav>
       </div>

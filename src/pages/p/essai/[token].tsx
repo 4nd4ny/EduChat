@@ -128,6 +128,14 @@ export default function EssaiPage() {
       <h1 className="mt-4 text-3xl font-bold">{draft.name}</h1>
       <p className="text-sm opacity-70">par {draft.authorName || "Anonyme"} · {draft.language.toUpperCase()}</p>
 
+      {editable && (
+        <p className="mt-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          Soumettre est le point de non-retour : une fois validé, ce tuteur appartient au
+          <b> domaine public d'EduChat</b> et ne sera jamais supprimé. Il restera dépubliable
+          (retrait du catalogue, réversible) ; ses compteurs de consommation, eux, sont conservés.
+        </p>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           onClick={() => router.push(`/chat?essai=${encodeURIComponent(token)}`)}
@@ -140,6 +148,7 @@ export default function EssaiPage() {
         </button>
         {editable && (
           <button onClick={submit} disabled={busy}
+            title="Après validation, le tuteur appartient au domaine public d'EduChat : il ne sera jamais supprimé, seulement dépubliable."
             className="flex items-center gap-1 rounded border border-green-500/50 px-4 py-2 text-sm hover:bg-green-500/10 disabled:opacity-50">
             <MdSend /> Soumettre pour publication
           </button>

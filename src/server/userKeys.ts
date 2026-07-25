@@ -33,6 +33,29 @@ export function listUserKeyProviders(email: string): ProviderId[] {
   return rows.filter(r => open(r.key_enc) !== null).map(r => r.provider).filter(isProviderId);
 }
 
+/**
+ * Inventaire des clés mémorisées, pour la page « Mes données ».
+ *
+ * Contrairement à listUserKeyProviders, celui-ci ne CACHE RIEN : une clé
+ * devenue indéchiffrable (SECRET_TOKEN_KEY changée) reste une donnée
+ * conservée par le serveur — répondre « aucune clé » à une demande d'accès
+ * serait faux, et l'intéressé ne pourrait plus l'effacer.
+ * Le secret lui-même ne sort jamais, sous aucune forme : ni en clair, ni
+ * tronqué, ni en empreinte.
+ */
+export function listUserKeys(email: string): { provider: ProviderId; updatedAt: number; readable: boolean }[] {
+  const rows = getDb().prepare(
+    'SELECT provider, key_enc, updated_at AS updatedAt FROM user_keys WHERE email = ? ORDER BY provider')
+    .all(email) as { provider: string; key_enc: string; updatedAt: number }[];
+  return rows
+    .filter(r => isProviderId(r.provider))
+    .map(r => ({
+      provider: r.provider as ProviderId,
+      updatedAt: r.updatedAt,
+      readable: open(r.key_enc) !== null,
+    }));
+}
+
 /** Clé en clair pour un appel au fournisseur, ou null. */
 export function readUserKey(email: string, provider: ProviderId): string | null {
   const row = getDb().prepare('SELECT key_enc FROM user_keys WHERE email = ? AND provider = ?')

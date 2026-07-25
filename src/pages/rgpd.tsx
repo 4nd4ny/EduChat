@@ -36,7 +36,7 @@ const CONTENT: Record<string, Content> = {
           "1. Les prompts socratiques publiés, avec leurs compteurs anonymes (usages, tokens, notes) — aucun lien avec un individu.",
           "2. Les comptes des AUTEURS et administrateurs uniquement : nom public et adresse email, vérifiée par un code à usage unique. Aucun mot de passe n'existe.",
           "3. Pour la facturation de la clé interne : la consommation par adresse IP d'ÉTABLISSEMENT (adresse d'une école, pas d'une personne), avec fournisseur et volume de tokens. Les usages en clé personnelle ne sont jamais journalisés avec votre IP.",
-          "4. Si vous avez un compte : une copie de votre profil (conversations, favoris), sauvegardée automatiquement — c'est l'intérêt même du compte. L'option se décoche à la création du compte, et le profil serveur se supprime en un clic depuis /verifier.",
+          "4. Si vous avez un compte : une copie de votre profil (conversations, favoris), sauvegardée automatiquement — c'est l'intérêt même du compte. L'option se décoche à la création du compte, et le profil serveur s'efface en un clic — en entier ou conversation par conversation — depuis la page Mes données.",
           "5. Pour le compteur de fréquentation affiché en bas de l'accueil : une empreinte technique NON RÉVERSIBLE de votre navigateur (jamais votre adresse IP en clair) avec l'heure de votre dernière activité, effacée automatiquement après quinze minutes. Elle ne sert qu'à afficher un nombre de personnes en ligne et n'est reliée à rien d'autre.",
           "6. Si vous le demandez explicitement (case « Mémoriser ma clé » dans le chat, réservée aux comptes) : votre clé API, CHIFFRÉE (AES-256-GCM). Elle ne redescend jamais vers le navigateur — le serveur la déchiffre uniquement le temps d'appeler le fournisseur — et décocher la case l'efface immédiatement.",
         ],
@@ -55,7 +55,9 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Vos droits",
         body: [
-          "Export : votre profil complet se télécharge en un clic depuis l'historique. Suppression : un auteur peut supprimer ses prompts ; la suppression d'un compte (et du profil synchronisé) s'obtient par simple demande à l'administrateur : blanvillain@harmonia.education.",
+          "Accès et portabilité : la page Mes données (icône de compte, en haut à gauche) montre tout ce que le serveur conserve à votre sujet et l'exporte en un fichier. Effacement libre-service : vos conversations sauvegardées, une par une ou toutes, et vos clés API mémorisées.",
+          "Vos tuteurs publiés, eux, ne sont JAMAIS supprimés : une fois parus au catalogue ils appartiennent au domaine public d'EduChat, et leurs compteurs servent au calcul des factures des établissements. Vous les DÉPUBLIEZ — ils quittent le catalogue, et vous pouvez les republier. L'archivage définitif se demande à l'administration.",
+          "Suppression du compte lui-même : par simple demande à l'administrateur, blanvillain@harmonia.education (vos tuteurs publiés restent au catalogue, sous un auteur anonymisé).",
           "Le code du site est public et auditable. Aucun cookie n'est utilisé, aucune donnée n'est cédée à des tiers — les messages envoyés aux fournisseurs d'IA sont soumis à leurs politiques respectives.",
         ],
       },
@@ -85,7 +87,7 @@ const CONTENT: Record<string, Content> = {
           "1. Published Socratic prompts, with anonymous counters (uses, tokens, ratings) — no link to any individual.",
           "2. Accounts for AUTHORS and administrators only: public name and email address, verified by a single-use code. No passwords exist.",
           "3. For internal-key billing: consumption per SCHOOL IP address (a school's address, not a person's), with provider and token volume. Personal-key usage is never logged with your IP.",
-          "4. If you have an account: a copy of your profile (conversations, favourites), saved automatically — that is what an account is for. The option can be unticked when creating the account, and the server profile is deleted in one click from /verifier.",
+          "4. If you have an account: a copy of your profile (conversations, favourites), saved automatically — that is what an account is for. The option can be unticked when creating the account, and the server profile is erased in one click — entirely or conversation by conversation — from the My data page.",
           "5. For the visitor counter shown at the bottom of the home page: a NON-REVERSIBLE technical fingerprint of your browser (never your IP address in clear) with the time of your last activity, automatically erased after fifteen minutes. It only feeds a number of people online and is linked to nothing else.",
           "6. If you explicitly ask for it (« Remember my key » box in the chat, accounts only): your API key, ENCRYPTED (AES-256-GCM). It never travels back to the browser — the server decrypts it only to call the provider — and unchecking the box erases it immediately.",
         ],
@@ -104,7 +106,9 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Your rights",
         body: [
-          "Export: your full profile downloads in one click from the history panel. Deletion: authors can delete their prompts; account (and synced profile) deletion is available on request to the administrator: blanvillain@harmonia.education.",
+          "Access and portability: the My data page (account icon, top left) shows everything the server keeps about you and exports it as a single file. Self-service erasure: your saved conversations, one by one or all of them, and your remembered API keys.",
+          "Your published tutors are NEVER deleted: once in the catalogue they belong to the EduChat public domain, and their counters feed the schools' invoices. You UNPUBLISH them — they leave the catalogue, and you may republish them. Permanent archiving is requested from the administration.",
+          "Deleting the account itself: on request to the administrator, blanvillain@harmonia.education (your published tutors stay in the catalogue, under an anonymised author).",
           "The site's code is public and auditable. No cookies are used, no data is sold or shared — messages sent to AI providers are subject to their respective policies.",
         ],
       },
@@ -134,7 +138,7 @@ const CONTENT: Record<string, Content> = {
           "1. I prompt socratici pubblicati, con contatori anonimi (usi, token, valutazioni) — nessun legame con una persona.",
           "2. Gli account dei soli AUTORI e amministratori: nome pubblico e indirizzo email, verificato con un codice monouso. Non esistono password.",
           "3. Per la fatturazione della chiave interna: il consumo per indirizzo IP dell'ISTITUTO (l'indirizzo di una scuola, non di una persona), con fornitore e volume di token. Gli usi con chiave personale non vengono mai registrati con il tuo IP.",
-          "4. Se hai un account: una copia del tuo profilo (conversazioni, preferiti), salvata automaticamente — è proprio a questo che serve l'account. L'opzione si può togliere alla creazione dell'account e il profilo sul server si elimina con un clic da /verifier.",
+          "4. Se hai un account: una copia del tuo profilo (conversazioni, preferiti), salvata automaticamente — è proprio a questo che serve l'account. L'opzione si può togliere alla creazione dell'account e il profilo sul server si cancella con un clic — per intero o conversazione per conversazione — dalla pagina I miei dati.",
           "5. Per il contatore di frequentazione mostrato in fondo alla home: un'impronta tecnica NON REVERSIBILE del tuo browser (mai il tuo indirizzo IP in chiaro) con l'ora della tua ultima attività, cancellata automaticamente dopo quindici minuti. Serve solo a mostrare un numero di persone online e non è collegata a nient'altro.",
           "6. Se lo chiedi esplicitamente (casella « Memorizza la mia chiave » nella chat, solo per account): la tua chiave API, CIFRATA (AES-256-GCM). Non torna mai al browser — il server la decifra solo per chiamare il fornitore — e togliendo la spunta viene cancellata subito.",
         ],
@@ -153,7 +157,9 @@ const CONTENT: Record<string, Content> = {
       {
         title: "I tuoi diritti",
         body: [
-          "Esportazione: il profilo completo si scarica con un clic dallo storico. Cancellazione: un autore può eliminare i propri prompt; la cancellazione dell'account (e del profilo sincronizzato) si ottiene su semplice richiesta all'amministratore: blanvillain@harmonia.education.",
+          "Accesso e portabilità: la pagina I miei dati (icona dell'account, in alto a sinistra) mostra tutto ciò che il server conserva su di te e lo esporta in un unico file. Cancellazione in autonomia: le conversazioni salvate, una per una o tutte, e le chiavi API memorizzate.",
+          "I tuoi tutor pubblicati non vengono MAI eliminati: una volta nel catalogo appartengono al dominio pubblico di EduChat e i loro contatori servono alle fatture degli istituti. Li DEPUBBLICHI — escono dal catalogo e puoi ripubblicarli. L'archiviazione definitiva si chiede all'amministrazione.",
+          "Cancellazione dell'account: su semplice richiesta all'amministratore, blanvillain@harmonia.education (i tuoi tutor pubblicati restano nel catalogo, con autore reso anonimo).",
           "Il codice del sito è pubblico e verificabile. Nessun cookie, nessuna cessione di dati a terzi — i messaggi inviati ai fornitori di IA sono soggetti alle loro rispettive politiche.",
         ],
       },
@@ -183,7 +189,7 @@ const CONTENT: Record<string, Content> = {
           "1. Veröffentlichte sokratische Prompts mit anonymen Zählern (Nutzungen, Tokens, Bewertungen) — ohne Bezug zu einer Person.",
           "2. Konten NUR für Autorinnen/Autoren und Administratoren: öffentlicher Name und E-Mail-Adresse, per Einmalcode verifiziert. Passwörter existieren nicht.",
           "3. Für die Abrechnung des internen Schlüssels: der Verbrauch pro SCHUL-IP-Adresse (die Adresse einer Schule, nicht einer Person), mit Anbieter und Token-Volumen. Nutzungen mit persönlichem Schlüssel werden nie mit Ihrer IP protokolliert.",
-          "4. Wenn Sie ein Konto haben: eine Kopie Ihres Profils (Gespräche, Favoriten), automatisch gesichert — genau dafür ist das Konto da. Die Option lässt sich bei der Kontoerstellung abwählen, und das Serverprofil wird mit einem Klick über /verifier gelöscht.",
+          "4. Wenn Sie ein Konto haben: eine Kopie Ihres Profils (Gespräche, Favoriten), automatisch gesichert — genau dafür ist das Konto da. Die Option lässt sich bei der Kontoerstellung abwählen, und das Serverprofil wird mit einem Klick — ganz oder Gespräch für Gespräch — über die Seite Meine Daten gelöscht.",
           "5. Für den Besucherzähler am unteren Rand der Startseite: ein NICHT UMKEHRBARER technischer Fingerabdruck Ihres Browsers (niemals Ihre IP-Adresse im Klartext) mit dem Zeitpunkt Ihrer letzten Aktivität, nach fünfzehn Minuten automatisch gelöscht. Er speist nur eine Zahl von Personen online und ist mit nichts anderem verknüpft.",
           "6. Wenn Sie es ausdrücklich verlangen (Kästchen „Schlüssel merken“ im Chat, nur für Konten): Ihr API-Schlüssel, VERSCHLÜSSELT (AES-256-GCM). Er gelangt nie zurück in den Browser — der Server entschlüsselt ihn nur, um den Anbieter aufzurufen — und das Abwählen löscht ihn sofort.",
         ],
@@ -202,7 +208,9 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Ihre Rechte",
         body: [
-          "Export: Ihr vollständiges Profil lässt sich mit einem Klick aus dem Verlauf herunterladen. Löschung: Autorinnen und Autoren können ihre Prompts löschen; die Löschung eines Kontos (und des synchronisierten Profils) erfolgt auf einfache Anfrage an den Administrator: blanvillain@harmonia.education.",
+          "Auskunft und Übertragbarkeit: Die Seite Meine Daten (Kontosymbol, oben links) zeigt alles, was der Server über Sie aufbewahrt, und exportiert es in eine einzige Datei. Löschen in Eigenregie: Ihre gesicherten Gespräche, einzeln oder alle, und Ihre gespeicherten API-Schlüssel.",
+          "Ihre veröffentlichten Tutoren werden NIE gelöscht: Einmal im Katalog gehören sie zur Allmende von EduChat, und ihre Zähler dienen den Rechnungen der Schulen. Sie ZIEHEN sie ZURÜCK — sie verlassen den Katalog, und Sie können sie wieder veröffentlichen. Die endgültige Archivierung wird bei der Verwaltung beantragt.",
+          "Löschung des Kontos selbst: auf einfache Anfrage an den Administrator, blanvillain@harmonia.education (Ihre veröffentlichten Tutoren bleiben im Katalog, mit anonymisierter Autorschaft).",
           "Der Code der Website ist öffentlich und überprüfbar. Es werden keine Cookies verwendet, keine Daten an Dritte weitergegeben — an KI-Anbieter gesendete Nachrichten unterliegen deren jeweiligen Richtlinien.",
         ],
       },

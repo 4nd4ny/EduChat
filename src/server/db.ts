@@ -113,11 +113,26 @@ CREATE TABLE IF NOT EXISTS usage_log (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_log(ts);
 CREATE INDEX IF NOT EXISTS idx_usage_ip ON usage_log(ip);
+-- « Ma consommation » interroge le journal par enseignant : sans index, la
+-- page ferait un balayage complet d'une table qui n'est jamais purgée.
+CREATE INDEX IF NOT EXISTS idx_usage_teacher ON usage_log(teacher_email);
 
 CREATE TABLE IF NOT EXISTS profiles (
   email      TEXT PRIMARY KEY,
   data       TEXT NOT NULL DEFAULT '{}',
   updated_at INTEGER NOT NULL
+);
+
+-- Conversations qu'un compte a explicitement effacées du serveur.
+-- Sans cette trace, la FUSION du PUT /api/profile les ferait revenir dès
+-- qu'un navigateur qui les a encore renvoie son profil : la suppression
+-- serait purement cosmétique. On ne conserve que l'identifiant opaque
+-- (uuid tiré au hasard côté navigateur), jamais le moindre contenu.
+CREATE TABLE IF NOT EXISTS profile_deletions (
+  email           TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  deleted_at      INTEGER NOT NULL,
+  PRIMARY KEY (email, conversation_id)
 );
 
 CREATE TABLE IF NOT EXISTS session_settings (

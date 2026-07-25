@@ -110,6 +110,19 @@ export default function PublierPage() {
         <Link href="/tutoriel#promptagogues" className="underline">Guide détaillé</Link>.
       </p>
 
+      {/* Le point de non-retour. Il valait mieux le dire ici que de le
+          découvrir en cherchant un bouton « supprimer » qui n'existe pas. */}
+      <p className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <b>La publication est définitive.</b> Un tuteur paru au catalogue appartient au
+        <b> domaine public d'EduChat</b> : il n'est jamais supprimé, ni par vous, ni par
+        l'administration — ses compteurs servent au calcul des factures des établissements,
+        et d'autres ont pu s'en inspirer. Ce que vous gardez : le <b>dépublier</b> à tout
+        moment (il quitte le catalogue, vous pouvez le republier ensuite) depuis{" "}
+        <Link href="/compte" className="underline">Mes données</Link>. Un tuteur publié
+        anonymement, lui, n'est rattaché à aucun compte : seule l'administration pourra le
+        dépublier.
+      </p>
+
       <div className="mt-4 rounded border border-white/10 bg-secondary p-3 text-sm">
         {account ? (
           <>Publication au nom de <b>{account.name || account.email}</b>.{" "}

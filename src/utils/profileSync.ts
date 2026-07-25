@@ -7,6 +7,7 @@
 
 import { getToken } from './account';
 import { applyProfile, buildProfile, isProfile } from './profile';
+import { deleteConversationFromHistory } from '../context/History';
 
 export type SyncResult =
   | { ok: true; mergedConversations: number }
@@ -26,6 +27,12 @@ export async function syncProfile(): Promise<SyncResult> {
       const data = await getResponse.json();
       if (data.profile && isProfile(data.profile)) {
         merged = applyProfile(data.profile).conversations;
+      }
+      // Ce que le compte a effacé depuis « Mes données » disparaît AUSSI de
+      // ce navigateur-ci : sinon il le renverrait au serveur, et l'effacement
+      // ne serait qu'un aller-retour.
+      if (Array.isArray(data.deletedConversations)) {
+        for (const id of data.deletedConversations) deleteConversationFromHistory(String(id));
       }
     }
 
@@ -58,6 +65,29 @@ export async function pushProfile(): Promise<boolean> {
       body: JSON.stringify({ profile: buildProfile() }),
     });
     return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Efface du serveur une sélection de conversations — et d'abord de CE
+ * navigateur, qui les renverrait sinon avant même le prochain rechargement.
+ * Le serveur en garde une pierre tombale : aucun autre appareil ne pourra
+ * les faire revenir.
+ */
+export async function deleteServerConversations(ids: string[]): Promise<boolean> {
+  const token = getToken();
+  if (!token || !ids.length) return false;
+  try {
+    const response = await fetch('/api/profile', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ conversations: ids }),
+    });
+    if (!response.ok) return false;
+    for (const id of ids) deleteConversationFromHistory(id);
+    return true;
   } catch {
     return false;
   }
