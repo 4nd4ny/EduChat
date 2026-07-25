@@ -25,7 +25,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const rows = getDb().prepare(`
     SELECT
-      COALESCE(e.name, '(IP hors base)')      AS etablissement,
+      -- Le repli gratuit public est journalisé sur la « clé serveur » lui
+      -- aussi, mais sans IP ni établissement : c'est la démo du site, payée
+      -- par le gestionnaire. La confondre avec une école inconnue gonflerait
+      -- la facture d'un client qui n'existe pas.
+      CASE WHEN u.etablissement_id IS NULL AND u.ip = ''
+           THEN '(démo publique — non facturable)'
+           ELSE COALESCE(e.name, '(IP hors base)') END AS etablissement,
       COALESCE(e.respire, 0)                  AS respire,
       u.etablissement_id                      AS etablissementId,
       u.ip                                    AS ip,
