@@ -120,7 +120,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           {providerDefaults[provider]?.wrng ? t("chat.input.wrng.tag") : t("chat.input.gdpr.tag")}
         </a>
       )}
-      <Wrap bar={bar} label={t("chat.input.provider")} width="w-32">
+      <Wrap bar={bar} label={t("chat.input.provider")} width="min-w-[300px]">
         <div className="relative">
           <select
             data-tour="provider"
@@ -151,7 +151,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           précisément l'objet. */}
 
 
-      <Wrap bar={bar} label={t("chat.input.apiKey")} width="w-36">
+      <Wrap bar={bar} label={t("chat.input.apiKey")} width="min-w-[300px]">
         <input
           data-tour="apikey"
           type="password"
