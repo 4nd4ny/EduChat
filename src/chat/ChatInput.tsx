@@ -9,7 +9,7 @@ import VoiceControls from "./VoiceControls";
 // Zone de saisie seule : les réglages de conversation (fournisseur, modèle,
 // raisonnement, clé) vivent maintenant dans la barre du haut.
 export default function ChatInput() {
-  const { loading, addMessage, provider, apiKey } = useAnthropic();
+  const { loading, addMessage, provider, hasUsableKey } = useAnthropic();
   const t = useT();
   const textAreaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -33,10 +33,13 @@ export default function ChatInput() {
 
   // Upload réservé à la clé PERSONNELLE + fournisseurs compatibles (le serveur
   // refait la même vérification — ceci n'est que le confort d'interface).
+  // « Clé utilisable » = saisie dans la page OU mémorisée pour ce compte :
+  // sans cela, ces boutons disparaîtraient pour ceux qui ont justement
+  // demandé à ne plus retaper leur clé.
   const caps = providerDefaults[provider] ?? {};
-  const canAttach = !!apiKey.trim() && (!!caps.images || !!caps.pdf);
+  const canAttach = hasUsableKey && (!!caps.images || !!caps.pdf);
   // Chat vocal : clé perso + fournisseur doté d'une API de transcription.
-  const canVoice = !!apiKey.trim() && !!caps.voice;
+  const canVoice = hasUsableKey && !!caps.voice;
   const acceptTypes = [
     ...(caps.images ? ["image/png", "image/jpeg", "image/webp", "image/gif"] : []),
     ...(caps.pdf ? ["application/pdf"] : []),
@@ -87,7 +90,7 @@ export default function ChatInput() {
   }, [input]);
 
   return (
-    <div className="fixed bottom-0 flex h-[10rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent lg:w-[calc(100%-320px)]">
+    <div className="fixed bottom-0 flex h-[10rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent xl:w-[calc(100%-320px)]">
       <form className="mx-auto flex h-full w-full max-w-6xl flex-col justify-end gap-2 p-4 pb-6" onSubmit={handleSubmit}>
         <div data-tour="composer" className="relative flex w-full rounded border border-stone-500/20 bg-tertiary shadow-xl">
           <textarea name="query" placeholder={t("chat.input.ask")} ref={textAreaRef} className="flex max-h-[120px] w-full resize-none border-none bg-tertiary p-4 text-primary outline-none" onChange={event => setInput(event.target.value)} value={input} rows={1} />

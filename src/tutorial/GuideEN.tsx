@@ -36,7 +36,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Trying a tutor",
-    text: "\"Try\" opens the chat with that tutor in charge (banner at the top). On the public site, enter your personal API key (\"Personal key\" field): it stays in the page, never stored — and it unlocks attachments (images, PDF) and voice chat. Replies stream in live, as they are generated.",
+    text: "\"Try\" opens the chat with that tutor in charge (banner at the top). On the public site, enter your personal API key (\"Personal key\" field): it stays in the page — remembered only if you ask — and it unlocks attachments (images, PDF) and voice chat. Replies stream in live, as they are generated.",
     href: "/en/chat?tuteur=Socrate", hrefLabel: "Try Socrate",
   },
   {
@@ -107,7 +107,7 @@ export default function GuideEN() {
       <Section id="eleves" title="Students and visitors — learning">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Pick a tutor</b> in the <Link className="underline" href="/">catalogue</Link>: search, sorting, detailed page with the full prompt.</li>
-          <li><b>Try</b>: the chat opens with the tutor in charge; on the public site, your <b>personal API key</b> (never stored) powers the conversation, with the provider and reasoning level of your choice. Replies arrive <b>live</b>, as they are generated.</li>
+          <li><b>Try</b>: the chat opens with the tutor in charge; on the public site, your <b>personal API key</b> (never stored, unless you ask to remember it) powers the conversation, with the provider and reasoning level of your choice. Replies arrive <b>live</b>, as they are generated.</li>
           <li><b>Attachments</b> (personal key): attach an <b>image or a PDF</b> to your question, depending on the chosen provider.</li>
           <li><b>Voice chat</b> (personal key, compatible providers): dictate your question into the microphone, and voice mode reads replies aloud — handy on a smartphone.</li>
           <li><b>Favourites</b> (star) and <b>ratings</b> (1-5): kept in your browser; favourites rise to the top of the catalogue.</li>
@@ -166,11 +166,12 @@ export default function GuideEN() {
               <tr><th className="py-1 pr-2">Data</th><th className="pr-2">Where</th><th>Detail</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, personal API key, favourites, given ratings, attachments</td><td className="pr-2"><b>Your browser</b></td><td>Never on the server (the personal key does not even leave the page's memory; attachments are only relayed to the provider, never stored). Free export/import; server sync only if you enable it.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, personal API key, favourites, given ratings, attachments</td><td className="pr-2"><b>Your browser</b></td><td>By default never on the server (the personal key does not leave the page's memory; attachments are only relayed to the provider). Two exceptions, described below: profile backup for accounts, and the key remembered on request.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Socratic tutors</td><td className="pr-2">Database</td><td>Full text, successive versions, lineage (\"inspired by\"), status, anonymous counters (uses, tokens generated, sum and count of ratings).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogue / teacher account</td><td className="pr-2">Database</td><td>Public name, email (never displayed), roles, sync option. <b>No password exists.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schools & consumption</td><td className="pr-2">Database</td><td>Detailed in the <Link className="underline" href="/etablissements#donnees">schools guide</Link> (IP, hours, quotas, per-IP consumption log — no student personal data).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synced profile (optional)</td><td className="pr-2">Database</td><td>A copy of your browser profile, deletable at any time from /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Remembered API key (on request, accounts)</td><td className="pr-2">Database</td><td>Only if you tick « Remember my key » in the chat: your key is kept <b>encrypted</b> (AES-256-GCM), never travels back to the browser, and disappears as soon as you untick.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Home page &quot;online&quot; counter</td><td className="pr-2">Database</td><td>A non-reversible technical fingerprint of the browser (never the IP in clear) and the time of the last activity, erased after fifteen minutes.</td></tr>
             </tbody>
           </table>

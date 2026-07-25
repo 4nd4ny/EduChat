@@ -38,7 +38,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Essayer un tuteur",
-    text: "« Essayer » ouvre le chat avec ce tuteur aux commandes (bandeau en haut). Sur le site public, saisissez votre clé API personnelle (champ « Clé personnelle ») : elle reste dans la page, jamais stockée — et elle débloque les pièces jointes (images, PDF) et le chat vocal. Les réponses s'affichent en direct, au fil de la génération.",
+    text: "« Essayer » ouvre le chat avec ce tuteur aux commandes (bandeau en haut). Sur le site public, saisissez votre clé API personnelle (champ « Clé personnelle ») : elle reste dans la page — et n'est mémorisée que si vous le demandez — et elle débloque les pièces jointes (images, PDF) et le chat vocal. Les réponses s'affichent en direct, au fil de la génération.",
     href: "/chat?tuteur=Socrate", hrefLabel: "Essayer Socrate",
   },
   {
@@ -112,7 +112,7 @@ export default function GuideFR() {
       <Section id="eleves" title="Élèves et visiteurs — apprendre">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Choisir un tuteur</b> au <Link className="underline" href="/">catalogue</Link> : recherche, tris, fiche détaillée avec le prompt intégral.</li>
-          <li><b>Essayer</b> : le chat s'ouvre avec le tuteur aux commandes ; sur le site public, votre <b>clé API personnelle</b> (jamais stockée) fait tourner la conversation, avec le fournisseur et le niveau de raisonnement de votre choix. Les réponses arrivent <b>en direct</b>, au fil de la génération.</li>
+          <li><b>Essayer</b> : le chat s'ouvre avec le tuteur aux commandes ; sur le site public, votre <b>clé API personnelle</b> (jamais stockée, sauf si vous demandez à la mémoriser) fait tourner la conversation, avec le fournisseur et le niveau de raisonnement de votre choix. Les réponses arrivent <b>en direct</b>, au fil de la génération.</li>
           <li><b>Pièces jointes</b> (clé personnelle) : joignez une <b>image ou un PDF</b> à votre question, selon le fournisseur choisi.</li>
           <li><b>Chat vocal</b> (clé personnelle, fournisseurs compatibles) : dictez votre question au micro, et le mode vocal lit les réponses — pratique sur smartphone.</li>
           <li><b>Favoris</b> (étoile) et <b>notes</b> (1-5) : conservés dans votre navigateur, les favoris remontent en tête du catalogue.</li>
@@ -171,11 +171,12 @@ export default function GuideFR() {
               <tr><th className="py-1 pr-2">Donnée</th><th className="pr-2">Où</th><th>Détail</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, clé API personnelle, favoris, notes données, pièces jointes</td><td className="pr-2"><b>Votre navigateur</b></td><td>Jamais sur le serveur (la clé personnelle ne quitte même pas la mémoire de la page ; les pièces jointes ne sont que relayées au fournisseur, jamais stockées). Export/import libres ; sync serveur uniquement si vous l'activez.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, clé API personnelle, favoris, notes données, pièces jointes</td><td className="pr-2"><b>Votre navigateur</b></td><td>Par défaut jamais sur le serveur (la clé personnelle ne quitte pas la mémoire de la page ; les pièces jointes ne sont que relayées au fournisseur). Deux exceptions, décrites ci-dessous : la sauvegarde du profil pour les comptes, et la clé mémorisée sur demande.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Tuteurs socratiques</td><td className="pr-2">Base de données</td><td>Texte intégral, versions successives, filiation (« inspiré de »), statut, compteurs anonymes (usages, tokens générés, somme et nombre des notes).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Compte promptagogue / enseignant</td><td className="pr-2">Base de données</td><td>Nom public, email (jamais affiché), rôles, option de synchronisation. <b>Aucun mot de passe n'existe.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Établissements & consommation</td><td className="pr-2">Base de données</td><td>Détaillé dans le <Link className="underline" href="/etablissements#donnees">guide des établissements</Link> (IP, horaires, quotas, journal de consommation par IP — aucune donnée nominative d'élève).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profil synchronisé (option)</td><td className="pr-2">Base de données</td><td>Copie de votre profil de navigateur, supprimable à tout moment depuis /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Clé API mémorisée (sur demande, comptes)</td><td className="pr-2">Base de données</td><td>Uniquement si vous cochez « Mémoriser ma clé » dans le chat : votre clé y est conservée <b>chiffrée</b> (AES-256-GCM), ne redescend jamais vers le navigateur, et disparaît dès que vous décochez.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Compteur « en ligne » de l'accueil</td><td className="pr-2">Base de données</td><td>Une empreinte technique non réversible du navigateur (jamais l'IP en clair) et l'heure de la dernière activité, effacées après quinze minutes.</td></tr>
             </tbody>
           </table>

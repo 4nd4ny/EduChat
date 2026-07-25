@@ -79,7 +79,7 @@ export default function ChatMessages() {
   }, []);
 
   return (
-    <div className="flex h-full w-full flex-col items-stretch lg:pl-[320px]">
+    <div className="flex h-full w-full flex-col items-stretch xl:pl-[320px]">
       <TutorBanner />
       <div
         data-tour="messages"

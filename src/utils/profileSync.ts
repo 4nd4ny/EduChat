@@ -42,6 +42,27 @@ export async function syncProfile(): Promise<SyncResult> {
   }
 }
 
+/**
+ * Sauvegarde AUTOMATIQUE : pousse l'état local vers le serveur, sans jamais
+ * ramener le profil distant. La fusion (additive) reste réservée à la
+ * synchronisation explicite — sinon une conversation supprimée ici
+ * réapparaîtrait à la sauvegarde suivante.
+ */
+export async function pushProfile(): Promise<boolean> {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const response = await fetch('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ profile: buildProfile() }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteServerProfile(): Promise<boolean> {
   const token = getToken();
   if (!token) return false;

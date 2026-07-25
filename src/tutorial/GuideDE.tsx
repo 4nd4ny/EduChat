@@ -36,7 +36,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Einen Tutor ausprobieren",
-    text: "„Ausprobieren“ öffnet den Chat mit diesem Tutor am Steuer (Banner oben). Auf der öffentlichen Website geben Sie Ihren eigenen API-Schlüssel ein (Feld „Eigener Schlüssel“): Er bleibt auf der Seite, wird nie gespeichert — und er schaltet Anhänge (Bilder, PDF) und Sprachchat frei. Die Antworten erscheinen live, während sie entstehen.",
+    text: "„Ausprobieren“ öffnet den Chat mit diesem Tutor am Steuer (Banner oben). Auf der öffentlichen Website geben Sie Ihren eigenen API-Schlüssel ein (Feld „Eigener Schlüssel“): Er bleibt auf der Seite — nur auf Wunsch gemerkt — und er schaltet Anhänge (Bilder, PDF) und Sprachchat frei. Die Antworten erscheinen live, während sie entstehen.",
     href: "/de/chat?tuteur=Socrate", hrefLabel: "Socrate ausprobieren",
   },
   {
@@ -107,7 +107,7 @@ export default function GuideDE() {
       <Section id="eleves" title="Schüler und Besucher — lernen">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Tutor auswählen</b> im <Link className="underline" href="/">Katalog</Link>: Suche, Sortierungen, Detailseite mit vollständigem Prompt.</li>
-          <li><b>Ausprobieren</b>: Der Chat öffnet sich mit dem Tutor am Steuer; auf der öffentlichen Website treibt Ihr <b>eigener API-Schlüssel</b> (nie gespeichert) das Gespräch an, mit Anbieter und Denktiefe Ihrer Wahl. Die Antworten kommen <b>live</b>, während sie entstehen.</li>
+          <li><b>Ausprobieren</b>: Der Chat öffnet sich mit dem Tutor am Steuer; auf der öffentlichen Website treibt Ihr <b>eigener API-Schlüssel</b> (nie gespeichert, außer auf Ihren Wunsch) das Gespräch an, mit Anbieter und Denktiefe Ihrer Wahl. Die Antworten kommen <b>live</b>, während sie entstehen.</li>
           <li><b>Anhänge</b> (eigener Schlüssel): Hängen Sie ein <b>Bild oder PDF</b> an Ihre Frage an, je nach gewähltem Anbieter.</li>
           <li><b>Sprachchat</b> (eigener Schlüssel, kompatible Anbieter): Diktieren Sie Ihre Frage ins Mikrofon — der Sprachmodus liest Antworten laut vor. Praktisch auf dem Smartphone.</li>
           <li><b>Favoriten</b> (Stern) und <b>Bewertungen</b> (1-5): im Browser gespeichert; Favoriten rücken im Katalog nach oben.</li>
@@ -166,11 +166,12 @@ export default function GuideDE() {
               <tr><th className="py-1 pr-2">Datum</th><th className="pr-2">Wo</th><th>Detail</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gespräche, eigener API-Schlüssel, Favoriten, vergebene Bewertungen, Anhänge</td><td className="pr-2"><b>Ihr Browser</b></td><td>Nie auf dem Server (der eigene Schlüssel verlässt nicht einmal den Seitenspeicher; Anhänge werden nur an den Anbieter weitergereicht, nie gespeichert). Export/Import frei; Server-Sync nur, wenn Sie ihn aktivieren.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gespräche, eigener API-Schlüssel, Favoriten, vergebene Bewertungen, Anhänge</td><td className="pr-2"><b>Ihr Browser</b></td><td>Standardmäßig nie auf dem Server (der eigene Schlüssel verlässt den Seitenspeicher nicht; Anhänge werden nur an den Anbieter weitergereicht). Zwei Ausnahmen, unten beschrieben: die Profilsicherung für Konten und der auf Wunsch gemerkte Schlüssel.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Sokratische Tutoren</td><td className="pr-2">Datenbank</td><td>Volltext, aufeinanderfolgende Versionen, Herkunft („inspiriert von“), Status, anonyme Zähler (Nutzungen, generierte Tokens, Summe und Anzahl der Bewertungen).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogen- / Lehrpersonen-Konto</td><td className="pr-2">Datenbank</td><td>Öffentlicher Name, E-Mail (nie angezeigt), Rollen, Sync-Option. <b>Es existiert kein Passwort.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schulen & Verbrauch</td><td className="pr-2">Datenbank</td><td>Im Detail im <Link className="underline" href="/etablissements#donnees">Schul-Leitfaden</Link> (IP, Zeiten, Kontingente, Verbrauchsprotokoll pro IP — keine personenbezogenen Schülerdaten).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synchronisiertes Profil (Option)</td><td className="pr-2">Datenbank</td><td>Kopie Ihres Browser-Profils, jederzeit über /verifier löschbar.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gemerkter API-Schlüssel (auf Wunsch, Konten)</td><td className="pr-2">Datenbank</td><td>Nur wenn Sie im Chat „Schlüssel merken“ ankreuzen: Ihr Schlüssel wird <b>verschlüsselt</b> (AES-256-GCM) aufbewahrt, gelangt nie zurück in den Browser und verschwindet, sobald Sie abwählen.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">„Online“-Zähler der Startseite</td><td className="pr-2">Datenbank</td><td>Ein nicht umkehrbarer technischer Fingerabdruck des Browsers (nie die IP im Klartext) und der Zeitpunkt der letzten Aktivität, nach fünfzehn Minuten gelöscht.</td></tr>
             </tbody>
           </table>

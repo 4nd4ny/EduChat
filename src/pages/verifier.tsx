@@ -17,7 +17,10 @@ export default function VerifierPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [syncOptin, setSyncOptin] = useState(false);
+  // Mémorisation des conversations : cochée PAR DÉFAUT — c'est l'intérêt
+  // premier d'avoir un compte (retrouver ses discussions ailleurs). Reste
+  // décochable, et le profil serveur est supprimable à tout moment.
+  const [syncOptin, setSyncOptin] = useState(true);
   const [isTeacher, setIsTeacher] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

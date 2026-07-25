@@ -2,7 +2,10 @@
 // Ce fichier est importé côté client (AnthropicProvider) ET côté serveur
 // (api/completion) : toute divergence de configuration devient impossible.
 
-export type ProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral";
+export type ProviderId =
+  | "anthropic" | "openai" | "gemini" | "openrouter" | "grok" | "mistral"
+  // Fournisseurs chinois, tous compatibles « OpenAI chat/completions ».
+  | "deepseek" | "qwen" | "kimi" | "glm" | "minimax";
 export type ReasoningLevel = "low" | "medium" | "high";
 
 // `gdpr` : ce fournisseur propose-t-il un cadre RGPD (DPA, pas d'entraînement sur
@@ -25,8 +28,14 @@ export type ReasoningLevel = "low" | "medium" | "high";
 // avec la clé personnelle (OpenAI : gpt-4o-mini-transcribe/whisper ; Mistral :
 // Voxtral). La lecture des réponses, elle, passe par la synthèse vocale du
 // navigateur — aucun coût, aucune donnée envoyée.
+// `wrng` : DRAPEAU ROUGE. Le sous-traitant est établi hors UE/EEE sans cadre
+// de transfert reconnu (fournisseurs chinois) : les données peuvent être
+// conservées et réutilisées sous une législation qui ne connaît ni le RGPD ni
+// la nLPD, avec un accès possible des autorités locales. À réserver à des
+// contenus NON personnels — jamais de travaux d'élèves identifiables.
 export const providerDefaults: Record<ProviderId, {
-  label: string; model: string; gdpr?: boolean; images?: boolean; pdf?: boolean; voice?: boolean;
+  label: string; model: string; gdpr?: boolean; wrng?: boolean;
+  images?: boolean; pdf?: boolean; voice?: boolean;
 }> = {
   anthropic: { label: "Claude", model: "claude-sonnet-4-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
@@ -34,6 +43,16 @@ export const providerDefaults: Record<ProviderId, {
   openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
   grok: { label: "Grok", model: "grok-4.5", images: true },
   mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true, images: true, voice: true },
+  // Modèles chinois : API compatibles OpenAI, clé PERSONNELLE uniquement,
+  // TEXTE seulement dans EduChat. Des variantes « vision » existent chez
+  // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :
+  // annoncer le trombone avec le modèle par défaut ne ferait que produire
+  // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
+  deepseek: { label: "DeepSeek", model: "deepseek-chat", wrng: true },
+  qwen: { label: "Qwen", model: "qwen-plus", wrng: true },
+  kimi: { label: "Kimi", model: "moonshot-v1-8k", wrng: true },
+  glm: { label: "GLM", model: "glm-4-plus", wrng: true },
+  minimax: { label: "MiniMax", model: "MiniMax-Text-01", wrng: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.

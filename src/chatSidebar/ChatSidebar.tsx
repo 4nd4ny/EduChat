@@ -85,7 +85,7 @@ export default function ChatSidebar({}: Props) {
   });
 
   return (
-    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-primary lg:fixed lg:left-0 lg:top-[60px] lg:h-[calc(100vh-60px)] lg:w-[320px]">
+    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-primary xl:fixed xl:left-0 xl:top-[60px] xl:h-[calc(100vh-60px)] xl:w-[320px]">
       <div className="flex h-full min-h-0 flex-col items-stretch p-2">
 
         <div className="flex shrink-0 flex-col gap-y-2 border-y border-white/10 py-2">  

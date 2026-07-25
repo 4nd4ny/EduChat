@@ -161,6 +161,19 @@ CREATE TABLE IF NOT EXISTS presence (
   last_seen INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_presence_seen ON presence(last_seen);
+
+-- Clés API mémorisées par leur propriétaire, SUR DEMANDE EXPLICITE (case à
+-- cocher dans le chat) et pour son seul compte. Toujours CHIFFRÉES
+-- (AES-256-GCM, clé dérivée de SECRET_TOKEN_KEY) : la base seule ne les
+-- révèle pas. Elles ne repartent JAMAIS vers le navigateur — le serveur les
+-- déchiffre au moment d'appeler le fournisseur, rien de plus.
+CREATE TABLE IF NOT EXISTS user_keys (
+  email      TEXT NOT NULL,
+  provider   TEXT NOT NULL,
+  key_enc    TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (email, provider)
+);
 `;
 
 // Prompts socratiques d'amorçage : un catalogue vide ne recrute personne.
@@ -270,6 +283,9 @@ export function getDb(): Database.Database {
     "ALTER TABLE prompts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
     // Date de création du compte (0 pour les comptes antérieurs à la colonne).
     "ALTER TABLE users ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+    // Consentement à la mémorisation des clés API (case à cocher du chat) :
+    // mémorisé côté compte pour suivre l'utilisateur d'un navigateur à l'autre.
+    "ALTER TABLE users ADD COLUMN keys_optin INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

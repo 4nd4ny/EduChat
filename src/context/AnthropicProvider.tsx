@@ -8,6 +8,8 @@ import { translate } from "../i18n/useT";
 import { getClientId } from "../utils/clientId";
 import { fr as frDict } from "../i18n/dictionaries";
 import { requestCompletion } from "../utils/streamCompletion";
+import { authHeaders, getAccount } from "../utils/account";
+import { pushProfile } from "../utils/profileSync";
 
 export { providerDefaults };
 export type { ProviderId, ReasoningLevel };
@@ -62,6 +64,10 @@ function addTokenUsage(tokens: number) {
 }
 
 type Context = {
+  /** Clés mémorisées côté serveur pour ce compte (jamais leur valeur). */
+  savedKeyProviders: ProviderId[]; keysOptin: boolean; refreshSavedKeys: () => void;
+  /** Une clé est-elle utilisable pour le fournisseur courant — saisie OU mémorisée ? */
+  hasUsableKey: boolean;
   loading: boolean; messages: ChatMessage[]; setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   addMessage: (content: string, submit?: boolean, role?: "user" | "assistant", attachments?: PendingAttachment[]) => void;
   provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
@@ -77,6 +83,7 @@ type Context = {
 
 const noop = () => {};
 const ChatContext = React.createContext<Context>({
+  savedKeyProviders: [], keysOptin: false, refreshSavedKeys: noop, hasUsableKey: false,
   loading: false, messages: [], setMessages: noop as any, addMessage: noop as any,
   provider: "anthropic", setProvider: noop as any, model: providerDefaults.anthropic.model, setModel: noop as any,
   apiKey: "", setApiKey: noop as any, reasoning: "medium", setReasoning: noop as any,
@@ -131,6 +138,43 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     const id = storeConversation(conversationId, conversation);
     setConversationId(id); setConversations(previous => ({ ...previous, [id]: conversation }));
     if (router.pathname === "/chat" || router.pathname === "/school") router.push(`/chat/${id}`);
+  }, [messages]);
+
+  // Clés mémorisées du compte : partagées par TOUTE l'interface de chat. Sans
+  // cet état commun, la zone de saisie croirait qu'aucune clé n'est
+  // disponible dès que le champ est vide — et masquerait le trombone et le
+  // micro précisément aux comptes qui ont mémorisé leur clé.
+  const [savedKeyProviders, setSavedKeyProviders] = useState<ProviderId[]>([]);
+  const [keysOptin, setKeysOptin] = useState(false);
+  const refreshSavedKeys = useCallback(() => {
+    if (typeof window === "undefined" || !getAccount()) {
+      setSavedKeyProviders([]); setKeysOptin(false); return;
+    }
+    fetch("/api/keys", { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(data => { setSavedKeyProviders(data.providers ?? []); setKeysOptin(!!data.optin); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshSavedKeys();
+    window.addEventListener("accountChanged", refreshSavedKeys);
+    return () => window.removeEventListener("accountChanged", refreshSavedKeys);
+  }, [refreshSavedKeys]);
+  const hasUsableKey = !!apiKey.trim() || savedKeyProviders.includes(provider);
+
+  // Sauvegarde AUTOMATIQUE des conversations pour les comptes identifiés :
+  // dès qu'on a un compte, ses discussions sont mémorisées en base sans rien
+  // demander de plus (le serveur refuse si l'option a été décochée à la
+  // vérification). Écriture différée : une salve de messages n'écrit qu'une
+  // fois, quinze secondes après le dernier changement.
+  useEffect(() => {
+    if (!messages.length || typeof window === "undefined" || !getAccount()) return;
+    const timer = setTimeout(() => {
+      void pushProfile().then(ok => {
+        if (!ok) console.warn("Sauvegarde automatique du profil impossible (option désactivée ou réseau).");
+      });
+    }, 15_000);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   const setProvider = useCallback((next: ProviderId) => { setProviderState(next); setModel(providerDefaults[next].model); setError(""); }, []);
@@ -251,7 +295,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     }
   }, [loadConversation, router]);
 
-  const value = useMemo(() => ({ loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
+  const value = useMemo(() => ({ savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 

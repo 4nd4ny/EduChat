@@ -74,8 +74,34 @@ function withAttachments(messages: WireMessage[], provider: ProviderId, attachme
         .map(a => ({ type: 'image_url', image_url: dataUrl(a) }));
       return { role: 'user', content: [...parts, { type: 'text', text }] };
     }
+    if (isOpenAiCompatible(provider)) {
+      // Dialecte OpenAI : images seulement (aucun de ces fournisseurs
+      // n'accepte de PDF natif — le contrôle amont l'interdit déjà).
+      const parts: any[] = attachments.filter(a => a.kind === 'image')
+        .map(a => ({ type: 'image_url', image_url: { url: dataUrl(a) } }));
+      return { role: 'user', content: [...parts, { type: 'text', text }] };
+    }
     return message; // gemini : pièces jointes refusées en amont
   });
+}
+
+/**
+ * Fournisseurs dont l'API suit le contrat « OpenAI chat/completions » : même
+ * corps de requête, même flux SSE, seule l'URL change. Tous les fournisseurs
+ * chinois entrent dans cette catégorie ; ils sont donc servis par un seul
+ * chemin de code. Une URL qui bougerait se corrige ici, en une ligne.
+ */
+const OPENAI_COMPATIBLE_URL: Partial<Record<ProviderId, string>> = {
+  deepseek: 'https://api.deepseek.com/v1/chat/completions',
+  qwen: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+  kimi: 'https://api.moonshot.ai/v1/chat/completions',
+  glm: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  minimax: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
+};
+
+/** Le fournisseur parle-t-il le dialecte « chat/completions » d'OpenAI ? */
+export function isOpenAiCompatible(provider: ProviderId): boolean {
+  return provider in OPENAI_COMPATIBLE_URL;
 }
 
 /** Le fournisseur sait-il streamer via ce module ? */
@@ -167,6 +193,26 @@ export function buildProviderRequest(raw: ProviderCallOpts): { url: string; init
       },
     };
   }
+  const compatibleUrl = OPENAI_COMPATIBLE_URL[o.provider];
+  if (compatibleUrl) {
+    return {
+      url: compatibleUrl,
+      init: {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${o.apiKey}`, 'Content-Type': 'application/json' },
+        // Corps minimal et portable : ni « reasoning », ni outils de recherche
+        // web — aucun de ces fournisseurs ne les expose de la même façon, et
+        // un paramètre inconnu fait échouer la requête chez certains.
+        body: JSON.stringify({
+          model: o.model,
+          messages: o.withSystem,
+          max_tokens: 2048,
+          ...(o.stream ? { stream: true } : {}),
+        }),
+      },
+    };
+  }
+
   // mistral
   return {
     url: 'https://api.mistral.ai/v1/conversations',
@@ -233,9 +279,16 @@ export async function streamProviderResponse(
         else if (evt.type === 'message_delta') tokens = inputTokens + (evt.usage?.output_tokens ?? 0);
         else if (evt.type === 'error') throw new Error(evt.error?.message ?? 'stream error');
         break;
-      case 'openrouter': {
+      // OpenRouter et tous les fournisseurs au dialecte OpenAI partagent
+      // exactement le même flux : { choices: [{ delta: { content } }] }.
+      case 'openrouter':
+      case 'deepseek':
+      case 'qwen':
+      case 'kimi':
+      case 'glm':
+      case 'minimax': {
         const delta = evt.choices?.[0]?.delta?.content;
-        push(delta);
+        push(typeof delta === 'string' ? delta : delta?.[0]?.text);
         if (evt.usage) tokens = tokensFromUsage(evt.usage);
         if (evt.error) throw new Error(evt.error?.message ?? 'stream error');
         break;

@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getClientIp, isRateLimited } from '../../server/access';
+import { requireAuth } from '../../server/token';
+import { readUserKey } from '../../server/userKeys';
 import { ERR, isProviderId, providerDefaults } from '../../shared/providers';
 
 // Transcription vocale — STRICTEMENT en clé personnelle (BYOK).
@@ -51,11 +53,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const body = req.body ?? {};
   const provider = body.provider;
-  const apiKey = String(body.apiKey || '').trim();
   const mimeType = String(body.mimeType || '');
   const audio = String(body.audio || '');
 
   if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });
+
+  // Clé saisie dans la page, ou clé mémorisée du compte (même règle que la
+  // complétion) : dans les deux cas c'est la clé personnelle de l'utilisateur.
+  let apiKey = String(body.apiKey || '').trim();
+  if (!apiKey) {
+    const account = requireAuth(req);
+    if (account) apiKey = readUserKey(account.email, provider) ?? '';
+  }
   if (!apiKey) return res.status(403).json({ error: { code: ERR.VOICE_KEY } });
   if (!providerDefaults[provider].voice) return res.status(400).json({ error: { code: ERR.VOICE_UNSUPPORTED } });
   // Le type porte parfois un codec (« audio/webm;codecs=opus ») : on compare la base.

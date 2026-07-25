@@ -36,7 +36,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Provare un tutor",
-    text: "« Prova » apre la chat con quel tutor al comando (barra in alto). Sul sito pubblico, inserisci la tua chiave API personale (campo « Chiave personale »): resta nella pagina, mai memorizzata — e sblocca allegati (immagini, PDF) e chat vocale. Le risposte arrivano in diretta, durante la generazione.",
+    text: "« Prova » apre la chat con quel tutor al comando (barra in alto). Sul sito pubblico, inserisci la tua chiave API personale (campo « Chiave personale »): resta nella pagina — memorizzata solo su tua richiesta — e sblocca allegati (immagini, PDF) e chat vocale. Le risposte arrivano in diretta, durante la generazione.",
     href: "/it/chat?tuteur=Socrate", hrefLabel: "Prova Socrate",
   },
   {
@@ -107,7 +107,7 @@ export default function GuideIT() {
       <Section id="eleves" title="Studenti e visitatori — imparare">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Scegliere un tutor</b> nel <Link className="underline" href="/">catalogo</Link>: ricerca, ordinamenti, scheda dettagliata con il prompt integrale.</li>
-          <li><b>Provare</b>: la chat si apre con il tutor al comando; sul sito pubblico, la tua <b>chiave API personale</b> (mai memorizzata) fa girare la conversazione, con fornitore e livello di ragionamento a tua scelta. Le risposte arrivano <b>in diretta</b>, durante la generazione.</li>
+          <li><b>Provare</b>: la chat si apre con il tutor al comando; sul sito pubblico, la tua <b>chiave API personale</b> (mai memorizzata, salvo tua richiesta) fa girare la conversazione, con fornitore e livello di ragionamento a tua scelta. Le risposte arrivano <b>in diretta</b>, durante la generazione.</li>
           <li><b>Allegati</b> (chiave personale): allega un'<b>immagine o un PDF</b> alla tua domanda, secondo il fornitore scelto.</li>
           <li><b>Chat vocale</b> (chiave personale, fornitori compatibili): detta la tua domanda al microfono, e la modalità vocale legge le risposte — comoda sullo smartphone.</li>
           <li><b>Preferiti</b> (stella) e <b>valutazioni</b> (1-5): conservati nel tuo browser; i preferiti salgono in cima al catalogo.</li>
@@ -166,11 +166,12 @@ export default function GuideIT() {
               <tr><th className="py-1 pr-2">Dato</th><th className="pr-2">Dove</th><th>Dettaglio</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversazioni, chiave API personale, preferiti, valutazioni date, allegati</td><td className="pr-2"><b>Il tuo browser</b></td><td>Mai sul server (la chiave personale non lascia nemmeno la memoria della pagina; gli allegati sono solo inoltrati al fornitore, mai memorizzati). Esportazione/importazione libere; sincronizzazione server solo se la attivi.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversazioni, chiave API personale, preferiti, valutazioni date, allegati</td><td className="pr-2"><b>Il tuo browser</b></td><td>Per impostazione predefinita mai sul server (la chiave personale non lascia la memoria della pagina; gli allegati sono solo inoltrati al fornitore). Due eccezioni, descritte sotto: il salvataggio del profilo per gli account e la chiave memorizzata su richiesta.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Tutor socratici</td><td className="pr-2">Database</td><td>Testo integrale, versioni successive, filiazione (« ispirato da »), stato, contatori anonimi (usi, token generati, somma e numero delle valutazioni).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Account promptagogo / insegnante</td><td className="pr-2">Database</td><td>Nome pubblico, email (mai mostrata), ruoli, opzione di sincronizzazione. <b>Nessuna password esiste.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Istituti e consumi</td><td className="pr-2">Database</td><td>Dettagliato nella <Link className="underline" href="/etablissements#donnees">guida degli istituti</Link> (IP, orari, quote, registro dei consumi per IP — nessun dato nominativo di studenti).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profilo sincronizzato (opzione)</td><td className="pr-2">Database</td><td>Copia del tuo profilo del browser, cancellabile in ogni momento da /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Chiave API memorizzata (su richiesta, account)</td><td className="pr-2">Database</td><td>Solo se spunti « Memorizza la mia chiave » nella chat: la chiave è conservata <b>cifrata</b> (AES-256-GCM), non torna mai al browser e sparisce appena togli la spunta.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Contatore « online » della home</td><td className="pr-2">Database</td><td>Un&apos;impronta tecnica non reversibile del browser (mai l&apos;IP in chiaro) e l&apos;ora dell&apos;ultima attività, cancellate dopo quindici minuti.</td></tr>
             </tbody>
           </table>

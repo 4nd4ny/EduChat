@@ -1,3 +1,5 @@
+import { getToken } from "./account";
+
 // Appel client de /api/completion — avec ou sans streaming.
 //
 // Le serveur répond soit en JSON complet (repli gratuit, Gemini, erreurs),
@@ -50,13 +52,15 @@ export async function requestCompletion(
   handlers: CompletionHandlers = {},
   authToken?: string,
 ): Promise<CompletionResult> {
+  // Jeton de compte, toujours transmis quand il existe : il ouvre les modes
+  // duals (promptagogues vérifiés) et permet au serveur de retrouver la clé
+  // API que l'utilisateur a demandé de mémoriser.
+  const token = authToken ?? getToken() ?? undefined;
   const response = await fetch("/api/completion", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      // Jeton de compte : requis par le serveur pour les modes duals
-      // (réservés aux promptagogues vérifiés).
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ ...body, stream: !!handlers.onDelta }),
   });

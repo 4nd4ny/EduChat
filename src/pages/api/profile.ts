@@ -44,6 +44,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!profile || typeof profile !== 'object' || typeof profile.educhatProfile !== 'number') {
       return res.status(400).json({ error: { code: 'ERR_PROFILE_INVALID' } });
     }
+    // FUSION, jamais écrasement : un navigateur qui ne connaît que deux
+    // conversations ne doit pas effacer les quarante autres du compte. On
+    // réunit les conversations des deux côtés (la version la plus récente
+    // gagne) ; l'effacement volontaire passe par DELETE.
+    const existing = db.prepare('SELECT data FROM profiles WHERE email = ?').get(auth.email) as
+      { data: string } | undefined;
+    if (existing) {
+      try {
+        const previous = JSON.parse(existing.data);
+        const merged: Record<string, any> = { ...(previous.conversations ?? {}) };
+        for (const [id, conversation] of Object.entries(profile.conversations ?? {})) {
+          const before = merged[id];
+          const lastOf = (c: any) => Number(c?.lastMessage ?? c?.createdAt ?? 0);
+          if (!before || lastOf(conversation) >= lastOf(before)) merged[id] = conversation;
+        }
+        profile.conversations = merged;
+        profile.favorites = Array.from(new Set([...(previous.favorites ?? []), ...(profile.favorites ?? [])]));
+        profile.ratings = { ...(previous.ratings ?? {}), ...(profile.ratings ?? {}) };
+      } catch {
+        /* profil serveur illisible : on repart du profil reçu */
+      }
+    }
     const serialized = JSON.stringify(profile);
     if (Buffer.byteLength(serialized, 'utf8') > MAX_PROFILE_BYTES) {
       return res.status(413).json({ error: { code: 'ERR_PROFILE_TOO_LARGE' } });

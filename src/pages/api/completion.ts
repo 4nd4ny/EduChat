@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
 import { getDb, PromptRow } from "../../server/db";
 import { requireAuth } from "../../server/token";
+import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { notifyAdmin } from "../../server/mail";
@@ -138,6 +139,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const model = String(body.model || providerDefaults[provider].model).trim();
   if (!model || model.length > 128) return res.status(400).json({ error: { code: ERR.MODEL } });
 
+  // Clé PERSONNELLE : celle saisie dans la page, ou — à défaut — celle que le
+  // titulaire du compte a demandé de mémoriser (chiffrée en base). Résolue ici,
+  // avant tout contrôle, pour que la suite ne fasse plus la différence : une
+  // clé mémorisée donne exactement les mêmes droits qu'une clé saisie.
+  let personalKey = String(body.apiKey || "").trim();
+  if (!personalKey) {
+    const account = requireAuth(req);
+    if (account) personalKey = readUserKey(account.email, provider) ?? "";
+  }
+
   // Pièces jointes (images/PDF) — réservées à la clé PERSONNELLE et aux
   // fournisseurs compatibles. Validation stricte : type MIME en liste blanche,
   // base64 plausible, tailles bornées.
@@ -161,7 +172,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     attachments.push({ kind, mediaType, name, data });
   }
   if (attachments.length) {
-    if (!String(body.apiKey || "").trim()) {
+    if (!personalKey) {
       return res.status(403).json({ error: { code: ERR.ATTACH_KEY } });
     }
     if (attachments.some(a => !providerAcceptsAttachment(provider, a.kind))) {
@@ -191,7 +202,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   //     fournisseur : le site « marche un peu » sans rien saisir. JAMAIS journalisé
   //     avec l'IP (pas d'établissement, pas de donnée personnelle) ;
   //  4. sinon → verrouillé (401).
-  const personalKey = String(body.apiKey || "").trim();
   let apiKey = personalKey;
   let effProvider: ProviderId = provider;   // fournisseur RÉELLEMENT utilisé
   let effModel = model;                      // modèle RÉELLEMENT utilisé
@@ -220,6 +230,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (await mayUseServerKeys(clientIp)) {
+      // La clé INTERNE d'un établissement ne finance jamais un fournisseur
+      // à drapeau rouge : ce serait envoyer des travaux d'élèves hors UE
+      // sans cadre de transfert. Ces fournisseurs restent accessibles en
+      // clé personnelle, sous la responsabilité de leur titulaire.
+      if (providerDefaults[provider].wrng) {
+        return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
+      }
       usedServerKey = true;
       // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC).
       if (etab && etab.token_quota_monthly > 0) {
@@ -369,6 +386,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           emit({ type: 'delta', text: fragment });
         });
         text = result.text; tokens = result.tokens;
+        // Certains fournisseurs (dialecte OpenAI minimal) n'envoient aucun
+        // décompte dans le flux : estimation prudente à ~4 caractères par
+        // token, pour que les compteurs publics ne restent pas à zéro.
+        if (!tokens && text) tokens = Math.max(1, Math.round(text.length / 4));
       } catch (streamError) {
         // Rien n'est encore parti vers le client : une seconde chance en réponse
         // complète (certains modèles/passerelles refusent le flux).

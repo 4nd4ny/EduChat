@@ -79,6 +79,10 @@ export const DeveloperKeys: Record<string, string | undefined> = {
   openrouter: process.env.SECRET_OPENROUTER_API_KEY,
   grok: process.env.SECRET_XAI_API_KEY,
   mistral: process.env.SECRET_MISTRAL_API_KEY,
+  // Aucune clé serveur pour les fournisseurs à drapeau rouge (DeepSeek,
+  // Qwen, Kimi, GLM, MiniMax) : ils ne sont accessibles qu'en clé
+  // PERSONNELLE, et la route de complétion refuse de les servir sur la clé
+  // interne d'un établissement.
 };
 
 // Budget quotidien du repli GRATUIT public, en USD — le plafond réel est posé

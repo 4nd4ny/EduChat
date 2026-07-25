@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { MdMic, MdStop, MdVolumeOff, MdVolumeUp } from "react-icons/md";
 import { useAnthropic } from "../context/AnthropicProvider";
+import { authHeaders } from "../utils/account";
 import { useT } from "../i18n/useT";
 
 // Chat vocal — pensé pour smartphone, réservé à la clé PERSONNELLE et aux
@@ -31,6 +32,7 @@ function speakableText(markdown: string): string {
 
 export default function VoiceControls({ onDictation }: { onDictation: (text: string) => void }) {
   const { provider, apiKey, addMessage, messages, loading } = useAnthropic();
+  // apiKey peut être vide : le serveur prendra la clé mémorisée du compte.
   const t = useT();
   const router = useRouter();
 
@@ -80,7 +82,10 @@ export default function VoiceControls({ onDictation }: { onDictation: (text: str
         reader.readAsDataURL(blob);
       });
       const response = await fetch("/api/transcribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        // Le jeton permet au serveur d'utiliser la clé mémorisée du compte
+        // quand le champ « clé personnelle » est vide.
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ provider, apiKey, mimeType, audio }),
       });
       const data = await response.json().catch(() => ({}));

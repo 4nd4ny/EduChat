@@ -40,9 +40,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.addEventListener('storage', updateTitle);
     window.addEventListener('totalTokensUpdated', updateTitle);
 
-    // L'historique se replie sous 1024 px (et non 768) : en dessous, la
+    // L'historique se replie sous 1280 px (et non 768) : en dessous, la
     // colonne de 320 px mangeait la conversation.
-    const checkIsMobile = () => setIsMobile(window.innerWidth < 1024);
+    const checkIsMobile = () => setIsMobile(window.innerWidth < 1280);
     checkIsMobile();
     window.addEventListener('resize', checkIsMobile);
 
