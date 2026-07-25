@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useRef, useState } from "react";
-import { MdAccountCircle, MdHelpOutline, MdHome, MdLanguage, MdOutlinePrivacyTip, MdTune } from "react-icons/md";
+import { MdAccountCircle, MdHelpOutline, MdHome, MdLanguage, MdLogout, MdOutlinePrivacyTip, MdTune } from "react-icons/md";
 import ChatSettings from "../chat/ChatSettings";
 import { useT } from "../i18n/useT";
-import { getAccount } from "../utils/account";
+import { clearToken, getAccount } from "../utils/account";
 
 // Barre de navigation commune à TOUTES les pages (60 px) : accueil à gauche,
 // services à droite (langue, confidentialité, guide, compte). C'est la seule
@@ -115,6 +115,7 @@ function ChatSettingsSlot() {
  */
 function AccountLink() {
   const t = useT();
+  const router = useRouter();
   const [connecte, setConnecte] = useState(false);
 
   // La barre ne se remonte pas d'une page à l'autre : sans écouter
@@ -126,6 +127,21 @@ function AccountLink() {
     window.addEventListener("accountChanged", relire);
     return () => window.removeEventListener("accountChanged", relire);
   }, []);
+
+  // Sur « Mes données » ET SEULEMENT LÀ, l'icône devient « Quitter » : c'est
+  // la page où l'on vient regarder ce que le serveur sait de soi, donc celle
+  // d'où l'on veut pouvoir refermer la porte. Partout ailleurs — /admin
+  // compris — elle reste la porte d'ENTRÉE : sans cela, on ne saurait plus
+  // revenir à ses données depuis l'administration.
+  if (connecte && router.pathname === "/compte") {
+    return (
+      <button
+        onClick={() => { clearToken(); void router.push("/"); }}
+        className={ICON} title={t("header.logoutTitle")} aria-label={t("header.logout")}>
+        <MdLogout />
+      </button>
+    );
+  }
 
   return (
     <Link href={connecte ? "/compte" : "/verifier"} className={ICON}
