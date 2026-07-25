@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { Conversation, getHistory, clearHistory, storeConversation, History, deleteConversationFromHistory, updateConversation } from "./History";
 
 import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
+import type { Rung } from "../shared/ladder";
 import { translate } from "../i18n/useT";
 import { getClientId } from "../utils/clientId";
 import { fr as frDict } from "../i18n/dictionaries";
@@ -72,6 +73,7 @@ type Context = {
   addMessage: (content: string, submit?: boolean, role?: "user" | "assistant", attachments?: PendingAttachment[]) => void;
   provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
   apiKey: string; setApiKey: (value: string) => void; reasoning: ReasoningLevel; setReasoning: (value: ReasoningLevel) => void;
+  rung: Rung; canEscalate: boolean; modelPinned: boolean; pinModel: (value: string) => void; regenerate: () => void;
   promptName: string; setPromptName: (value: string) => void;
   promptVersion: number; switchPromptVersion: (version: number) => void;
   shareToken: string; setShareToken: (value: string) => void;
@@ -87,6 +89,7 @@ const ChatContext = React.createContext<Context>({
   loading: false, messages: [], setMessages: noop as any, addMessage: noop as any,
   provider: "anthropic", setProvider: noop as any, model: providerDefaults.anthropic.model, setModel: noop as any,
   apiKey: "", setApiKey: noop as any, reasoning: "medium", setReasoning: noop as any,
+  rung: 1, canEscalate: true, modelPinned: false, pinModel: noop as any, regenerate: noop as any,
   promptName: "", setPromptName: noop as any,
   promptVersion: 0, switchPromptVersion: noop as any,
   shareToken: "", setShareToken: noop as any,
@@ -103,6 +106,22 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const [model, setModel] = useState(providerDefaults.anthropic.model);
   const [apiKey, setApiKey] = useState("");
   const [reasoning, setReasoning] = useState<ReasoningLevel>("medium");
+  // BARREAU de l'échelle : 1 = le modèle le plus économe du fournisseur.
+  // « Régénérer » monte d'un cran — on ne paie un modèle plus fort que si la
+  // réponse n'a pas convenu.
+  const [rung, setRung] = useState<Rung>(1);
+  // Le modèle n'est envoyé au serveur que si quelqu'un l'a explicitement
+  // choisi (promptagogue, duel). Sinon le serveur applique l'échelle réglée
+  // par l'administration : un apprenant n'a pas à connaître de nom de modèle.
+  const [modelPinned, setModelPinned] = useState(false);
+  // Longueur réelle de l'échelle de chaque fournisseur (réglée dans /admin) :
+  // sans elle, « Régénérer » proposerait de monter d'un cran là où il n'y en a
+  // plus, et rendrait deux fois la même réponse.
+  const [ladders, setLadders] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    fetch("/api/ladder").then(r => r.json()).then(d => setLadders(d.ladders ?? {})).catch(() => {});
+  }, []);
+  const canEscalate = rung < Math.max(1, (ladders[provider] ?? []).length || 3);
   // Tuteur socratique actif — le CŒUR de l'expérience (pivot v3). Vide = chat libre.
   const [promptName, setPromptNameState] = useState("");
   // Version épinglée par la conversation (0 = version courante au 1er échange).
@@ -177,7 +196,16 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     return () => clearTimeout(timer);
   }, [messages]);
 
-  const setProvider = useCallback((next: ProviderId) => { setProviderState(next); setModel(providerDefaults[next].model); setError(""); }, []);
+  const setProvider = useCallback((next: ProviderId) => {
+    setProviderState(next);
+    setModel(providerDefaults[next].model);
+    setModelPinned(false);   // l'échelle du nouveau fournisseur reprend la main
+    setRung(1);              // et l'on repart du barreau le plus économe
+    setError("");
+  }, []);
+
+  // Choix explicite d'un modèle : il prime alors sur l'échelle.
+  const pinModel = useCallback((value: string) => { setModel(value); setModelPinned(true); }, []);
   const updateConversationName = useCallback((id: string, name: string) => {
     setConversationName(name); updateConversation(id, { name });
     setConversations(previous => previous[id] ? { ...previous, [id]: { ...previous[id], name } } : previous);
@@ -188,7 +216,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     updateConversationName(conversationId, first.slice(0, 48) + (first.length > 48 ? "…" : ""));
   }, [messages, conversationName, conversationId, updateConversationName]);
 
-  const send = useCallback(async (nextMessages: ChatMessage[], attachments?: PendingAttachment[]) => {
+  const send = useCallback(async (nextMessages: ChatMessage[], attachments?: PendingAttachment[], rungOverride?: Rung) => {
     setLoading(true); setError("");
     // Streaming : un message assistant « en cours » est créé au premier fragment
     // puis complété au fil du flux. En repli gratuit (ou fournisseur sans flux),
@@ -206,7 +234,8 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     };
     try {
       const result = await requestCompletion({
-        provider, model, apiKey, reasoning,
+        provider, apiKey, rung: rungOverride ?? rung,
+        ...(modelPinned ? { model, reasoning } : {}),
         promptName: promptName || undefined,
         promptVersion: promptVersion || undefined,
         shareToken: shareToken || undefined,
@@ -256,7 +285,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
         setMessages(previous => [...previous, { id: assistantId, role: "assistant", content: `Erreur : ${message}`, model: providerDefaults[provider].label }]);
       }
     } finally { setLoading(false); }
-  }, [provider, model, apiKey, reasoning, promptName, promptVersion, shareToken, router.locale]);
+  }, [provider, model, modelPinned, apiKey, reasoning, rung, promptName, promptVersion, shareToken, router.locale]);
 
   const addMessage = useCallback((content: string, submit = true, role: "user" | "assistant" = "user", attachments?: PendingAttachment[]) => {
     const value = content.trim(); if (!value) return;
@@ -271,6 +300,23 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     });
   }, [send]);
   const deleteMessagesFromIndex = useCallback((index: number) => setMessages(previous => previous.slice(0, index)), []);
+
+  /**
+   * Régénérer la dernière réponse, un cran plus haut sur l'échelle.
+   * C'est le remplaçant du réglage d'effort : au lieu de demander à
+   * l'utilisateur de prévoir la difficulté, on commence au moins cher et il
+   * demande mieux s'il n'est pas satisfait.
+   */
+  const regenerate = useCallback(() => {
+    if (loading) return;
+    const dernierUtilisateur = [...messages].map((m, i) => ({ m, i })).reverse().find(x => x.m.role === "user");
+    if (!dernierUtilisateur) return;
+    const suivant = (Math.min(rung + 1, 3)) as Rung;
+    setRung(suivant);
+    const conserves = messages.slice(0, dernierUtilisateur.i + 1);
+    setMessages(conserves);
+    void send(conserves, undefined, suivant);
+  }, [loading, messages, rung, send]);
   const resetConversation = useCallback(() => { setMessages([]); setConversationId(""); setConversationName("..."); router.push("/"); }, [router]);
   const clearConversation = useCallback(() => { setMessages([]); setConversationId(""); }, []);
   const deleteConversation = useCallback((id: string) => { deleteConversationFromHistory(id); setConversations(previous => { const { [id]: _, ...rest } = previous; return rest; }); if (id === conversationId) clearConversation(); }, [conversationId, clearConversation]);
@@ -295,7 +341,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     }
   }, [loadConversation, router]);
 
-  const value = useMemo(() => ({ savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, addMessage, provider, setProvider, model, apiKey, reasoning, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
+  const value = useMemo(() => ({ savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, rung, canEscalate, modelPinned, pinModel, regenerate, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, addMessage, provider, setProvider, model, modelPinned, pinModel, regenerate, apiKey, reasoning, rung, canEscalate, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 

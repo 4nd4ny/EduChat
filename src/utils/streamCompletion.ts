@@ -10,7 +10,11 @@ import { getToken } from "./account";
 
 export type CompletionBody = {
   provider: string;
+  /** Modèle nommé explicitement (promptagogue, duel). Absent = le serveur
+   *  applique le barreau demandé de l'échelle du fournisseur. */
   model?: string;
+  /** Barreau de l'échelle : 1 le plus économe, 3 le plus fouillé. */
+  rung?: number;
   apiKey?: string;
   reasoning?: string;
   promptName?: string;

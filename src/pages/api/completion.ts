@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/access";
 import { getDb, PromptRow } from "../../server/db";
 import { requireAuth } from "../../server/token";
+import { getLadder } from "../../server/ladder";
+import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
@@ -109,7 +111,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const body = req.body ?? {};
   const provider = body.provider;
   const messages = body.messages as Message[];
-  const reasoning: ReasoningLevel = isReasoningLevel(body.reasoning) ? body.reasoning : "medium";
+  // BARREAU de l'échelle (1 = le plus économe). C'est le nouveau réglage :
+  // le client n'a plus à nommer un modèle, il demande un niveau. « Régénérer »
+  // monte d'un cran, et la facture ne grimpe que si la réponse n'a pas convenu.
+  const rung: number = isRung(body.rung) ? body.rung : 1;
+  // L'effort suit le barreau, sauf demande explicite (le duel, lui, choisit).
+  const reasoning: ReasoningLevel = isReasoningLevel(body.reasoning)
+    ? body.reasoning
+    : RUNG_REASONING[rung as 1 | 2 | 3];
   const promptName = String(body.promptName ?? "").slice(0, 64);
   const promptVersion = Number.isInteger(body.promptVersion) ? Number(body.promptVersion) : 0;
   const shareToken = String(body.shareToken ?? "").slice(0, 64);
@@ -136,7 +145,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!promptagogue) return res.status(403).json({ error: { code: 'ERR_PROMPTAGOGUE_ONLY' } });
   }
 
-  const model = String(body.model || providerDefaults[provider].model).trim();
+  // Modèle : celui que le client nomme (promptagogues, duel), sinon le barreau
+  // demandé de l'échelle réglée par l'administration.
+  const model = String(body.model || modelForRung(getLadder(provider), rung, provider)).trim();
   if (!model || model.length > 128) return res.status(400).json({ error: { code: ERR.MODEL } });
 
   // Clé PERSONNELLE : celle saisie dans la page, ou — à défaut — celle que le
@@ -443,6 +454,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       reply: textFromResponse(data),
       tokenUsage,
       provider: effProvider,
+      // Le modèle réellement appelé : l'apprenant ne le choisit plus, il doit
+      // au moins pouvoir savoir ce qui a répondu (et l'administration vérifier
+      // que l'échelle fait ce qu'elle annonce).
+      model: effModel,
       free: usedFreeKey,
       ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
     });

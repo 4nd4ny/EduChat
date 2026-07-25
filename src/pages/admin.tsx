@@ -45,6 +45,10 @@ type AdminComment = {
 // réversible (republier) ; archiver masque définitivement un prompt de cette
 // interface, mais la ligne et ses compteurs restent en base (facturation).
 type CatalogueRow = { provider: string; source: string; count: number; at: number };
+type LadderRow = {
+  provider: string; rungs: string[]; suggested: string[]; custom: boolean;
+  verifiable: boolean; unknown: string[]; catalogue: number;
+};
 
 export default function AdminPage() {
   const account = typeof window !== "undefined" ? getAccount() : null;
@@ -65,6 +69,8 @@ export default function AdminPage() {
   const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
   const [catalogue, setCatalogue] = useState<CatalogueRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [ladders, setLadders] = useState<LadderRow[]>([]);
+  const [ladderEdit, setLadderEdit] = useState<Record<string, string[]>>({});
   const [denied, setDenied] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -77,6 +83,8 @@ export default function AdminPage() {
       .then(r => r.json()).then(data => setEtabs(data.etablissements ?? [])).catch(() => {});
     fetch("/api/admin/users", { headers: authHeaders() })
       .then(r => r.json()).then(data => setUsers(data.users ?? [])).catch(() => {});
+    fetch("/api/admin/ladder", { headers: authHeaders() })
+      .then(r => r.json()).then(data => setLadders(data.ladders ?? [])).catch(() => {});
     fetch("/api/admin/models", { headers: authHeaders() })
       .then(r => r.json()).then(data => setCatalogue(data.catalogue ?? [])).catch(() => {});
     fetch("/api/admin/comments", { headers: authHeaders() })
@@ -454,6 +462,93 @@ export default function AdminPage() {
       </section>
 
       {/* ---- Facturation ---- */}
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Échelle des modèles</h2>
+        <p className="mt-1 text-xs opacity-60">
+          Ce que l&apos;apprenant obtient quand il choisit un fournisseur. On part TOUJOURS du
+          barreau 1, le plus économe ; le bouton « Régénérer » d&apos;une réponse monte d&apos;un cran.
+          Le nom du modèle n&apos;est plus montré aux apprenants — seuls les promptagogues gardent
+          un champ Modèle explicite. Laisser les trois cases vides revient à la proposition
+          d&apos;origine.
+        </p>
+        <p className="mt-1 text-xs opacity-60">
+          La colonne <b>proposition</b> est celle du code, vérifiée contre les catalogues réels ;
+          la ligne du dessous est <b>votre réglage</b>. Un barreau que le fournisseur ne publie
+          plus est signalé en rouge : c&apos;est ainsi qu&apos;on évite un chat cassé en silence.
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="uppercase opacity-60">
+              <tr>
+                <th className="py-1 pr-2">Fournisseur</th>
+                <th className="pr-2">1 · rapide</th>
+                <th className="pr-2">2 · équilibré</th>
+                <th className="pr-2">3 · approfondi</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ladders.map(row => {
+                const valeurs = ladderEdit[row.provider] ?? [row.rungs[0] ?? "", row.rungs[1] ?? "", row.rungs[2] ?? ""];
+                return (
+                  <React.Fragment key={row.provider}>
+                    <tr className="border-t border-white/10">
+                      <td className="py-1 pr-2 align-top">
+                        <b>{row.provider}</b>
+                        {row.custom
+                          ? <span className="block text-[10px] text-[#DC6521]">votre réglage</span>
+                          : <span className="block text-[10px] opacity-50">proposition suivie</span>}
+                      </td>
+                      {[0, 1, 2].map(i => (
+                        <td key={i} className="pr-2 align-top">
+                          <input
+                            value={valeurs[i] ?? ""}
+                            onChange={e => setLadderEdit(prev => {
+                              const copie = [...(prev[row.provider] ?? valeurs)];
+                              copie[i] = e.target.value;
+                              return { ...prev, [row.provider]: copie };
+                            })}
+                            placeholder={row.suggested[i] ?? "—"}
+                            className="w-44 rounded bg-tertiary px-1 py-0.5 text-xs" />
+                          <span className="block text-[10px] opacity-50">
+                            proposition : {row.suggested[i] ?? "—"}
+                          </span>
+                          {row.unknown.includes(valeurs[i]) && (
+                            <span className="block text-[10px] text-red-400">absent du catalogue</span>
+                          )}
+                        </td>
+                      ))}
+                      <td className="align-top">
+                        <button
+                          onClick={async () => {
+                            setMessage("");
+                            const response = await fetch("/api/admin/ladder", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json", ...authHeaders() },
+                              body: JSON.stringify({ provider: row.provider, rungs: valeurs }),
+                            });
+                            if (!response.ok) { setMessage(`Échec de l'enregistrement pour ${row.provider}.`); return; }
+                            setMessage(`Échelle de ${row.provider} enregistrée.`);
+                            setLadderEdit(prev => { const c = { ...prev }; delete c[row.provider]; return c; });
+                            fetch("/api/admin/ladder", { headers: authHeaders() })
+                              .then(r => r.json()).then(d => setLadders(d.ladders ?? [])).catch(() => {});
+                          }}
+                          className="rounded border border-white/20 px-2 py-1 hover:bg-tertiary">
+                          Enregistrer
+                        </button>
+                        {!row.verifiable && (
+                          <span className="block text-[10px] opacity-50">catalogue non vérifiable (pas de clé serveur)</span>
+                        )}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="mt-10">
         <h2 className="text-lg font-bold">Catalogue des modèles</h2>
         <p className="mt-1 text-xs opacity-60">

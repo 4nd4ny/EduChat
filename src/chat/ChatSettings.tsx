@@ -18,7 +18,7 @@ const FIELD = "h-9 min-w-0 rounded bg-tertiary px-2 text-xs text-primary outline
 
 export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const {
-    provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning,
+    provider, setProvider, model, pinModel, apiKey, setApiKey,
     savedKeyProviders, keysOptin, refreshSavedKeys,
   } = useAnthropic();
   const t = useT();
@@ -97,7 +97,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           className={[
             providerDefaults[provider]?.wrng ? "bg-red-600/80 hover:bg-red-600" : "bg-green-600/80 hover:bg-green-600",
             "rounded-sm text-[9px] font-semibold uppercase tracking-wide text-white no-underline",
-            bar
+            bar && hasAccount
               ? "flex h-9 shrink-0 items-center justify-center px-px [writing-mode:vertical-rl] rotate-180"
               : "w-fit px-1 py-px leading-none",
           ].join(" ")}>
@@ -105,32 +105,23 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
         </a>
       )}
 
+      {/* Le nom du modèle est du jargon : un apprenant n'a pas à le connaître.
+          Le serveur applique l'échelle réglée dans /admin, et « Régénérer »
+          monte d'un cran. Les promptagogues, eux, gardent la main. */}
+      {hasAccount && (
       <Wrap label={t("chat.input.model")} width="w-40">
         <ModelField
           dataTour="model"
           provider={provider}
           apiKey={apiKey}
           model={model}
-          onChange={setModel}
+          onChange={pinModel}
           className={`${FIELD} w-full ${bar ? "rounded-l-none" : ""}`}
         />
       </Wrap>
+      )}
       </div>
 
-      <Wrap label={t("chat.input.reasoning")} width="w-28">
-        <select
-          data-tour="reasoning"
-          value={reasoning}
-          onChange={event => setReasoning(event.target.value as ReasoningLevel)}
-          title={t("chat.input.reasoning")}
-          aria-label={t("chat.input.reasoning")}
-          className={`${FIELD} w-full`}
-        >
-          <option value="low">{t("chat.input.reasoning.low")}</option>
-          <option value="medium">{t("chat.input.reasoning.medium")}</option>
-          <option value="high">{t("chat.input.reasoning.high")}</option>
-        </select>
-      </Wrap>
 
       <Wrap label={t("chat.input.apiKey")} width="w-36">
         <input

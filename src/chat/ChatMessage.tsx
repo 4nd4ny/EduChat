@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { MdPerson, MdSmartToy, MdContentCopy, MdDeleteSweep } from "react-icons/md";
+import { MdPerson, MdSmartToy, MdContentCopy, MdDeleteSweep, MdRefresh } from "react-icons/md";
 import AssistantMessageContent from "./AssistantMessageContent";
 import UserMessageContent from "./UserMessageContent";
 import { useAnthropic } from "../context/AnthropicProvider";
@@ -21,7 +21,7 @@ export default function ChatMessage({
   const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const [showDeleteMessage, setShowDeleteMessage] = useState(false);
   const anthropic = useAnthropic();
-  const { deleteMessagesFromIndex } = useAnthropic();
+  const { deleteMessagesFromIndex, regenerate, rung, canEscalate, loading } = useAnthropic();
 
   useEffect(() => {
     if (isInitialUserMessage && role === 'user') {
@@ -132,6 +132,20 @@ export default function ChatMessage({
                 >
                   <MdContentCopy className="text-2xl" />
                 </div>
+                {/* Régénérer : reprend la même question un cran plus haut sur
+                    l'échelle du fournisseur. C'est le seul réglage d'effort
+                    de l'interface — on ne paie mieux qu'après avoir vu que la
+                    réponse ne convenait pas. Au dernier barreau, le bouton
+                    disparaît plutôt que de mentir sur ce qu'il ferait. */}
+                {isLastAssistantMessage && !loading && canEscalate && (
+                  <div
+                    className="cursor-pointer text-gray-500 transition-colors transition-transform transform hover:scale-110 hover:bg-[#DC6521] hover:text-white rounded-full flex items-center justify-center w-12 h-12"
+                    onClick={regenerate}
+                    title={`Régénérer avec un modèle plus fouillé (niveau ${Math.min(rung + 1, 3)} sur 3)`}
+                  >
+                    <MdRefresh className="text-2xl" />
+                  </div>
+                )}
               </div>
             </div>
           )}

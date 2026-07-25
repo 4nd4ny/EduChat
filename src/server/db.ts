@@ -135,6 +135,18 @@ CREATE TABLE IF NOT EXISTS profile_deletions (
   PRIMARY KEY (email, conversation_id)
 );
 
+-- Échelle de modèles par fournisseur, telle que l'administration l'a réglée.
+-- Absente = on suit la proposition du code (src/shared/ladder.ts). Trois
+-- barreaux au plus, du plus économe au plus fouillé ; un barreau vide arrête
+-- l'échelle là.
+CREATE TABLE IF NOT EXISTS provider_ladder (
+  provider   TEXT PRIMARY KEY,
+  rung1      TEXT NOT NULL DEFAULT '',
+  rung2      TEXT NOT NULL DEFAULT '',
+  rung3      TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS session_settings (
   etablissement_id  INTEGER PRIMARY KEY,
   default_prompt_id INTEGER,
