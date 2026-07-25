@@ -1,13 +1,15 @@
 import React, { useCallback } from "react";
 import { MdAttachFile, MdClose, MdSend } from "react-icons/md";
-import { PendingAttachment, ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
+import { PendingAttachment, providerDefaults, useAnthropic } from "../context/AnthropicProvider";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../shared/providers";
 import { formatTokens } from "../utils/formatTokens";
 import { useT } from "../i18n/useT";
 import VoiceControls from "./VoiceControls";
 
+// Zone de saisie seule : les réglages de conversation (fournisseur, modèle,
+// raisonnement, clé) vivent maintenant dans la barre du haut.
 export default function ChatInput() {
-  const { loading, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning } = useAnthropic();
+  const { loading, addMessage, provider, apiKey } = useAnthropic();
   const t = useT();
   const textAreaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -85,9 +87,7 @@ export default function ChatInput() {
   }, [input]);
 
   return (
-    <div className="fixed bottom-0 flex h-[13rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent md:w-[calc(100%-320px)]">
-      {/* Ordre voulu : la zone de saisie d'abord (c'est là qu'on écrit), le
-          compteur de tokens au milieu, les réglages en dernier. */}
+    <div className="fixed bottom-0 flex h-[10rem] w-full bg-gradient-to-t from-[rgb(var(--bg-secondary))] to-transparent lg:w-[calc(100%-320px)]">
       <form className="mx-auto flex h-full w-full max-w-6xl flex-col justify-end gap-2 p-4 pb-6" onSubmit={handleSubmit}>
         <div data-tour="composer" className="relative flex w-full rounded border border-stone-500/20 bg-tertiary shadow-xl">
           <textarea name="query" placeholder={t("chat.input.ask")} ref={textAreaRef} className="flex max-h-[120px] w-full resize-none border-none bg-tertiary p-4 text-primary outline-none" onChange={event => setInput(event.target.value)} value={input} rows={1} />
@@ -132,34 +132,6 @@ export default function ChatInput() {
             {formatTokens(totalTokens)} {t("chat.input.consumed")}
           </div>
         )}
-
-        <div className="grid grid-cols-1 gap-2 text-xs text-primary md:grid-cols-4">
-          <label className="flex flex-col gap-1">
-            <span className="flex items-center gap-1.5">{t("chat.input.provider")}
-              {providerDefaults[provider]?.gdpr && (
-                <a href="/rgpd" target="_blank" rel="noreferrer" title={t("chat.input.gdpr.title")}
-                  className="rounded-sm bg-green-600/80 px-1 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-white no-underline hover:bg-green-600">
-                  {t("chat.input.gdpr.tag")}
-                </a>
-              )}
-            </span>
-            <select data-tour="provider" className="rounded bg-tertiary p-2" value={provider} onChange={event => setProvider(event.target.value as ProviderId)}>
-              {Object.entries(providerDefaults).map(([id, item]) =>
-                <option key={id} value={id}>{item.label}{item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : ""}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">{t("chat.input.model")}
-            <input data-tour="model" className="rounded bg-tertiary p-2" value={model} onChange={event => setModel(event.target.value)} aria-label={t("chat.input.model")} />
-          </label>
-          <label className="flex flex-col gap-1">{t("chat.input.reasoning")}
-            <select data-tour="reasoning" className="rounded bg-tertiary p-2" value={reasoning} onChange={event => setReasoning(event.target.value as ReasoningLevel)}>
-              <option value="low">{t("chat.input.reasoning.low")}</option><option value="medium">{t("chat.input.reasoning.medium")}</option><option value="high">{t("chat.input.reasoning.high")}</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">{t("chat.input.apiKey")}
-            <input data-tour="apikey" type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={t("chat.input.apiKeyPlaceholder")} aria-label={t("chat.input.apiKey")} />
-          </label>
-        </div>
       </form>
     </div>
   );

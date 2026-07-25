@@ -31,6 +31,7 @@ export const fr = {
   'header.services': 'Services',
   'header.language': 'Langue',
   'header.privacyTitle': 'Confidentialité et RGPD',
+  'header.settings': 'Réglages de la conversation',
 
   // Fréquentation du site (bandeau du bas)
   'stats.account': 'compte',
@@ -192,6 +193,7 @@ export const en: Record<TranslationKey, string> = {
   'header.services': 'Services',
   'header.language': 'Language',
   'header.privacyTitle': 'Privacy and GDPR',
+  'header.settings': 'Conversation settings',
   'stats.account': 'account',
   'stats.accounts': 'accounts',
   'stats.prompt': 'tutor',
@@ -341,6 +343,7 @@ export const it: Record<TranslationKey, string> = {
   'header.services': 'Servizi',
   'header.language': 'Lingua',
   'header.privacyTitle': 'Privacy e GDPR',
+  'header.settings': 'Impostazioni della conversazione',
   'stats.account': 'account',
   'stats.accounts': 'account',
   'stats.prompt': 'tutor',
@@ -488,6 +491,7 @@ export const de: Record<TranslationKey, string> = {
   'header.services': 'Dienste',
   'header.language': 'Sprache',
   'header.privacyTitle': 'Datenschutz und DSGVO',
+  'header.settings': 'Gesprächseinstellungen',
   'stats.account': 'Konto',
   'stats.accounts': 'Konten',
   'stats.prompt': 'Tutor',

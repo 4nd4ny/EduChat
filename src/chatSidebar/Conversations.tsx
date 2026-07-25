@@ -7,7 +7,7 @@ type Props = {};
 export default function Conversations({}: Props) {
   const { conversations, conversationId } = useAnthropic();
   return (
-    <div className="flex-1 overflow-y-auto py-2 scrollbar-none">
+    <div className="min-h-0 flex-1 overflow-y-auto py-2 scrollbar-none">
       <div className="flex flex-col gap-y-2">
         { // Object.keys(conversations).reverse() // Inverser l'ordre des clés
           Object.entries(conversations) 

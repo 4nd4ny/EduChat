@@ -85,10 +85,10 @@ export default function ChatSidebar({}: Props) {
   });
 
   return (
-    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-primary md:fixed md:left-0 md:top-[60px] md:h-[calc(100vh-60px)] md:w-[320px]">
-      <div className="flex h-full flex-col items-stretch p-2">
+    <div data-tour="history" className="flex h-full max-h-full flex-col bg-gray-900 text-primary lg:fixed lg:left-0 lg:top-[60px] lg:h-[calc(100vh-60px)] lg:w-[320px]">
+      <div className="flex h-full min-h-0 flex-col items-stretch p-2">
 
-        <div className="flex flex-col gap-y-2 border-y border-white/10 py-2">  
+        <div className="flex shrink-0 flex-col gap-y-2 border-y border-white/10 py-2">  
           <Link
             href="#"
             onClick={handleNewChat}
@@ -109,7 +109,7 @@ export default function ChatSidebar({}: Props) {
 
         <Conversations />
 
-        <div className="flex flex-col gap-y-2 border-y border-white/10 py-2">
+        <div className="flex shrink-0 flex-col gap-y-2 border-y border-white/10 py-2">
           <ButtonContainer onClick={() => downloadProfile()}>
             <MdDownload />
             {t("sidebar.exportAll")}

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useRef, useState } from "react";
-import { MdAccountCircle, MdHelpOutline, MdHome, MdLanguage, MdOutlinePrivacyTip } from "react-icons/md";
+import { MdAccountCircle, MdHelpOutline, MdHome, MdLanguage, MdOutlinePrivacyTip, MdTune } from "react-icons/md";
+import ChatSettings from "../chat/ChatSettings";
 import { useT } from "../i18n/useT";
 
 // Barre de navigation commune à TOUTES les pages (60 px) : accueil à gauche,
@@ -60,8 +61,52 @@ function LanguageMenu() {
   );
 }
 
+/**
+ * Réglages de conversation dans la barre : en rangée dès 1024 px, sinon
+ * repliés derrière un bouton (ils ne tiendraient pas sur la ligne).
+ */
+function ChatSettingsSlot() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (event: MouseEvent) => {
+      if (!boxRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <div className="hidden min-w-0 lg:flex"><ChatSettings layout="bar" /></div>
+      <div className="relative lg:hidden" ref={boxRef}>
+        <button onClick={() => setOpen(o => !o)} className={ICON}
+          aria-haspopup="dialog" aria-expanded={open} title={t("header.settings")}>
+          <MdTune />
+        </button>
+        {open && (
+          <div className="absolute left-1/2 top-11 z-50 w-64 -translate-x-1/2 rounded border border-white/15 bg-secondary p-3 shadow-xl">
+            <ChatSettings layout="panel" />
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function SiteHeader() {
   const t = useT();
+  const { pathname } = useRouter();
+  // Les réglages n'ont de sens que là où l'on converse.
+  const isChat = pathname.startsWith("/chat") || pathname.startsWith("/school");
 
   return (
     <header className="sticky top-0 z-40 h-[60px] shrink-0 border-b border-white/10 bg-secondary/95 backdrop-blur">
@@ -69,6 +114,7 @@ export default function SiteHeader() {
         <Link href="/" className={ICON} title={t("header.home")} aria-label={t("header.home")}>
           <MdHome />
         </Link>
+        {isChat && <ChatSettingsSlot />}
         <nav className="flex items-center gap-0.5" aria-label={t("header.services")}>
           <LanguageMenu />
           <Link href="/rgpd" className={ICON} title={t("header.privacyTitle")} aria-label={t("common.privacy")}>

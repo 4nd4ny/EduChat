@@ -40,7 +40,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.addEventListener('storage', updateTitle);
     window.addEventListener('totalTokensUpdated', updateTitle);
 
-    const checkIsMobile = () => setIsMobile(window.innerWidth < 768);
+    // L'historique se replie sous 1024 px (et non 768) : en dessous, la
+    // colonne de 320 px mangeait la conversation.
+    const checkIsMobile = () => setIsMobile(window.innerWidth < 1024);
     checkIsMobile();
     window.addEventListener('resize', checkIsMobile);
 
@@ -57,9 +59,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // Sur mobile la sidebar coulisse par-dessus le contenu, mais JAMAIS par-dessus
   // la barre de navigation (60 px) : celle-ci reste toujours atteignable.
+  //
+  // ATTENTION : aucune classe de TRANSFORMATION en dehors du mobile. Une
+  // transformation, même « translate-x-0 », crée un conteneur de référence
+  // pour les descendants en position fixed : la barre latérale se calait
+  // alors sous ce conteneur (déjà décalé de la hauteur de l'en-tête) et
+  // débordait de 60 px par le bas — « Tout effacer » passait sous l'écran.
   const getSidebarClasses = useCallback((isOpen: boolean) => `
-    ${isMobile ? 'fixed bottom-0 top-[60px] left-0 z-30 transition-transform duration-300 ease-in-out transform' : ''}
-    ${isMobile && !isOpen ? '-translate-x-[calc(100%+4px)]' : 'translate-x-0'}
+    ${isMobile ? 'fixed bottom-0 top-[60px] left-0 z-30 transform transition-transform duration-300 ease-in-out' : ''}
+    ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-[calc(100%+4px)]') : ''}
   `, [isMobile]);
 
   const getSidebarStyle = useCallback((isOpen: boolean) => ({
