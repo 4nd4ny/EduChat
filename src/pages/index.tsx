@@ -48,6 +48,12 @@ const PROFILES: Array<{
 // déborderait de sa case sur les petits écrans.
 const CELL = "flex h-full min-h-[3.5rem] w-full min-w-0 flex-col items-center justify-center gap-0.5 break-words rounded border border-white/20 px-3 py-2 text-center leading-tight transition hover:border-[#DC6521]/60 hover:bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#DC6521]";
 
+// Barre de recherche, bouton « Proposer » et liste de tri : même fond et
+// surtout même HAUTEUR imposée. Sans elle, chacun se dimensionnerait sur sa
+// propre police (17,6 px pour la recherche, 14 px pour les deux autres) et
+// la ligne paraîtrait bancale.
+const FIELD = "h-10 rounded bg-tertiary";
+
 // Accueil = LE catalogue des prompts socratiques (pivot v3) :
 // le choix du tuteur est au centre de l'expérience.
 export default function Catalogue() {
@@ -133,17 +139,17 @@ export default function Catalogue() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder={t("home.search")}
-            className="w-full rounded bg-tertiary py-2 pl-10 pr-3 outline-none"
+            className={`${FIELD} w-full pl-10 pr-3 outline-none`}
             aria-label={t("home.search")}
           />
         </label>
         <Link href="/publier"
-          className="flex items-center justify-center gap-2 rounded bg-tertiary px-4 py-2 text-sm hover:opacity-80">
+          className={`${FIELD} flex items-center justify-center gap-2 px-4 text-sm hover:opacity-80`}>
           <MdAddCircleOutline /> {t("home.propose")}
         </Link>
         <label className="flex items-center gap-2 text-sm">
           <span className="opacity-70">{t("home.sort")}</span>
-          <select value={sort} onChange={e => setSort(e.target.value)} className="rounded bg-tertiary p-2">
+          <select value={sort} onChange={e => setSort(e.target.value)} className={`${FIELD} px-2`}>
             {SORT_KEYS.map(value => <option key={value} value={value}>{t(`home.sort.${value}` as TranslationKey)}</option>)}
           </select>
         </label>
