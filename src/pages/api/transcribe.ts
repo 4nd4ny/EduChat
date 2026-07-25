@@ -1,5 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getClientIp, isRateLimited } from '../../server/access';
+import { getClientIp, isRateLimited, mayUseServerKeys } from '../../server/access';
+import { getDb } from '../../server/db';
+import { resolveEtablissementByIp } from '../../server/etablissements';
+import { DeveloperKeys } from '../../utils/env';
 import { requireAuth } from '../../server/token';
 import { readUserKey } from '../../server/userKeys';
 import { ERR, isProviderId, providerDefaults } from '../../shared/providers';
@@ -61,9 +64,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Clé saisie dans la page, ou clé mémorisée du compte (même règle que la
   // complétion) : dans les deux cas c'est la clé personnelle de l'utilisateur.
   let apiKey = String(body.apiKey || '').trim();
+  let usedServerKey = false;
   if (!apiKey) {
     const account = requireAuth(req);
     if (account) apiKey = readUserKey(account.email, provider) ?? '';
+  }
+  // La DICTÉE d'une classe est payée par la clé de l'école, comme le chat.
+  // Sans cela, « l'élève parle à son téléphone » resterait réservé à qui
+  // apporte sa propre clé — c'est-à-dire à personne, en classe.
+  if (!apiKey && await mayUseServerKeys(clientIp)) {
+    if (providerDefaults[provider].wrng) {
+      return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
+    }
+    apiKey = String(DeveloperKeys[provider] || '').trim();
+    usedServerKey = !!apiKey;
   }
   if (!apiKey) return res.status(403).json({ error: { code: ERR.VOICE_KEY } });
   if (!providerDefaults[provider].voice) return res.status(400).json({ error: { code: ERR.VOICE_UNSUPPORTED } });
@@ -101,6 +115,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     } else {
       text = await transcribeUpstream('https://api.mistral.ai/v1/audio/transcriptions', apiKey, 'voxtral-mini-latest', blob, filename);
+    }
+    // Journaliser la dictée payée par l'école : elle appartient à la facture
+    // au même titre qu'un message. Les jetons n'existent pas pour de l'audio —
+    // on inscrit une estimation à partir du texte obtenu, clairement identifiée
+    // par le nom du modèle de transcription.
+    if (usedServerKey) {
+      try {
+        const etab = resolveEtablissementByIp(clientIp);
+        getDb().prepare(`
+          INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
+          VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, 1, '')
+        `).run(Date.now(), clientIp, etab?.id ?? null, provider,
+               provider === 'mistral' ? 'voxtral-mini-latest (dictée)' : 'transcription',
+               Math.max(1, Math.round(text.length / 4)));
+      } catch (error) {
+        console.error('Dictée non journalisée :', error);
+      }
     }
     return res.status(200).json({ text });
   } catch (error: any) {

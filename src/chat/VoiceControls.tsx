@@ -58,19 +58,54 @@ export default function VoiceControls({ onDictation }: { onDictation: (text: str
   }, []);
 
   // Lecture vocale : dès qu'une réponse est COMPLÈTE (fin du flux), la lire.
+  //
+  // Sur Mistral, Voxtral donne une voix nettement plus naturelle — mais chaque
+  // lecture est un appel facturé. En cas d'échec (pas de clé, refus, réseau),
+  // on retombe SILENCIEUSEMENT sur la synthèse du navigateur : mieux vaut une
+  // voix ordinaire que pas de voix du tout.
   useEffect(() => {
-    if (!voiceMode || loading || typeof window === "undefined" || !window.speechSynthesis) return;
+    if (!voiceMode || loading || typeof window === "undefined") return;
     const last = messages[messages.length - 1];
     if (!last || last.role !== "assistant" || last.id === lastSpokenRef.current) return;
     if (last.content.startsWith("Erreur")) return;
     lastSpokenRef.current = last.id;
-    const utterance = new SpeechSynthesisUtterance(speakableText(last.content));
-    utterance.lang = SPEECH_LANG[router.locale ?? "fr"] ?? "fr-FR";
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [messages, loading, voiceMode, router.locale]);
+    const texte = speakableText(last.content);
 
-  useEffect(() => () => { window.speechSynthesis?.cancel(); }, []);
+    const parLeNavigateur = () => {
+      if (!window.speechSynthesis) return;
+      const utterance = new SpeechSynthesisUtterance(texte);
+      utterance.lang = SPEECH_LANG[router.locale ?? "fr"] ?? "fr-FR";
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    };
+
+    if (provider !== "mistral") { parLeNavigateur(); return; }
+
+    let vivant = true;
+    window.speechSynthesis?.cancel();
+    fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ text: texte, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }),
+    })
+      .then(response => (response.ok ? response.blob() : Promise.reject()))
+      .then(blob => {
+        if (!vivant) return;
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => URL.revokeObjectURL(url);
+        return audio.play();
+      })
+      .catch(() => { if (vivant) parLeNavigateur(); });
+    return () => { vivant = false; };
+  }, [messages, loading, voiceMode, provider, apiKey, router.locale]);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => {
+    window.speechSynthesis?.cancel();
+    audioRef.current?.pause();
+  }, []);
 
   const transcribe = useCallback(async (blob: Blob, mimeType: string) => {
     setTranscribing(true); setError("");
