@@ -21,9 +21,10 @@ const STEPS: TourStep[] = [
   { target: "tutor", shape: "rect", textKey: "tour.tutor" },
   { target: "messages", shape: "rect", textKey: "tour.messages" },
   { target: "history", shape: "rect", textKey: "tour.history" },
+  // Ni « model » ni « reasoning » : le choix du modèle a quitté le chat (il
+  // suit l'échelle réglée dans /admin) et l'effort suit le barreau. Une étape
+  // sans cible laisserait la visite chercher pendant cinq secondes.
   { target: "provider", shape: "rect", textKey: "tour.provider" },
-  { target: "model", shape: "rect", textKey: "tour.model" },
-  { target: "reasoning", shape: "rect", textKey: "tour.reasoning" },
   { target: "apikey", shape: "rect", textKey: "tour.apikey" },
   { target: "composer", shape: "rect", textKey: "tour.composer" },
   { target: "attach", shape: "circle", textKey: "tour.attach" },

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
-import ModelField from "./ModelField";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -18,8 +17,8 @@ const FIELD = "h-9 min-w-0 rounded bg-tertiary px-2 text-xs text-primary outline
 
 export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const {
-    provider, setProvider, model, pinModel, apiKey, setApiKey,
-    savedKeyProviders, keysOptin, refreshSavedKeys,
+    provider, setProvider, apiKey, setApiKey,
+    savedKeyProviders, refreshSavedKeys,
   } = useAnthropic();
   const t = useT();
   const bar = layout === "bar";
@@ -62,10 +61,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const toggleRemember = (checked: boolean) =>
     putKeys({ optin: checked, ...(checked && apiKey.trim() ? { provider, apiKey } : {}) });
 
-  // Enregistrer la clé du champ pour le fournisseur affiché (bouton explicite).
-  const rememberCurrent = () => apiKey.trim() ? putKeys({ provider, apiKey }) : undefined;
-
   const keySaved = savedKeyProviders.includes(provider);
+  // « Nouvelle clé » : quelque chose est saisi pour ce fournisseur et le
+  // serveur ne le connaît pas encore. C'est le seul moment où proposer de
+  // mémoriser a un sens.
+  const cleNouvelle = !!apiKey.trim() && !keySaved;
+  const drapeau = !!(providerDefaults[provider]?.gdpr || providerDefaults[provider]?.wrng);
 
   // En rangée, l'étiquette n'est portée que par aria-label/title ; en panneau,
   // elle est visible au-dessus du champ.
@@ -76,6 +77,25 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
 
   return (
     <div className={bar ? "flex items-center gap-2" : "flex flex-col gap-3"}>
+      {/* Drapeau du fournisseur, collé À GAUCHE de la liste. En rangée il est
+          PIVOTÉ (écriture verticale, lecture de bas en haut) : il occupe ainsi
+          deux millimètres de large au lieu d'une case entière, et reste lisible.
+          Vert « RGPD » = cadre possible avec votre clé ; rouge « WRNG » =
+          sous-traitant hors UE sans cadre reconnu. */}
+      <div className={bar ? "flex items-center gap-0" : "contents"}>
+      {drapeau && (
+        <a href="/rgpd" target="_blank" rel="noreferrer"
+          title={providerDefaults[provider]?.wrng ? t("chat.input.wrng.title") : t("chat.input.gdpr.title")}
+          className={[
+            providerDefaults[provider]?.wrng ? "bg-red-600/80 hover:bg-red-600" : "bg-green-600/80 hover:bg-green-600",
+            "text-[9px] font-semibold uppercase tracking-wide text-white no-underline",
+            bar
+              ? "flex h-9 shrink-0 items-center justify-center rounded-l-sm px-px [writing-mode:vertical-rl] rotate-180"
+              : "w-fit rounded-sm px-1 py-px leading-none",
+          ].join(" ")}>
+          {providerDefaults[provider]?.wrng ? t("chat.input.wrng.tag") : t("chat.input.gdpr.tag")}
+        </a>
+      )}
       <Wrap label={t("chat.input.provider")} width="w-32">
         <div className="relative">
           <select
@@ -84,7 +104,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             onChange={event => setProvider(event.target.value as ProviderId)}
             title={t("chat.input.provider")}
             aria-label={t("chat.input.provider")}
-            className={`${FIELD} w-full`}
+            className={`${FIELD} w-full ${bar && drapeau ? "rounded-l-none" : ""}`}
           >
             {Object.entries(providerDefaults).map(([id, item]) => {
               const cleRequise = served !== null && !served.includes(id);
@@ -99,43 +119,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           </select>
         </div>
       </Wrap>
-
-      {/* Drapeau du fournisseur, collé au champ Modèle. En rangée il est
-          PIVOTÉ (écriture verticale, lecture de bas en haut) : il occupe
-          ainsi deux millimètres de large au lieu d'une case entière.
-          Vert « RGPD » = cadre possible avec votre clé ; rouge « WRNG » =
-          sous-traitant hors UE sans cadre reconnu. */}
-      <div className={bar ? "flex items-center gap-0" : "contents"}>
-      {(providerDefaults[provider]?.gdpr || providerDefaults[provider]?.wrng) && (
-        <a href="/rgpd" target="_blank" rel="noreferrer"
-          title={providerDefaults[provider]?.wrng ? t("chat.input.wrng.title") : t("chat.input.gdpr.title")}
-          className={[
-            providerDefaults[provider]?.wrng ? "bg-red-600/80 hover:bg-red-600" : "bg-green-600/80 hover:bg-green-600",
-            "rounded-sm text-[9px] font-semibold uppercase tracking-wide text-white no-underline",
-            bar && hasAccount
-              ? "flex h-9 shrink-0 items-center justify-center px-px [writing-mode:vertical-rl] rotate-180"
-              : "w-fit px-1 py-px leading-none",
-          ].join(" ")}>
-          {providerDefaults[provider]?.wrng ? t("chat.input.wrng.tag") : t("chat.input.gdpr.tag")}
-        </a>
-      )}
-
-      {/* Le nom du modèle est du jargon : un apprenant n'a pas à le connaître.
-          Le serveur applique l'échelle réglée dans /admin, et « Régénérer »
-          monte d'un cran. Les promptagogues, eux, gardent la main. */}
-      {hasAccount && (
-      <Wrap label={t("chat.input.model")} width="w-40">
-        <ModelField
-          dataTour="model"
-          provider={provider}
-          apiKey={apiKey}
-          model={model}
-          onChange={pinModel}
-          className={`${FIELD} w-full ${bar ? "rounded-l-none" : ""}`}
-        />
-      </Wrap>
-      )}
       </div>
+
+      {/* Plus de choix de modèle ici : c'est l'administration qui règle
+          l'échelle des trois barreaux par fournisseur, et « Régénérer » monte
+          d'un cran. Nommer un modèle reste possible dans le DUEL, dont c'est
+          précisément l'objet. */}
 
 
       <Wrap label={t("chat.input.apiKey")} width="w-36">
@@ -152,23 +141,19 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
         />
       </Wrap>
 
-      {/* Mémorisation de la clé : uniquement pour les comptes, jamais par
-          défaut, et l'état de la case suit le compte d'un appareil à l'autre. */}
-      {hasAccount && keysAvailable && (
+      {/* La case n'apparaît qu'au moment utile : une clé vient d'être saisie
+          pour ce fournisseur et le serveur ne l'a pas encore. Le reste du
+          temps elle n'avait rien à proposer, et occupait la barre pour rien.
+          Cocher vaut consentement ET enregistrement, en un geste. */}
+      {hasAccount && keysAvailable && cleNouvelle && (
         <label className={`flex items-center gap-1.5 text-[10px] leading-tight text-primary ${bar ? "max-w-[7rem]" : ""}`}
           title={t("chat.input.rememberKeyTitle")}>
-          <input type="checkbox" checked={keysOptin} onChange={event => void toggleRemember(event.target.checked)} />
+          <input type="checkbox" checked={false} onChange={() => void toggleRemember(true)} />
           <span className="opacity-70">{t("chat.input.rememberKey")}</span>
         </label>
       )}
 
       {keyError && <span role="alert" className="text-[10px] text-red-400">{keyError}</span>}
-      {hasAccount && keysAvailable && keysOptin && !keySaved && apiKey.trim() && (
-        <button type="button" onClick={() => void rememberCurrent()}
-          className="h-9 shrink-0 rounded border border-white/20 px-2 text-[10px] text-primary hover:bg-tertiary">
-          {t("chat.input.rememberThis")}
-        </button>
-      )}
     </div>
   );
 }
