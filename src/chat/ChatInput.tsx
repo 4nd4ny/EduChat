@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useEffect } from "react";
 import { MdAttachFile, MdClose, MdSend } from "react-icons/md";
 import { PendingAttachment, providerDefaults, useAnthropic } from "../context/AnthropicProvider";
+import { authHeaders } from "../utils/account";
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../shared/providers";
 import { formatTokens } from "../utils/formatTokens";
 import { useT } from "../i18n/useT";
@@ -41,7 +42,8 @@ export default function ChatInput() {
   // BYOK : un PDF d'élève ne part pas sur la clé d'un établissement).
   const [internalKey, setInternalKey] = useState(false);
   useEffect(() => {
-    fetch("/api/providers").then(r => r.json()).then(d => setInternalKey(!!d.internalKey)).catch(() => {});
+    fetch("/api/providers", { headers: authHeaders() })
+      .then(r => r.json()).then(d => setInternalKey(!!d.internalKey)).catch(() => {});
   }, []);
   const canAttach = hasUsableKey && (!!caps.images || !!caps.pdf);
   // Chat vocal : clé perso + fournisseur doté d'une API de transcription.

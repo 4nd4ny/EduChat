@@ -53,10 +53,21 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [served, setServed] = useState<string[] | null>(null);
   const [adulteAutorise, setAdulteAutorise] = useState(false);
   useEffect(() => {
-    fetch("/api/providers").then(r => r.json()).then(d => {
-      setServed(d.served ?? []);
-      setAdulteAutorise(!!d.adultAllowed);
-    }).catch(() => {});
+    // AVEC le jeton : sans lui, le serveur ne peut pas savoir que ce compte
+    // est certifié adulte, et renvoie toujours adultAllowed = false. C'est ce
+    // qui masquait les fournisseurs à un compte pourtant autorisé.
+    //
+    // Et à CHAQUE changement de compte : la liste demandée une seule fois au
+    // montage resterait celle du visiteur anonyme après une identification.
+    const relire = () => {
+      fetch("/api/providers", { headers: authHeaders() }).then(r => r.json()).then(d => {
+        setServed(d.served ?? []);
+        setAdulteAutorise(!!d.adultAllowed);
+      }).catch(() => {});
+    };
+    relire();
+    window.addEventListener("accountChanged", relire);
+    return () => window.removeEventListener("accountChanged", relire);
   }, []);
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
