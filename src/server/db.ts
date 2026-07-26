@@ -374,6 +374,14 @@ export function getDb(): Database.Database {
     "ALTER TABLE tarifs ADD COLUMN propose_modele TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE tarifs ADD COLUMN propose_detail TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE tarifs ADD COLUMN propose_at INTEGER NOT NULL DEFAULT 0",
+    // Jetons d'ENTRÉE et de SORTIE, séparés : ils n'ont pas le même prix (un
+    // jeton de sortie en vaut cinq chez Anthropic comme chez Mistral). La
+    // colonne « tokens » reste leur SOMME — toutes les requêtes et les exports
+    // existants continuent de dire vrai. Les lignes antérieures gardent 0/0 :
+    // le porte-monnaie n'a besoin d'être juste que pour la suite, et inventer
+    // une répartition rétroactive serait inventer des chiffres.
+    "ALTER TABLE usage_log ADD COLUMN tokens_in INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_log ADD COLUMN tokens_out INTEGER NOT NULL DEFAULT 0",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec

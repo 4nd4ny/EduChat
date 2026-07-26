@@ -229,6 +229,22 @@ export function buildProviderRequest(raw: ProviderCallOpts): { url: string; init
   };
 }
 
+/**
+ * ENTRÉE et SORTIE séparées — elles n'ont PAS le même prix.
+ *
+ * Chez Anthropic comme chez Mistral, un jeton de sortie coûte cinq fois un
+ * jeton d'entrée. Les additionner obligeait à deviner un rapport pour
+ * facturer ; or les trois fournisseurs les renvoient distinctement. Il n'y a
+ * donc rien à deviner : il suffisait de cesser de jeter l'information.
+ */
+export function tokensDetail(u: any): { entree: number; sortie: number } {
+  if (!u || typeof u !== 'object') return { entree: 0, sortie: 0 };
+  return {
+    entree: u.input_tokens ?? u.prompt_tokens ?? u.inputTokens ?? 0,
+    sortie: u.output_tokens ?? u.completion_tokens ?? u.outputTokens ?? 0,
+  };
+}
+
 /** Décompte de tokens tolérant aux vocabulaires des différents fournisseurs. */
 export function tokensFromUsage(u: any): number {
   if (!u || typeof u !== 'object') return 0;
@@ -245,7 +261,7 @@ export function tokensFromUsage(u: any): number {
 export async function streamProviderResponse(
   o: ProviderCallOpts,
   onDelta: (text: string) => void,
-): Promise<{ text: string; tokens: number }> {
+): Promise<{ text: string; tokens: number; detail: { entree: number; sortie: number } }> {
   const { url, init } = buildProviderRequest({ ...o, stream: true });
   const response = await fetch(url, init);
   if (!response.ok || !response.body) {
@@ -257,6 +273,8 @@ export async function streamProviderResponse(
   let text = '';
   let tokens = 0;
   let inputTokens = 0; // Anthropic sépare entrée (message_start) et sortie (message_delta)
+  // Détail entrée/sortie, pour facturer au bon prix chacun des deux.
+  let detail = { entree: 0, sortie: 0 };
 
   const push = (fragment: unknown) => {
     if (typeof fragment === 'string' && fragment) { text += fragment; onDelta(fragment); }
@@ -268,15 +286,15 @@ export async function streamProviderResponse(
       case 'openai':
       case 'grok':
         if (evt.type === 'response.output_text.delta') push(evt.delta);
-        else if (evt.type === 'response.completed') tokens = tokensFromUsage(evt.response?.usage);
+        else if (evt.type === 'response.completed') { tokens = tokensFromUsage(evt.response?.usage); detail = tokensDetail(evt.response?.usage); }
         else if (evt.type === 'response.failed' || evt.type === 'error') {
           throw new Error(evt.response?.error?.message ?? evt.error?.message ?? 'response.failed');
         }
         break;
       case 'anthropic':
         if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') push(evt.delta.text);
-        else if (evt.type === 'message_start') inputTokens = evt.message?.usage?.input_tokens ?? 0;
-        else if (evt.type === 'message_delta') tokens = inputTokens + (evt.usage?.output_tokens ?? 0);
+        else if (evt.type === 'message_start') { inputTokens = evt.message?.usage?.input_tokens ?? 0; detail.entree = inputTokens; }
+        else if (evt.type === 'message_delta') { detail.sortie = evt.usage?.output_tokens ?? 0; tokens = inputTokens + detail.sortie; }
         else if (evt.type === 'error') throw new Error(evt.error?.message ?? 'stream error');
         break;
       // OpenRouter et tous les fournisseurs au dialecte OpenAI partagent
@@ -289,7 +307,7 @@ export async function streamProviderResponse(
       case 'minimax': {
         const delta = evt.choices?.[0]?.delta?.content;
         push(typeof delta === 'string' ? delta : delta?.[0]?.text);
-        if (evt.usage) tokens = tokensFromUsage(evt.usage);
+        if (evt.usage) { tokens = tokensFromUsage(evt.usage); detail = tokensDetail(evt.usage); }
         if (evt.error) throw new Error(evt.error?.message ?? 'stream error');
         break;
       }
@@ -297,7 +315,7 @@ export async function streamProviderResponse(
         if (evt.type === 'message.output.delta') {
           push(typeof evt.content === 'string' ? evt.content : evt.content?.text);
         } else if (evt.type === 'conversation.response.done') {
-          tokens = tokensFromUsage(evt.usage);
+          tokens = tokensFromUsage(evt.usage); detail = tokensDetail(evt.usage);
         } else if (evt.type === 'conversation.response.error' || evt.type === 'error') {
           throw new Error(evt.message ?? evt.error?.message ?? 'stream error');
         }
@@ -353,5 +371,5 @@ export async function streamProviderResponse(
   processBuffer(true);
 
   if (!text) throw new Error('flux vide — aucun texte reçu du fournisseur');
-  return { text, tokens };
+  return { text, tokens, detail };
 }

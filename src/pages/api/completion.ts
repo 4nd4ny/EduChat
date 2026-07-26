@@ -5,6 +5,7 @@ import { requireAuth } from "../../server/token";
 import { getLadder } from "../../server/ladder";
 import { mayUseAdultProviders } from "../../server/adult";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
+import { tokensDetail } from "../../server/llm";
 import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { traductionFraiche } from "../../server/traduction";
@@ -62,6 +63,16 @@ function textFromResponse(data: any): string {
 function usageFromResponse(data: any): number {
   const usage = data?.usage ?? {};
   return usage.total_tokens ?? usage.totalTokens ?? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+}
+
+/**
+ * Entrée et sortie, séparées. Elles n'ont pas le même prix — un jeton de
+ * sortie en vaut cinq chez Anthropic comme chez Mistral — et les fournisseurs
+ * les renvoient distinctement. Les additionner obligeait à deviner un rapport
+ * pour facturer ; il n'y a rien à deviner, il suffit de ne plus jeter.
+ */
+function detailFromResponse(data: any): { entree: number; sortie: number } {
+  return tokensDetail(data?.usage ?? {});
 }
 
 async function requestJson(url: string, init: RequestInit) {
@@ -357,7 +368,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // du tuteur + journal de consommation. Le journal ne porte l'IP que pour la
   // clé INTERNE (donnée de facturation d'un établissement scolaire) — jamais
   // pour les clés personnelles.
-  const recordStats = (tokenUsage: number) => {
+  const recordStats = (tokenUsage: number, detail: { entree: number; sortie: number } = { entree: 0, sortie: 0 }) => {
     // Présence anonyme : alimente le compteur « en ligne » de l'accueil, tous
     // modes confondus (clé personnelle comprise). Empreinte non réversible.
     touchPresence(clientId, clientIp);
@@ -371,16 +382,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (usedServerKey) {
           // Clé interne : journalisée AVEC l'IP d'établissement (facturation).
           db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, effProvider, effModel, tokenUsage, studentBucket);
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, effProvider, effModel,
+                 tokenUsage, detail.entree, detail.sortie, studentBucket);
         } else if (usedFreeKey) {
           // Clé gratuite publique : journalisée SANS IP ni établissement (suivi
           // du budget gratuit uniquement, aucune donnée personnelle).
           db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
-            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, 1, '')
-          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage);
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
+            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '')
+          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie);
         }
       })();
     } catch (statsError) {
@@ -443,12 +455,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       let text = '';
       let tokens = 0;
+      let detail = { entree: 0, sortie: 0 };
       try {
         const result = await streamProviderResponse(callOpts(effModel, true), fragment => {
           emitted = true;
           emit({ type: 'delta', text: fragment });
         });
-        text = result.text; tokens = result.tokens;
+        text = result.text; tokens = result.tokens; detail = result.detail;
         // Certains fournisseurs (dialecte OpenAI minimal) n'envoient aucun
         // décompte dans le flux : estimation prudente à ~4 caractères par
         // token, pour que les compteurs publics ne restent pas à zéro.
@@ -460,10 +473,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { url, init } = buildProviderRequest(callOpts(effModel, false));
         const data = await requestJson(url, init);
         text = textFromResponse(data);
-        tokens = usageFromResponse(data);
+        tokens = usageFromResponse(data); detail = detailFromResponse(data);
         emit({ type: 'delta', text });
       }
-      recordStats(tokens);
+      recordStats(tokens, detail);
       emit({ type: 'done', tokenUsage: tokens });
     } catch (error: any) {
       console.error(`Erreur du fournisseur ${effProvider} (flux) :`, error?.message);
@@ -500,7 +513,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (lastError) throw lastError;
 
     const tokenUsage = usageFromResponse(data);
-    recordStats(tokenUsage);
+    recordStats(tokenUsage, detailFromResponse(data));
 
     return res.status(200).json({
       reply: textFromResponse(data),
