@@ -241,14 +241,14 @@ RÈGLES ABSOLUES
 - N'ajoute aucun commentaire, aucune note de traducteur, aucun préambule.
 - Le registre est celui d'un enseignant s'adressant à un élève : vouvoiement institutionnel là où la langue le demande.
 
-FORMAT DE RÉPONSE — exactement ceci, sans rien avant ni après :
-<<<NOM>>>
+FORMAT DE RÉPONSE — exactement ceci, sans rien avant ni après. Les marqueurs <<<1>>> <<<2>>> <<<3>>> <<<0>>> sont des repères techniques : recopie-les CARACTÈRE POUR CARACTÈRE, ne les traduis pas, ne les renumérote pas.
+<<<1>>>
 (le nom du tuteur traduit, ou inchangé s'il s'agit d'un nom propre comme Socrate)
-<<<DESCRIPTION>>>
+<<<2>>>
 (la description courte traduite)
-<<<CORPS>>>
+<<<3>>>
 (le prompt système entier, traduit)
-<<<FIN>>>`;
+<<<0>>>`;
 
 async function traduireUn(row: PromptRow, source: Locale, cible: Locale):
   Promise<{ champs: { nom: string; description: string; corps: string }; tokens: number }> {
@@ -257,7 +257,7 @@ async function traduireUn(row: PromptRow, source: Locale, cible: Locale):
 
   const demande =
     `Langue source : ${NOM_LANGUE[source]}. Langue cible : ${NOM_LANGUE[cible]}.\n\n` +
-    `<<<NOM>>>\n${row.name}\n<<<DESCRIPTION>>>\n${row.description}\n<<<CORPS>>>\n${row.body}\n<<<FIN>>>`;
+    `<<<1>>>\n${row.name}\n<<<2>>>\n${row.description}\n<<<3>>>\n${row.body}\n<<<0>>>`;
 
   const reponse = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -296,13 +296,23 @@ async function traduireUn(row: PromptRow, source: Locale, cible: Locale):
  * antislashs et des sauts de ligne par paquets, et un modèle qui échappe mal
  * un JSON de 20 Ko produit un document irrécupérable. Des balises, elles, ne
  * s'échappent pas.
+ *
+ * MAIS ELLES SE TRADUISENT. Les premiers marqueurs portaient des mots français
+ * (NOM, CORPS, FIN) : en italien, le modèle rendait consciencieusement
+ * <<<CORPO>>> et <<<FINE>>> — une traduction sur trois échouait, et toujours la
+ * même. D'où deux précautions plutôt qu'une : des marqueurs NUMÉRIQUES, qu'on
+ * ne traduit pas, et un découpage qui coupe sur n'importe quel marqueur sans
+ * jamais lire son libellé. Même si un modèle inventait ses propres étiquettes,
+ * l'ordre des trois champs suffirait à les retrouver.
  */
 function decouper(texte: string): { nom: string; description: string; corps: string } | null {
-  const m = /<<<NOM>>>\s*([\s\S]*?)\s*<<<DESCRIPTION>>>\s*([\s\S]*?)\s*<<<CORPS>>>\s*([\s\S]*?)\s*(?:<<<FIN>>>|$)/.exec(texte);
-  if (!m) return null;
+  const morceaux = texte.split(/<<<[^>\n]{1,24}>>>/);
+  // morceaux[0] est ce qui précède le premier marqueur (normalement vide).
+  if (morceaux.length < 4) return null;
   return {
-    nom: m[1].trim().slice(0, 120),
-    description: m[2].trim().slice(0, 500),
-    corps: m[3].replace(/\s+$/, ''),
+    nom: morceaux[1].trim().slice(0, 120),
+    description: morceaux[2].trim().slice(0, 500),
+    // Le saut de ligne qui suit le marqueur appartient au format, pas au texte.
+    corps: morceaux[3].trim(),
   };
 }
