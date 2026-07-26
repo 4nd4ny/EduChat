@@ -65,8 +65,10 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'admin-validation', shape: 'rect', textKey: 'tour.admin.validation' },
     { target: 'admin-prompts', shape: 'rect', textKey: 'tour.admin.prompts' },
     { target: 'admin-comptes', shape: 'rect', textKey: 'tour.admin.accounts' },
+    // L'ordre suit celui de la page : zone Comptes (comptes, facturation,
+    // établissements), puis zone Modèles.
+    { target: 'admin-facturation', shape: 'rect', textKey: 'tour.admin.billing' },
     { target: 'admin-etablissements', shape: 'rect', textKey: 'tour.admin.schools' },
     { target: 'admin-echelle', shape: 'rect', textKey: 'tour.admin.ladder' },
-    { target: 'admin-facturation', shape: 'rect', textKey: 'tour.admin.billing' },
   ],
 };

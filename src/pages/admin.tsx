@@ -6,6 +6,7 @@ import {
   MdEdit, MdPublish, MdVisibilityOff, MdAdminPanelSettings,
 } from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
+import { useListe, useListeSeule } from "../site/ListePaginee";
 import { formatTokens } from "../utils/formatTokens";
 
 type AdminPrompt = {
@@ -101,6 +102,51 @@ export default function AdminPage() {
   // POURQUOI un renommage a échoué, alors qu'il écrase le message de act().
   const dernierCode = useRef("");
   const [denied, setDenied] = useState(false);
+  // Qui coche : sert de garant par défaut quand on atteste la majorité.
+  const moi = account?.name || account?.email || "";
+
+  // Dérivations remontées AVANT la garde d'accès : les hooks de liste en
+  // dépendent, et un hook ne peut pas vivre après un retour conditionnel.
+  const pending = prompts.filter(p => p.status === "pending");
+  const others = prompts.filter(p => p.status !== "pending");
+  const pendingComments = comments.filter(c => c.status === "pending");
+  const moderatedComments = comments.filter(c => c.status !== "pending");
+
+  // Huit lignes par liste ; « Tout voir » rouvre la page sur cette seule
+  // liste, entière, avec recherche et tri.
+  const seule = useListeSeule();
+  const listePrompts = useListe("prompts", others, {
+    cherchable: p2 => `${p2.name} ${p2.description} ${p2.status}`,
+    tris: [
+      { cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) },
+      { cle: "usages", label: "Les plus utilisés", compare: (a, b) => b.usageCount - a.usageCount },
+      { cle: "jetons", label: "Jetons produits", compare: (a, b) => b.tokensTotal - a.tokensTotal },
+      { cle: "etat", label: "État", compare: (a, b) => a.status.localeCompare(b.status) },
+    ],
+  });
+  const listeCommentaires = useListe("commentaires", pendingComments, {
+    cherchable: c => `${c.promptName} ${c.body}`,
+    tris: [{ cle: "date", label: "Plus récents", compare: (a, b) => b.createdAt - a.createdAt }],
+  });
+  const listeComptes = useListe("comptes", users, {
+    cherchable: u => `${u.email} ${u.name} ${u.etablissementName ?? ""}`,
+    tris: [
+      { cle: "email", label: "Adresse", compare: (a, b) => a.email.localeCompare(b.email) },
+      { cle: "date", label: "Plus récents", compare: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
+      { cle: "prompts", label: "Tuteurs publiés", compare: (a, b) => b.promptCount - a.promptCount },
+    ],
+  });
+  const listeEtabs = useListe("etablissements", etabs, {
+    cherchable: e => `${e.name} ${e.ips}`,
+    tris: [{ cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) }],
+  });
+  const listeFacture = useListe("facturation", billing, {
+    cherchable: r => `${r.etablissement} ${r.ip} ${r.provider}`,
+    tris: [
+      { cle: "jetons", label: "Jetons", compare: (a, b) => b.tokens - a.tokens },
+      { cle: "etab", label: "Établissement", compare: (a, b) => a.etablissement.localeCompare(b.etablissement) },
+    ],
+  });
   const [message, setMessage] = useState("");
 
   const reload = useCallback(() => {
@@ -314,10 +360,6 @@ export default function AdminPage() {
     );
   }
 
-  const pending = prompts.filter(p => p.status === "pending");
-  const others = prompts.filter(p => p.status !== "pending");
-  const pendingComments = comments.filter(c => c.status === "pending");
-  const moderatedComments = comments.filter(c => c.status !== "pending");
 
   const statusBadge = (status: string) => (
     <span className={`rounded px-1.5 text-xs ${status === "published" ? "bg-green-600/30"
@@ -333,6 +375,14 @@ export default function AdminPage() {
       {message && <p className="mt-2 text-sm text-red-400">{message}</p>}
 
       {/* ---- Modération des prompts ---- */}
+
+      {!seule && (<>
+      {/* ─── Zone 1 : Prompts ─── */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
+        Prompts
+      </h2>
+      </>)}
+      {(!seule || seule === "prompts") && (
       <section className="mt-8">
         <h2 className="text-lg font-bold">À valider ({pending.length})</h2>
         {pending.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun prompt en attente.</p>}
@@ -360,7 +410,7 @@ export default function AdminPage() {
           ))}
         </ul>
 
-        <h2 className="mt-6 text-lg font-bold">Tous les prompts</h2>
+        <h2 className="mt-6 text-lg font-bold">Tous les prompts{listePrompts.barre}</h2>
         <p className="mt-1 text-xs opacity-60">
           Rien n'est jamais supprimé. <b>Publié</b> : dépublier · modifier. <b>Dépublié</b> :
           republier · archiver — pour retoucher un tuteur dépublié, republiez-le d'abord.
@@ -371,7 +421,7 @@ export default function AdminPage() {
           avec ses compteurs, et la facturation reste calculable.
         </p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
-          {others.map(p => (
+          {listePrompts.visibles.map(p => (
             <li key={p.name} className="border-b border-white/5 py-1">
               <div className="flex flex-wrap items-center gap-2">
                 {statusBadge(p.status)}
@@ -451,17 +501,18 @@ export default function AdminPage() {
           ))}
         </ul>
       </section>
+      )}
 
-      {/* ---- Commentaires (l'admin voit tout) ---- */}
+      {(!seule || seule === "commentaires") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Commentaires à modérer ({pendingComments.length})</h2>
+        <h2 className="text-lg font-bold">Commentaires à modérer ({pendingComments.length}){listeCommentaires.barre}</h2>
         <p className="mt-1 text-xs opacity-60">
           Les auteurs modèrent les commentaires de leurs propres tuteurs ; vous couvrez tout —
           en particulier les tuteurs anonymes. Masquer ne supprime jamais.
         </p>
         {pendingComments.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun commentaire en attente.</p>}
         <ul className="mt-2 flex flex-col gap-2">
-          {pendingComments.map(c => (
+          {listeCommentaires.visibles.map(c => (
             <li key={c.id} className="rounded border border-yellow-500/30 bg-secondary p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2 text-xs opacity-70">
                 <Link href={`/p/${encodeURIComponent(c.promptName)}`} className="font-bold underline">{c.promptName}</Link>
@@ -504,14 +555,21 @@ export default function AdminPage() {
           </details>
         )}
       </section>
+      )}
 
-      {/* ---- Comptes ---- */}
+      {!seule && (<>
+      {/* ─── Zone 2 : Comptes ─── */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
+        Comptes
+      </h2>
+      </>)}
+      {(!seule || seule === "comptes") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Comptes ({users.length})</h2>
+        <h2 className="text-lg font-bold">Comptes ({users.length}){listeComptes.barre}</h2>
         <p className="mt-1 text-xs opacity-60">
           Chacun peut se créer un compte sur /verifier (jamais obligatoire, jamais pour les élèves).
-          Ici : rôles et rattachement d'un enseignant à son établissement. Retirer les deux rôles
-          neutralise un compte sans le supprimer.
+          Ici : rattachement d'un enseignant à son établissement, et attestation de majorité.
+          Attester de la majorité donne accès aux LLM non compatibles RGPD.
         </p>
         {users.length === 0 ? (
           <p className="mt-2 text-sm opacity-60">Aucun compte vérifié pour l'instant.</p>
@@ -523,7 +581,7 @@ export default function AdminPage() {
                   <th className="pr-2">Établissement</th><th className="pr-2">Majorité certifiée par</th><th className="pr-2">Prompts</th><th>Créé le</th></tr>
               </thead>
               <tbody>
-                {users.map(u => (
+                {listeComptes.visibles.map(u => (
                   <tr key={u.email} className="border-b border-white/5 align-middle">
                     <td className="py-1.5 pr-2">
                       <b>{u.name || "—"}</b>
@@ -531,9 +589,18 @@ export default function AdminPage() {
                       {!!u.syncOptin && <span className="ml-1 rounded bg-blue-600/30 px-1 text-xs" title="Profil synchronisé sur le serveur">sync</span>}
                     </td>
                     <td className="pr-2 whitespace-nowrap">
-                      <label className="mr-2 text-xs">
-                        <input type="checkbox" checked={!!u.isPromptagogue}
-                          onChange={e => updateUser(u.email, { isPromptagogue: e.target.checked })} /> promptagogue
+                      {/* « promptagogue » ne disait rien : tout compte vérifié
+                          l'est. La case utile est celle de la majorité, qui
+                          ouvre les fournisseurs écartés au titre de l'AI Act —
+                          jamais depuis un réseau scolaire. Cocher sans nom de
+                          garant vous désigne vous-même. */}
+                      <label className="mr-2 text-xs" title={u.adultVerifiedAt
+                        ? `Majorité attestée le ${new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH")} par ${u.adultVerifiedBy}`
+                        : "Attester de la majorité : donne accès aux LLM non compatibles RGPD, hors réseau scolaire"}>
+                        <input type="checkbox" checked={!!u.adultVerifiedAt}
+                          onChange={e => updateUser(u.email, {
+                            adultVerifiedBy: e.target.checked ? (u.adultVerifiedBy || moi || "administration") : "",
+                          })} /> adulte
                       </label>
                       <label className="text-xs">
                         <input type="checkbox" checked={!!u.isTeacher}
@@ -578,13 +645,77 @@ export default function AdminPage() {
           </div>
         )}
       </section>
+      )}
 
-      {/* ---- Établissements ---- */}
+      {(!seule || seule === "facturation") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Établissements (clients)</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-bold">Facturation de la clé interne{listeFacture.barre}</h2>
+          <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
+            className="rounded bg-tertiary p-1 text-sm" />
+          <button onClick={downloadCsv}
+            className="flex items-center gap-1 rounded border border-white/20 px-2 py-1 text-xs hover:bg-tertiary">
+            <MdDownload /> Export CSV
+          </button>
+        </div>
+        {billing.length === 0 ? (
+          <p className="mt-2 text-sm opacity-60">Aucune consommation sur la clé interne pour cette période.</p>
+        ) : (
+          <table className="mt-3 w-full text-left text-sm">
+            <thead className="text-xs uppercase opacity-60">
+              <tr><th className="py-1">Établissement</th><th>IP</th><th>Fournisseur</th>
+                <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
+            </thead>
+            <tbody>
+              {listeFacture.visibles.map((row, i) => (
+                <tr key={i} className="border-b border-white/5">
+                  <td className="py-1">{row.etablissement}{!!row.respire && <span className="ml-1 rounded bg-green-600/30 px-1 text-xs">gratuit</span>}</td>
+                  <td className="font-mono text-xs">{row.ip}</td>
+                  <td>{row.provider}</td>
+                  <td className="text-right">{row.requests}</td>
+                  <td className="text-right">{row.tokens.toLocaleString("fr-CH")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {teacherBilling.length > 0 && (
+          <>
+            <h3 className="mt-6 font-bold">Par enseignant (sessions de classe)</h3>
+            <table className="mt-2 w-full text-left text-sm">
+              <thead className="text-xs uppercase opacity-60">
+                <tr><th className="py-1">Enseignant</th><th>Établissement</th><th>Fournisseur</th>
+                  <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
+              </thead>
+              <tbody>
+                {teacherBilling.map((row, i) => (
+                  <tr key={i} className="border-b border-white/5">
+                    <td className="py-1">{row.teacherEmail}</td>
+                    <td>{row.etablissement}</td>
+                    <td>{row.provider}</td>
+                    <td className="text-right">{row.requests}</td>
+                    <td className="text-right">{row.tokens.toLocaleString("fr-CH")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        <p className="mt-2 text-xs opacity-50">
+          Montants exprimés en tokens par fournisseur — le tarif appliqué à la facture reste à votre main.
+          Les établissements RESPIRE apparaissent pour information, à 0.
+          Une alerte email part automatiquement dès qu'une IP dépasse le seuil quotidien
+          de tokens sur la clé interne (SECRET_ALERT_IP_TOKENS_DAILY).
+        </p>
+      </section>
+      )}
+
+      {(!seule || seule === "etablissements") && (
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">Établissements (clients){listeEtabs.barre}</h2>
         <p className="mt-1 text-xs opacity-60">Horaires, quota par élève et plafond mensuel sont aussi modifiables par le responsable rattaché depuis sa page « Mon établissement » (/etablissement).</p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
-          {etabs.map(e => (
+          {listeEtabs.visibles.map(e => (
             <li key={e.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
               <b>{e.name}</b>
               <span className="opacity-60">{e.ips || "aucune IP"}</span>
@@ -616,8 +747,15 @@ export default function AdminPage() {
           </button>
         </form>
       </section>
+      )}
 
-      {/* ---- Facturation ---- */}
+      {!seule && (<>
+      {/* ─── Zone 3 : Modèles ─── */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
+        Modèles
+      </h2>
+      </>)}
+      {(!seule || seule === "echelle") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">Échelle des modèles</h2>
         <p className="mt-1 text-xs opacity-60">
@@ -704,7 +842,9 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
+      )}
 
+      {(!seule || seule === "catalogue") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">Catalogue des modèles</h2>
         <p className="mt-1 text-xs opacity-60">
@@ -757,67 +897,7 @@ export default function AdminPage() {
           </table>
         )}
       </section>
-
-      <section className="mt-10">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-bold">Facturation de la clé interne</h2>
-          <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
-            className="rounded bg-tertiary p-1 text-sm" />
-          <button onClick={downloadCsv}
-            className="flex items-center gap-1 rounded border border-white/20 px-2 py-1 text-xs hover:bg-tertiary">
-            <MdDownload /> Export CSV
-          </button>
-        </div>
-        {billing.length === 0 ? (
-          <p className="mt-2 text-sm opacity-60">Aucune consommation sur la clé interne pour cette période.</p>
-        ) : (
-          <table className="mt-3 w-full text-left text-sm">
-            <thead className="text-xs uppercase opacity-60">
-              <tr><th className="py-1">Établissement</th><th>IP</th><th>Fournisseur</th>
-                <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
-            </thead>
-            <tbody>
-              {billing.map((row, i) => (
-                <tr key={i} className="border-b border-white/5">
-                  <td className="py-1">{row.etablissement}{!!row.respire && <span className="ml-1 rounded bg-green-600/30 px-1 text-xs">gratuit</span>}</td>
-                  <td className="font-mono text-xs">{row.ip}</td>
-                  <td>{row.provider}</td>
-                  <td className="text-right">{row.requests}</td>
-                  <td className="text-right">{row.tokens.toLocaleString("fr-CH")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {teacherBilling.length > 0 && (
-          <>
-            <h3 className="mt-6 font-bold">Par enseignant (sessions de classe)</h3>
-            <table className="mt-2 w-full text-left text-sm">
-              <thead className="text-xs uppercase opacity-60">
-                <tr><th className="py-1">Enseignant</th><th>Établissement</th><th>Fournisseur</th>
-                  <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
-              </thead>
-              <tbody>
-                {teacherBilling.map((row, i) => (
-                  <tr key={i} className="border-b border-white/5">
-                    <td className="py-1">{row.teacherEmail}</td>
-                    <td>{row.etablissement}</td>
-                    <td>{row.provider}</td>
-                    <td className="text-right">{row.requests}</td>
-                    <td className="text-right">{row.tokens.toLocaleString("fr-CH")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-        <p className="mt-2 text-xs opacity-50">
-          Montants exprimés en tokens par fournisseur — le tarif appliqué à la facture reste à votre main.
-          Les établissements RESPIRE apparaissent pour information, à 0.
-          Une alerte email part automatiquement dès qu'une IP dépasse le seuil quotidien
-          de tokens sur la clé interne (SECRET_ALERT_IP_TOKENS_DAILY).
-        </p>
-      </section>
+      )}
     </div>
   );
 }

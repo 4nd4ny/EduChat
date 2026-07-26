@@ -8,6 +8,7 @@ import { deleteServerConversations, deleteServerProfile } from "../utils/profile
 import { providerDefaults } from "../shared/providers";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
+import { useListe } from "../site/ListePaginee";
 import type { AccountData } from "../server/accountData";
 
 // Dossier FICTIF de la visite guidée : de quoi montrer chaque section — dont
@@ -62,13 +63,13 @@ function octets(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(2)} Mo`;
 }
 
-function Section({ numero, titre, ancre, children }: {
-  numero: number; titre: string; ancre?: string; children: React.ReactNode;
+function Section({ numero, titre, ancre, barre, children }: {
+  numero: number; titre: string; ancre?: string; barre?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
     <section data-tour={ancre} className="mt-6">
-      <h2 className="mb-2 flex items-baseline gap-2 text-lg font-bold">
-        <span className="text-sm opacity-50">{numero}.</span>{titre}
+      <h2 className="mb-2 flex flex-wrap items-baseline gap-2 text-lg font-bold">
+        <span className="text-sm opacity-50">{numero}.</span>{titre}{barre}
       </h2>
       <div className={CARTE}>{children}</div>
     </section>
@@ -99,6 +100,17 @@ export default function ComptePage() {
   const demo = router.isReady && router.query.visite === "1";
   const [tour, setTour] = useState(false);
   useEffect(() => { if (demo) setTour(true); }, [demo]);
+
+  // Huit conversations par page ; « Tout voir » rouvre la page sur cette
+  // seule liste, entière, avec recherche et tri.
+  const listeConv = useListe("conversations", data?.conversations ?? [], {
+    cherchable: c => `${c.name} ${c.promptName}`,
+    tris: [
+      { cle: "recent", label: "Plus récentes", compare: (a, b) => (b.lastMessage || b.createdAt) - (a.lastMessage || a.createdAt) },
+      { cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) },
+      { cle: "taille", label: "Les plus lourdes", compare: (a, b) => b.bytes - a.bytes },
+    ],
+  });
 
   const charger = useCallback(async () => {
     // Le jeton local ne prouve rien (il n'est pas vérifié côté navigateur) :
@@ -409,7 +421,7 @@ export default function ComptePage() {
       </Section>
 
       {/* 3 — Conversations -------------------------------------------------- */}
-      <Section ancre="compte-conversations" numero={3} titre={t("compte.conv.title")}>
+      <Section ancre="compte-conversations" numero={3} titre={t("compte.conv.title")} barre={listeConv.barre}>
         <p className="text-sm opacity-80">{t("compte.conv.intro")}</p>
 
         <label className="mt-3 flex items-center gap-2 text-xs">
@@ -435,7 +447,7 @@ export default function ComptePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {conversations.map(conversation => (
+                    {listeConv.visibles.map(conversation => (
                       <tr key={conversation.id} className="border-b border-white/5">
                         <td className="py-1.5">
                           <input type="checkbox" checked={choisies.includes(conversation.id)}

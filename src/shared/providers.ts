@@ -55,7 +55,11 @@ export const providerDefaults: Record<ProviderId, {
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash", adultOnly: true },
   grok: { label: "Grok", model: "grok-4.5", adultOnly: true, images: true },
-  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
+  // OpenRouter est un INTERMÉDIAIRE : même en routant vers un modèle dont
+  // l'éditeur offre un cadre correct, les échanges transitent par lui et
+  // peuvent y être exploités. Drapeau rouge, donc — il reste le moteur du
+  // repli gratuit public, où rien de personnel n'a sa place.
+  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", wrng: true, images: true, pdf: true },
   // Modèles chinois : API compatibles OpenAI, clé PERSONNELLE uniquement,
   // TEXTE seulement dans EduChat. Des variantes « vision » existent chez
   // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :

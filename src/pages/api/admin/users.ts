@@ -48,8 +48,14 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     // qui se porte garante — l'administration après un entretien vidéo, ou un
     // enseignant qui répond de ses élèves majeurs. Champ vide = retrait.
     // Aucune pièce d'identité n'est demandée ni conservée.
+    // Elle ne passe pas par `sets` (colonnes doubles + horodatage) : sans ce
+    // drapeau, une requête qui ne changeait QUE la certification tombait sur
+    // le garde-fou « rien à mettre à jour » plus bas — l'écriture avait bien
+    // lieu, mais l'interface annonçait un échec.
+    let touche = false;
     if ('adultVerifiedBy' in (req.body ?? {})) {
       setAdultVerified(email, String(req.body.adultVerifiedBy ?? ''));
+      touche = true;
     }
     if ('isTeacher' in (req.body ?? {})) {
       sets.push('is_teacher = ?');
@@ -59,8 +65,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       sets.push('is_promptagogue = ?');
       params.push(req.body.isPromptagogue ? 1 : 0);
     }
-    if (!sets.length) return res.status(400).json({ error: { code: 'ERR_NOTHING_TO_UPDATE' } });
-    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE email = ?`).run(...params, email);
+    if (!sets.length && !touche) return res.status(400).json({ error: { code: 'ERR_NOTHING_TO_UPDATE' } });
+    if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE email = ?`).run(...params, email);
     return res.status(200).json({ ok: true });
   }
 

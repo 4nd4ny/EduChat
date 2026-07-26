@@ -72,6 +72,7 @@ export default function AdminDemoPage() {
       <h1 className="mt-6 text-2xl font-bold">Administration</h1>
 
       {/* --- File de validation --- */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">Prompts</h2>
       <section data-tour="admin-validation" className="mt-8">
         <h2 className="text-lg font-bold">À valider (1)</h2>
         <p className="mt-1 text-xs opacity-60">
@@ -123,6 +124,7 @@ export default function AdminDemoPage() {
       </section>
 
       {/* --- Comptes --- */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">Comptes</h2>
       <section data-tour="admin-comptes" className="mt-10">
         <h2 className="text-lg font-bold">Comptes ({COMPTES.length})</h2>
         <p className="mt-1 text-xs opacity-60">
@@ -138,6 +140,29 @@ export default function AdminDemoPage() {
             {COMPTES.map(c => (
               <tr key={c.email} className="border-b border-white/5">
                 <td className="py-1">{c.email}</td><td>{c.nom}</td><td>{c.roles}</td><td>{c.etab}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* --- Facturation --- */}
+      <section data-tour="admin-facturation" className="mt-10">
+        <h2 className="text-lg font-bold">Facturation du mois</h2>
+        <p className="mt-1 text-xs opacity-60">
+          Exprimée en jetons par fournisseur — le tarif appliqué reste à la main du
+          gestionnaire. Seule la clé interne est facturée : l&apos;usage d&apos;une clé
+          personnelle n&apos;est jamais journalisé. Export CSV, aussi par enseignant.
+        </p>
+        <table className="mt-2 w-full text-left text-xs">
+          <thead className="uppercase opacity-60">
+            <tr><th className="py-1">Établissement</th><th>Gratuit</th><th>Adresse réseau</th><th>Fournisseur</th><th className="text-right">Requêtes</th><th className="text-right">Jetons</th></tr>
+          </thead>
+          <tbody>
+            {FACTURE.map((f, i) => (
+              <tr key={i} className="border-b border-white/5">
+                <td className="py-1">{f.etab}</td><td>{f.gratuit}</td><td>{f.ip}</td><td>{f.fournisseur}</td>
+                <td className="text-right">{f.req}</td><td className="text-right">{f.tokens}</td>
               </tr>
             ))}
           </tbody>
@@ -168,6 +193,7 @@ export default function AdminDemoPage() {
       </section>
 
       {/* --- Échelle des modèles --- */}
+      <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">Modèles</h2>
       <section data-tour="admin-echelle" className="mt-10">
         <h2 className="text-lg font-bold">Échelle des modèles</h2>
         <p className="mt-1 text-xs opacity-60">
@@ -185,29 +211,6 @@ export default function AdminDemoPage() {
                 <td className="py-1"><b>{l.fournisseur}</b></td>
                 {l.rungs.map(r => <td key={r} className="pr-2 font-mono">{r}</td>)}
                 <td className="text-green-400">{l.source}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {/* --- Facturation --- */}
-      <section data-tour="admin-facturation" className="mt-10">
-        <h2 className="text-lg font-bold">Facturation du mois</h2>
-        <p className="mt-1 text-xs opacity-60">
-          Exprimée en jetons par fournisseur — le tarif appliqué reste à la main du
-          gestionnaire. Seule la clé interne est facturée : l&apos;usage d&apos;une clé
-          personnelle n&apos;est jamais journalisé. Export CSV, aussi par enseignant.
-        </p>
-        <table className="mt-2 w-full text-left text-xs">
-          <thead className="uppercase opacity-60">
-            <tr><th className="py-1">Établissement</th><th>Gratuit</th><th>Adresse réseau</th><th>Fournisseur</th><th className="text-right">Requêtes</th><th className="text-right">Jetons</th></tr>
-          </thead>
-          <tbody>
-            {FACTURE.map((f, i) => (
-              <tr key={i} className="border-b border-white/5">
-                <td className="py-1">{f.etab}</td><td>{f.gratuit}</td><td>{f.ip}</td><td>{f.fournisseur}</td>
-                <td className="text-right">{f.req}</td><td className="text-right">{f.tokens}</td>
               </tr>
             ))}
           </tbody>
