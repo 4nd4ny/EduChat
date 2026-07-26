@@ -130,7 +130,9 @@ type FactureRow = {
 type Impayee = { etablissementId: number; etablissement: string; periode: string;
   total: number; devise: string; emiseAt: number; billingEmail: string };
 type Participation = { devise: string; pct: number; collectee: number; demo: number; respire: number; jetonsOfferts: number };
-type TarifRow = { provider: string; prixMtok: number };
+type PropositionTarif = { modele: string; entreeMtok: number; sortieMtok: number;
+  melangeMtok: number; devise: string; detail: string; at: number };
+type TarifRow = { provider: string; prixMtok: number; proposition: PropositionTarif | null };
 
 type CatalogueRow = { provider: string; source: string; count: number; at: number };
 type LadderRow = {
@@ -221,6 +223,7 @@ export default function AdminPage() {
   const [impayees, setImpayees] = useState<Impayee[]>([]);
   const [participation, setParticipation] = useState<Participation | null>(null);
   const [tarifsListe, setTarifsListe] = useState<TarifRow[]>([]);
+  const [sondeEnCours, setSondeEnCours] = useState(false);
   const [message, setMessage] = useState("");
 
   const reload = useCallback(() => {
@@ -452,6 +455,20 @@ export default function AdminPage() {
     const [y, m] = period.split("-");
     fetch(`/api/admin/factures?year=${y}&month=${Number(m)}`, { headers: authHeaders() })
       .then(x => x.json()).then(d => setFactures(d.factures ?? [])).catch(() => {});
+  };
+
+  // Relancer la sonde à la main. Elle tourne d'elle-même dès qu'une liste de
+  // modèles change ; ce bouton sert à la voir travailler.
+  const sonder = async () => {
+    setSondeEnCours(true);
+    try {
+      await fetch("/api/admin/tarifs", {
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "sonder" }),
+      });
+      const d = await fetch("/api/admin/tarifs", { headers: authHeaders() }).then(r => r.json());
+      setTarifsListe(d.tarifs ?? []);
+    } finally { setSondeEnCours(false); }
   };
 
   const downloadCsv = () => {
@@ -974,17 +991,49 @@ export default function AdminPage() {
           <>
             <h3 className="mt-6 font-bold">{t("admin.tarif.heading")}</h3>
             <p className="mt-1 text-xs opacity-60">{isSuper ? t("admin.tarif.helpSuper") : t("admin.tarif.helpSchool")}</p>
-            <div className="mt-2 flex flex-wrap gap-3 text-sm">
-              {tarifsListe.map(tr => (
-                <label key={tr.provider} className="flex items-center gap-1">
-                  <span className="opacity-70">{tr.provider}</span>
-                  <input type="number" min={0} step="0.01" defaultValue={tr.prixMtok} disabled={!isSuper}
-                    onBlur={e => { const v = Number(e.target.value);
-                      if (isSuper && Number.isFinite(v) && v !== tr.prixMtok) void reglerTarif(tr.provider, v); }}
-                    className="w-20 rounded bg-tertiary p-1 text-right text-xs disabled:opacity-50" />
-                </label>
-              ))}
-            </div>
+            {isSuper && (
+              <button onClick={() => void sonder()} disabled={sondeEnCours} className={`${BTN} mt-2`}>
+                {sondeEnCours ? t("admin.sonde.working") : t("admin.sonde.run")}
+              </button>
+            )}
+            <table className="mt-2 w-full text-left text-sm">
+              <thead className="text-xs uppercase opacity-60">
+                <tr><th className="py-1">{t("admin.col.provider")}</th>
+                  <th className="text-right">{t("admin.tarif.retained")}</th>
+                  <th className="text-right">{t("admin.sonde.in")}</th>
+                  <th className="text-right">{t("admin.sonde.out")}</th>
+                  <th className="text-right">{t("admin.sonde.blend")}</th>
+                  <th>{t("admin.sonde.source")}</th></tr>
+              </thead>
+              <tbody>
+                {tarifsListe.map(tr => (
+                  <tr key={tr.provider} className="border-b border-white/5">
+                    <td className="py-1">{tr.provider}</td>
+                    <td className="text-right">
+                      <input type="number" min={0} step="0.01" defaultValue={tr.prixMtok} disabled={!isSuper}
+                        onBlur={e => { const v = Number(e.target.value);
+                          if (isSuper && Number.isFinite(v) && v !== tr.prixMtok) void reglerTarif(tr.provider, v); }}
+                        className="w-20 rounded bg-tertiary p-1 text-right text-xs disabled:opacity-50" />
+                    </td>
+                    {/* LA PROPOSITION, à côté du choix — jamais à sa place. Elle
+                        est en DOLLARS et le tarif retenu dans la monnaie du
+                        gestionnaire : la conversion reste un geste humain. */}
+                    <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.entreeMtok?.toFixed(2) ?? "—"}</td>
+                    <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.sortieMtok?.toFixed(2) ?? "—"}</td>
+                    <td className="text-right font-mono text-xs">
+                      {tr.proposition && !tr.proposition.detail
+                        ? `${tr.proposition.melangeMtok.toFixed(2)} ${tr.proposition.devise}` : "—"}
+                    </td>
+                    <td className="text-xs">
+                      {tr.proposition?.detail
+                        ? <span className="rounded bg-amber-500/25 px-1 text-amber-200" title={tr.proposition.detail}>{t("admin.sonde.notFound")}</span>
+                        : <span className="opacity-60">{tr.proposition?.modele || "—"}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-1 text-xs opacity-50">{t("admin.sonde.caveat")}</p>
           </>
         )}
 

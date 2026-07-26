@@ -198,14 +198,25 @@ async function build(provider: ProviderId, key: string): Promise<Entry> {
   return { at: Date.now(), source: 'defaut', models: finalise(provider, []) };
 }
 
+// Levé par refresh() dès qu'une liste diffère de la précédente ; lu et
+// remis à zéro par refreshAllModels, qui déclenche alors la sonde de tarifs.
+let listeChangee = false;
+
 function refresh(provider: ProviderId, key: string): Promise<Entry> {
   const encours = inflight.get(provider);
   if (encours) return encours;
   const promesse = build(provider, key)
     .then(entry => {
       const cache = readCache();
+      // Comparaison sur les IDENTIFIANTS TRIÉS, pas sur le compte : une liste
+      // qui garde sa longueur pendant qu'un modèle en remplace un autre est
+      // bel et bien une liste qui a changé — et c'est justement le moment où
+      // le prix bouge.
+      const avant = (cache.entries[provider]?.models ?? []).slice().sort().join('|');
+      const apres = entry.models.slice().sort().join('|');
       cache.entries[provider] = entry;
       writeCache(cache);
+      if (avant && avant !== apres) listeChangee = true;
       return entry;
     })
     .catch(() => ({ at: Date.now(), source: 'defaut' as Source, models: finalise(provider, []) }))
@@ -271,8 +282,19 @@ export function catalogueStatus(): Array<{ provider: ProviderId; source: Source 
 export async function refreshAllModels(): Promise<Array<{ provider: ProviderId; source: Source; count: number }>> {
   openrouterIds = null;   // le catalogue public aussi doit être relu
   echecs.clear();
-  return Promise.all(PROVIDER_IDS.map(async provider => {
+  listeChangee = false;
+  const resultat = await Promise.all(PROVIDER_IDS.map(async provider => {
     const entry = await refresh(provider, String(CatalogueKeys[provider] || '').trim());
     return { provider, source: entry.source, count: entry.models.length };
   }));
+
+  // UNE LISTE QUI CHANGE, C'EST UN PRIX QUI A PU CHANGER. La sonde relit alors
+  // le catalogue public et PROPOSE — elle n'applique rien : voir
+  // src/server/sondeTarifs.ts. En arrière-plan, car un rafraîchissement de
+  // modèles ne doit pas attendre un tiers.
+  if (listeChangee) {
+    const { sonderTarifs } = await import('./sondeTarifs');
+    void sonderTarifs().catch(erreur => console.error('Sonde de tarifs :', erreur));
+  }
+  return resultat;
 }

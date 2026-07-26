@@ -365,6 +365,15 @@ export function getDb(): Database.Database {
     // pas en base — sa liste vit dans SECRET_ADMIN_EMAILS, et c'est ce qui
     // empêche d'en fabriquer un depuis une interface.
     "ALTER TABLE users ADD COLUMN is_school_admin INTEGER NOT NULL DEFAULT 0",
+    // Proposition de la sonde de tarifs (src/server/sondeTarifs.ts). Séparée
+    // de prix_mtok, qui reste le choix de l'administration : un tarif fabrique
+    // une facture, il ne se met pas à jour tout seul.
+    "ALTER TABLE tarifs ADD COLUMN propose_entree REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE tarifs ADD COLUMN propose_sortie REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE tarifs ADD COLUMN propose_melange REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE tarifs ADD COLUMN propose_modele TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE tarifs ADD COLUMN propose_detail TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE tarifs ADD COLUMN propose_at INTEGER NOT NULL DEFAULT 0",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec

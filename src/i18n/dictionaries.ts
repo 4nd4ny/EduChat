@@ -901,6 +901,15 @@ export const fr = {
   'admin.impayees.heading': 'Factures impayées ({n})',
   'admin.impayees.period': 'Période',
   'admin.impayees.billingEmail': 'Adresse de facturation',
+  'admin.tarif.retained': 'Retenu',
+  'admin.sonde.run': 'Sonder les tarifs',
+  'admin.sonde.working': 'Sonde en cours…',
+  'admin.sonde.in': 'Entrée',
+  'admin.sonde.out': 'Sortie',
+  'admin.sonde.blend': 'Mélange proposé',
+  'admin.sonde.source': 'Modèle relevé',
+  'admin.sonde.notFound': 'non trouvé',
+  'admin.sonde.caveat': 'Aucun des trois éditeurs conformes au RGPD ne publie ses prix par API : la sonde lit le catalogue public d\'OpenRouter, qui les reflète. Les montants sont en DOLLARS et par million de jetons ; le tarif retenu, lui, est dans votre monnaie — la conversion vous appartient. Le mélange suppose 75 % de jetons d\'entrée, faute de les compter séparément. La sonde PROPOSE : rien n\'est appliqué sans vous.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -1774,6 +1783,15 @@ export const en: Record<TranslationKey, string> = {
   'admin.impayees.heading': 'Unpaid invoices ({n})',
   'admin.impayees.period': 'Period',
   'admin.impayees.billingEmail': 'Billing address',
+  'admin.tarif.retained': 'Retained',
+  'admin.sonde.run': 'Probe the rates',
+  'admin.sonde.working': 'Probing…',
+  'admin.sonde.in': 'Input',
+  'admin.sonde.out': 'Output',
+  'admin.sonde.blend': 'Suggested blend',
+  'admin.sonde.source': 'Model read',
+  'admin.sonde.notFound': 'not found',
+  'admin.sonde.caveat': 'None of the three GDPR-compliant vendors publishes its prices through an API: the probe reads OpenRouter\'s public catalogue, which mirrors them. Amounts are in DOLLARS per million tokens; the retained rate is in your currency — the conversion is yours to make. The blend assumes 75% input tokens, for want of counting them separately. The probe SUGGESTS: nothing is applied without you.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -2645,6 +2663,15 @@ export const it: Record<TranslationKey, string> = {
   'admin.impayees.heading': 'Fatture non pagate ({n})',
   'admin.impayees.period': 'Periodo',
   'admin.impayees.billingEmail': 'Indirizzo di fatturazione',
+  'admin.tarif.retained': 'Applicato',
+  'admin.sonde.run': 'Sonda le tariffe',
+  'admin.sonde.working': 'Sondaggio in corso…',
+  'admin.sonde.in': 'Ingresso',
+  'admin.sonde.out': 'Uscita',
+  'admin.sonde.blend': 'Miscela proposta',
+  'admin.sonde.source': 'Modello rilevato',
+  'admin.sonde.notFound': 'non trovato',
+  'admin.sonde.caveat': 'Nessuno dei tre editori conformi al GDPR pubblica i propri prezzi tramite API: la sonda legge il catalogo pubblico di OpenRouter, che li rispecchia. Gli importi sono in DOLLARI per milione di token; la tariffa applicata è invece nella Sua moneta — la conversione spetta a Lei. La miscela presuppone il 75 % di token in ingresso, in mancanza di un conteggio separato. La sonda PROPONE: nulla viene applicato senza di Lei.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -3516,6 +3543,15 @@ export const de: Record<TranslationKey, string> = {
   'admin.impayees.heading': 'Unbezahlte Rechnungen ({n})',
   'admin.impayees.period': 'Zeitraum',
   'admin.impayees.billingEmail': 'Rechnungsadresse',
+  'admin.tarif.retained': 'Angewendet',
+  'admin.sonde.run': 'Tarife abfragen',
+  'admin.sonde.working': 'Abfrage läuft…',
+  'admin.sonde.in': 'Eingabe',
+  'admin.sonde.out': 'Ausgabe',
+  'admin.sonde.blend': 'Vorgeschlagene Mischung',
+  'admin.sonde.source': 'Gelesenes Modell',
+  'admin.sonde.notFound': 'nicht gefunden',
+  'admin.sonde.caveat': 'Keiner der drei DSGVO-konformen Anbieter veröffentlicht seine Preise über eine API: die Sonde liest den öffentlichen Katalog von OpenRouter, der sie spiegelt. Die Beträge sind in DOLLAR je Million Tokens; der angewendete Tarif dagegen in Ihrer Währung — die Umrechnung liegt bei Ihnen. Die Mischung nimmt 75 % Eingabe-Tokens an, mangels getrennter Zählung. Die Sonde SCHLÄGT VOR: ohne Sie wird nichts angewendet.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;

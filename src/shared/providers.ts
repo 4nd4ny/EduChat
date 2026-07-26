@@ -146,3 +146,16 @@ export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
  */
 export const DUEL_PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
   id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);
+
+/**
+ * Fournisseurs qu'une CLÉ D'ÉTABLISSEMENT peut réellement servir.
+ *
+ * OpenRouter en est exclu comme les fournisseurs réservés aux adultes : il
+ * porte le drapeau WRNG, et la route de complétion refuse déjà de le payer sur
+ * la clé interne d'une école. Il reste accessible à qui apporte SA propre clé,
+ * sous sa propre responsabilité. Cette liste existe pour que l'interface cesse
+ * de proposer ce que le serveur refuse — un réglage qu'on peut enregistrer et
+ * qui ne marchera jamais est pire qu'un réglage absent.
+ */
+export const SCHOOL_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
+  id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);
