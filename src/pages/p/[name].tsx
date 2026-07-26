@@ -22,6 +22,7 @@ type Comment = { id: number; body: string; createdAt: number; status?: "pending"
 // (décision client — esprit open source, l'école est gratuite).
 export default function PromptPage() {
   const router = useRouter();
+  const locale = router.locale ?? "fr";
   const { setPromptName } = useAnthropic();
   const name = typeof router.query.name === "string" ? router.query.name : "";
 
@@ -82,7 +83,7 @@ export default function PromptPage() {
     if (!name) return;
     setFavorites(getFavorites());
     setGivenRating(getGivenRating(name));
-    fetch(`/api/prompts/${encodeURIComponent(name)}`)
+    fetch(`/api/prompts/${encodeURIComponent(name)}?locale=${locale}`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => { setDetail(data.prompt); setVersions(data.versions ?? []); })
       .catch(() => setNotFound(true));

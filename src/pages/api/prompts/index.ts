@@ -22,7 +22,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const sort = String(req.query.sort ?? 'score').slice(0, 16);
     const q = String(req.query.q ?? '').slice(0, 64).trim();
-    return res.status(200).json({ prompts: listPublished(sort, q) });
+    // La locale vient du client (router.locale) : une route d'API Next ne la
+    // reçoit pas du routage i18n, et la déduire de Accept-Language
+    // contredirait le choix de langue explicite du visiteur.
+    const locale = String(req.query.locale ?? '').slice(0, 5);
+    return res.status(200).json({ prompts: listPublished(sort, q, locale) });
   }
 
   if (req.method !== 'POST') {

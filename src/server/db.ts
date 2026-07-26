@@ -333,6 +333,16 @@ export function getDb(): Database.Database {
     // risque plus lourd que celui qu'on cherche à couvrir.
     "ALTER TABLE users ADD COLUMN adult_verified_at INTEGER",
     "ALTER TABLE users ADD COLUMN adult_verified_by TEXT",
+    // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
+    // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
+    // ces colonnes lui donnent son état. source_version est le lien avec
+    // l'original — une traduction est périmée dès qu'elle est inférieure à
+    // prompts.version, et c'est la seule chose qui définisse la péremption.
+    "ALTER TABLE prompt_translations ADD COLUMN source_version INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE prompt_translations ADD COLUMN state TEXT NOT NULL DEFAULT 'ok'",
+    "ALTER TABLE prompt_translations ADD COLUMN detail TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE prompt_translations ADD COLUMN model TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE prompt_translations ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

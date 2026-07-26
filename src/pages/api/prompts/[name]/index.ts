@@ -5,6 +5,7 @@ import { requireAuth, isAdminEmail, TokenPayload } from '../../../../server/toke
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { notifyAdmin } from '../../../../server/mail';
 import { ERR } from '../../../../shared/providers';
+import { planifierTraduction, traduireTuteur, resumeTraductions, traductionFraiche } from '../../../../server/traduction';
 
 export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 
@@ -59,7 +60,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       : null;
     const variants = (db.prepare("SELECT name FROM prompts WHERE inspired_by = ? AND status = 'published' ORDER BY name")
       .all(row.id) as { name: string }[]).map(v => v.name);
-    return res.status(200).json({ prompt: { ...toCard(row), body: row.body, inspiredBy, variants }, versions });
+    // Le CORPS suit la même règle que la carte : la traduction fraîche, ou
+    // l'original. C'est ce corps que la fiche affiche en entier — un tuteur
+    // appartient au domaine public, sa traduction aussi.
+    const locale = String(req.query.locale ?? '').slice(0, 5);
+    const tr = traductionFraiche(row.id, row.version, locale);
+    return res.status(200).json({
+      prompt: {
+        ...toCard(row, locale), body: tr?.body ?? row.body, inspiredBy, variants,
+        translations: resumeTraductions(row).etats,
+      },
+      versions,
+    });
   }
 
   if (req.method !== 'PATCH' && req.method !== 'DELETE') {
@@ -126,6 +138,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           .run(body, now, row.id, row.version);
       }
     })();
+
+    // Le corps a changé sur un tuteur PUBLIÉ : ses traductions décrivent
+    // désormais un texte qui n'existe plus. Elles ne sont pas effacées — elles
+    // deviennent périmées, donc plus servies, et l'original reprend la main
+    // dans les quatre langues. L'administration est prévenue : c'est elle qui
+    // vérifie la modification et relance la traduction. Sans ce message, la
+    // « vérification admin » n'aurait aucun déclencheur.
+    if (bumpVersion && row.status === 'published') {
+      notifyAdmin(
+        `Traductions à revérifier : ${row.name}`,
+        `Le tuteur « ${row.name} » vient de passer en version ${version}.\n` +
+        `Ses traductions (en, it, de) datent de la version ${row.version} : elles ne sont plus servies,\n` +
+        `et les élèves lisent de nouveau l'original en ${row.language}.\n\n` +
+        `Vérifiez la modification puis relancez la traduction depuis /admin.`,
+      );
+    }
     return res.status(200).json({ ok: true, version });
   }
 
@@ -151,6 +179,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!(rights.isAdmin || rights.isPromptagogue)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
     if (row.status !== 'pending') return res.status(409).json({ error: { code: 'ERR_STATUS' } });
     db.prepare("UPDATE prompts SET status = 'published', updated_at = ? WHERE id = ?").run(now, row.id);
+    // Un tuteur validé est traduit dans les trois autres langues. En ARRIÈRE-PLAN :
+    // trois appels au fournisseur prendraient une minute, et une clé sans crédit
+    // ferait échouer une publication qui, elle, a bel et bien eu lieu.
+    planifierTraduction(row.id);
     return res.status(200).json({ ok: true, status: 'published' });
   }
 
@@ -169,7 +201,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!(rights.isAdmin || authorCan)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
     if (row.status !== 'retired') return res.status(409).json({ error: { code: 'ERR_STATUS' } });
     db.prepare("UPDATE prompts SET status = 'published', updated_at = ? WHERE id = ?").run(now, row.id);
+    // Un prompt dépublié a souvent été modifié avant de revenir : ses
+    // traductions sont alors périmées. Rien à tester ici, traduireTuteur est
+    // idempotent — ce qui est déjà à jour ne coûte pas un jeton.
+    planifierTraduction(row.id);
     return res.status(200).json({ ok: true, status: 'published' });
+  }
+
+  // ---- retranslate : l'administration a VÉRIFIÉ une modification et demande
+  // la retraduction. C'est le « en cas de validation » du cycle : tant qu'elle
+  // n'a pas cliqué, la traduction périmée n'est pas servie, et c'est
+  // l'original que lit l'élève.
+  if (action === 'retranslate') {
+    if (!rights.isAdmin) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    // Attendu, celui-ci : l'administration veut voir le résultat, pas un accusé
+    // de réception. Trois appels à Haiku sur un prompt de quelques kilo-octets.
+    const etats = await traduireTuteur(row.id, req.body?.force === true);
+    return res.status(200).json({ ok: true, translations: etats });
   }
 
   // ---- rename : ADMIN uniquement. Prévu pour les prompts DÉPUBLIÉS (les

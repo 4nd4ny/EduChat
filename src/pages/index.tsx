@@ -15,7 +15,9 @@ import DemoChat from "../chat/DemoChat";
 import SiteStats from "../site/SiteStats";
 
 type Card = {
-  name: string; authorName: string; language: string; description: string;
+  name: string;
+  title: string;
+  translated: boolean; authorName: string; language: string; description: string;
   version: number; createdAt: number; updatedAt: number;
   usageCount: number; tokensTotal: number;
   ratingAvg: number | null; ratingCount: number;
@@ -59,6 +61,7 @@ const FIELD = "h-10 rounded bg-tertiary";
 export default function Catalogue() {
   const router = useRouter();
   const t = useT();
+  const locale = router.locale ?? "fr";
   const { setPromptName } = useAnthropic();
   const [cards, setCards] = useState<Card[]>([]);
   const [sort, setSort] = useState("score");
@@ -74,7 +77,7 @@ export default function Catalogue() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/prompts?sort=${sort}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
+      fetch(`/api/prompts?sort=${sort}&q=${encodeURIComponent(query)}&locale=${locale}`, { signal: controller.signal })
         .then(r => r.json())
         .then(data => { setCards(data.prompts ?? []); setLoading(false); })
         .catch(() => {});
@@ -103,7 +106,7 @@ export default function Catalogue() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pb-24 text-primary">
-      <Head><title>EduChat — Tuteurs socratiques</title></Head>
+      <Head><title>{t("home.headTitle")}</title></Head>
 
       <header className="flex flex-col items-center gap-3 pt-8 pb-6 text-center">
         <h1 className="text-4xl font-bold">EduChat</h1>
@@ -166,7 +169,7 @@ export default function Catalogue() {
               className="flex flex-col gap-2 rounded-lg border border-white/10 bg-secondary p-4 shadow">
               <div className="flex items-start justify-between gap-2">
                 <Link href={`/p/${encodeURIComponent(card.name)}`}
-                  className="text-xl font-bold hover:underline">{card.name}</Link>
+                  className="text-xl font-bold hover:underline">{card.title}</Link>
                 <button
                   onClick={() => setFavorites(toggleFavorite(card.name))}
                   aria-label={favorites.includes(card.name) ? t("home.favRemove") : t("home.favAdd")}

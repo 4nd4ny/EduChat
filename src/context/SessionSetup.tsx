@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { MdSchool } from 'react-icons/md';
+import { currentLocale } from '../i18n/useT';
 
 type PromptOption = { name: string; description: string };
 
@@ -17,7 +18,7 @@ export default function SessionSetup({ onDone }: Props) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/api/prompts?sort=uses')
+    fetch(`/api/prompts?sort=uses&locale=${currentLocale()}`)
       .then(r => r.json())
       .then(data => setPrompts((data.prompts ?? []).map((p: any) => ({ name: p.name, description: p.description }))))
       .catch(() => {});

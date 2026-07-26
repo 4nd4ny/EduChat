@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { MdClose, MdScience } from "react-icons/md";
 import { useAnthropic } from "../context/AnthropicProvider";
 import { useT } from "../i18n/useT";
+import { currentLocale } from "../i18n/useT";
 
 // Bandeau du tuteur actif, épinglé en haut du chat :
 // - nom du tuteur + version de la conversation ;
@@ -17,7 +18,7 @@ export default function TutorBanner() {
   useEffect(() => {
     setLatestVersion(0);
     if (!promptName) return;
-    fetch(`/api/prompts/${encodeURIComponent(promptName)}`)
+    fetch(`/api/prompts/${encodeURIComponent(promptName)}?locale=${currentLocale()}`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => setLatestVersion(Number(data.prompt?.version) || 0))
       .catch(() => {});

@@ -7,6 +7,7 @@ import { mayUseAdultProviders } from "../../server/adult";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
+import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { notifyAdmin } from "../../server/mail";
 import { touchPresence } from "../../server/stats";
@@ -80,9 +81,11 @@ async function requestJson(url: string, init: RequestInit) {
  * - par URL SECRÈTE (shareToken) : brouillons « en construction », pour le
  *   flux de test de l'étape 7 ; jamais les pending/retired par nom.
  */
-function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string):
+function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string, locale: string):
   { row: PromptRow; system: string } | 'unknown' | null {
   if (shareToken) {
+    // Brouillon en cours d'écriture : on sert le texte de l'auteur, jamais une
+    // traduction. Il teste ce qu'il vient d'écrire.
     const row = getByShareToken(shareToken);
     if (!row) return 'unknown';
     return { row, system: row.body };
@@ -91,11 +94,18 @@ function resolveSystemPrompt(promptName: string, promptVersion: number, shareTok
   const row = getPublishedByName(promptName);
   if (!row) return 'unknown';
   if (promptVersion > 0 && promptVersion !== row.version) {
+    // Conversation restée sur une version antérieure : elle garde SON texte.
+    // Les traductions ne sont conservées que pour la version courante — servir
+    // celle d'une autre version reviendrait à changer le tuteur en cours de route.
     const old = getDb().prepare('SELECT body FROM prompt_versions WHERE prompt_id = ? AND version = ?')
       .get(row.id, promptVersion) as { body: string } | undefined;
     if (old) return { row, system: old.body };
   }
-  return { row, system: row.body };
+  // C'EST ICI que la traduction sert vraiment. Un tuteur écrit en français
+  // fait répondre le modèle en français, quelle que soit la langue du site :
+  // traduire l'interface sans traduire le prompt système ne trompait personne.
+  const traduit = traductionFraiche(row.id, row.version, locale);
+  return { row, system: traduit?.body ?? row.body };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -207,7 +217,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Tuteur socratique : résolu et injecté CÔTÉ SERVEUR — le texte du prompt ne
   // transite jamais par le client pendant le chat.
-  const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken);
+  // Langue de lecture, envoyée par le client (router.locale) : le routage i18n
+  // de Next ne traverse pas les routes d'API.
+  const locale = String(body.locale ?? "").slice(0, 5);
+  const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken, locale);
   if (resolved === 'unknown') return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   const system = resolved?.system ?? "";
   const promptRow = resolved?.row ?? null;

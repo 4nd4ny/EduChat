@@ -3,16 +3,26 @@ import Link from "next/link";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   MdArchive, MdCheck, MdDownload,
-  MdEdit, MdPublish, MdVisibilityOff, MdAdminPanelSettings,
+  MdEdit, MdPublish, MdVisibilityOff, MdAdminPanelSettings, MdTranslate,
 } from "react-icons/md";
 import { authHeaders, getAccount } from "../utils/account";
 import { useListe, useListeSeule } from "../site/ListePaginee";
 import { formatTokens } from "../utils/formatTokens";
+import { useT } from "../i18n/useT";
 
+type EtatTraduction = {
+  locale: string; state: "ok" | "pending" | "failed" | "absent";
+  perimee: boolean; sourceVersion: number; detail: string; updatedAt: number; tokens: number;
+};
+type ResumeTraductions = {
+  etats: EtatTraduction[]; pretes: number; total: number;
+  aVerifier: boolean; enEchec: boolean; enCours: boolean;
+};
 type AdminPrompt = {
   name: string; authorEmail: string | null; authorName: string; language: string;
   description: string; body: string; version: number; status: string;
   usageCount: number; tokensTotal: number; sizeBytes: number;
+  translations: ResumeTraductions;
 };
 type Etab = {
   id: number; name: string; ips: string; respire: number;
@@ -46,23 +56,65 @@ type AdminComment = {
 // PRINCIPE (décision client) : on ne SUPPRIME jamais rien ici. Dépublier est
 // réversible (republier) ; archiver masque définitivement un prompt de cette
 // interface, mais la ligne et ses compteurs restent en base (facturation).
+//
+// Toute phrase montrée ici passe par le dictionnaire (fr/en/it/de) : une
+// direction d'établissement italienne ou alémanique administre dans sa langue.
+// Ce qui reste en dur est technique — codes d'action envoyés au serveur,
+// identifiants de modèles, noms de sources de catalogue.
 /**
  * Traduire les refus du serveur en phrases qui disent quoi faire. Un code brut
  * (« ERR_NAME_TAKEN ») envoie chercher un prompt qui, s'il est archivé, est
  * invisible de cette liste : sans cette phrase, l'impasse est indéchiffrable.
+ *
+ * Le traducteur est passé en argument : la fonction vit hors du composant,
+ * mais ses phrases vivent dans le dictionnaire.
  */
-function expliquer(code: string): string {
-  const table: Record<string, string> = {
-    ERR_NAME_TAKEN: "ce nom est déjà pris — y compris, éventuellement, par un tuteur ARCHIVÉ, donc invisible dans cette liste",
-    ERR_NAME_INVALID: "nom invalide : au moins deux caractères, lettres et chiffres, espace, apostrophe ou tiret — ni tiret bas, ni parenthèse, ni point",
-    ERR_RATE_LIMIT: "trop de requêtes en une minute, réessayez dans un instant",
-    ERR_ARCHIVED: "ce tuteur est archivé : il est figé définitivement",
-    ERR_STATUS: "cette action ne convient pas à l'état actuel du tuteur",
-    ERR_FORBIDDEN: "droits insuffisants",
-    ERR_BODY_TOO_SHORT: "le texte du tuteur est trop court",
-    ERR_QUOTA_USER: "quota de l'auteur dépassé",
-  };
-  return table[code] ?? code;
+function expliquer(t: ReturnType<typeof useT>, code: string): string {
+  switch (code) {
+    case "ERR_NAME_TAKEN": return t("admin.err.nameTaken");
+    case "ERR_NAME_INVALID": return t("admin.err.nameInvalid");
+    case "ERR_RATE_LIMIT": return t("admin.err.rateLimit");
+    case "ERR_ARCHIVED": return t("admin.err.archived");
+    case "ERR_STATUS": return t("admin.err.status");
+    case "ERR_FORBIDDEN": return t("admin.err.forbidden");
+    case "ERR_BODY_TOO_SHORT": return t("admin.err.bodyTooShort");
+    case "ERR_QUOTA_USER": return t("admin.err.quotaUser");
+    case "ERR_UNKNOWN": return t("admin.err.unknown");
+    default: return code;
+  }
+}
+
+/**
+ * L'état des traductions d'un tuteur, en un coup d'œil.
+ *
+ * Trois situations qui n'appellent pas la même réaction, d'où trois couleurs :
+ * tout est à jour (vert, rien à faire), une modification a périmé les
+ * traductions (orange — c'est à l'administration de vérifier puis de relancer),
+ * une traduction a échoué (rouge, avec la raison au survol). Une traduction
+ * périmée n'est PAS servie : le tuteur repasse à son texte d'origine.
+ */
+function BadgeTraductions({ resume }: { resume: ResumeTraductions }) {
+  const t = useT();
+  if (!resume || !resume.total) return null;
+  const couleur = resume.enEchec ? "border-red-500/50 text-red-300"
+    : resume.aVerifier ? "border-[#DC6521]/60 text-[#DC6521]"
+      : resume.pretes === resume.total ? "border-green-500/40 text-green-300"
+        : "border-white/20 opacity-60";
+  const detail = resume.etats
+    .map(e => `${e.locale.toUpperCase()} : ${e.perimee ? t("admin.tr.stale")
+      : e.state === "ok" ? t("admin.tr.upToDate")
+        : e.state === "pending" ? t("admin.tr.working")
+          : e.state === "failed" ? `${t("admin.tr.failed")} — ${e.detail}`
+            : t("admin.tr.none")}`)
+    .join("\n");
+  return (
+    <span title={detail} className={`rounded border px-1.5 text-xs ${couleur}`}>
+      <MdTranslate className="inline" />{" "}
+      {resume.enEchec ? t("admin.tr.failed")
+        : resume.aVerifier ? t("admin.tr.toCheck")
+          : t("admin.tr.count", { n: resume.pretes, total: resume.total })}
+    </span>
+  );
 }
 
 const BTN = "flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary";
@@ -74,6 +126,7 @@ type LadderRow = {
 };
 
 export default function AdminPage() {
+  const t = useT();
   const account = typeof window !== "undefined" ? getAccount() : null;
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
   const [etabs, setEtabs] = useState<Etab[]>([]);
@@ -113,38 +166,39 @@ export default function AdminPage() {
   const moderatedComments = comments.filter(c => c.status !== "pending");
 
   // Huit lignes par liste ; « Tout voir » rouvre la page sur cette seule
-  // liste, entière, avec recherche et tri.
+  // liste, entière, avec recherche et tri. Les « cle » sont des identifiants
+  // (ils voyagent dans l'URL) ; seuls les « label » sont traduits.
   const seule = useListeSeule();
   const listePrompts = useListe("prompts", others, {
     cherchable: p2 => `${p2.name} ${p2.description} ${p2.status}`,
     tris: [
-      { cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) },
-      { cle: "usages", label: "Les plus utilisés", compare: (a, b) => b.usageCount - a.usageCount },
-      { cle: "jetons", label: "Jetons produits", compare: (a, b) => b.tokensTotal - a.tokensTotal },
-      { cle: "etat", label: "État", compare: (a, b) => a.status.localeCompare(b.status) },
+      { cle: "nom", label: t("admin.sort.name"), compare: (a, b) => a.name.localeCompare(b.name) },
+      { cle: "usages", label: t("home.sort.uses"), compare: (a, b) => b.usageCount - a.usageCount },
+      { cle: "jetons", label: t("admin.sort.tokens"), compare: (a, b) => b.tokensTotal - a.tokensTotal },
+      { cle: "etat", label: t("admin.sort.status"), compare: (a, b) => a.status.localeCompare(b.status) },
     ],
   });
   const listeCommentaires = useListe("commentaires", pendingComments, {
     cherchable: c => `${c.promptName} ${c.body}`,
-    tris: [{ cle: "date", label: "Plus récents", compare: (a, b) => b.createdAt - a.createdAt }],
+    tris: [{ cle: "date", label: t("admin.sort.recent"), compare: (a, b) => b.createdAt - a.createdAt }],
   });
   const listeComptes = useListe("comptes", users, {
     cherchable: u => `${u.email} ${u.name} ${u.etablissementName ?? ""}`,
     tris: [
-      { cle: "email", label: "Adresse", compare: (a, b) => a.email.localeCompare(b.email) },
-      { cle: "date", label: "Plus récents", compare: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
-      { cle: "prompts", label: "Tuteurs publiés", compare: (a, b) => b.promptCount - a.promptCount },
+      { cle: "email", label: t("admin.sort.email"), compare: (a, b) => a.email.localeCompare(b.email) },
+      { cle: "date", label: t("admin.sort.recent"), compare: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
+      { cle: "prompts", label: t("admin.sort.prompts"), compare: (a, b) => b.promptCount - a.promptCount },
     ],
   });
   const listeEtabs = useListe("etablissements", etabs, {
     cherchable: e => `${e.name} ${e.ips}`,
-    tris: [{ cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) }],
+    tris: [{ cle: "nom", label: t("admin.sort.name"), compare: (a, b) => a.name.localeCompare(b.name) }],
   });
   const listeFacture = useListe("facturation", billing, {
     cherchable: r => `${r.etablissement} ${r.ip} ${r.provider}`,
     tris: [
-      { cle: "jetons", label: "Jetons", compare: (a, b) => b.tokens - a.tokens },
-      { cle: "etab", label: "Établissement", compare: (a, b) => a.etablissement.localeCompare(b.etablissement) },
+      { cle: "jetons", label: t("admin.sort.jetons"), compare: (a, b) => b.tokens - a.tokens },
+      { cle: "etab", label: t("admin.col.school"), compare: (a, b) => a.etablissement.localeCompare(b.etablissement) },
     ],
   });
   const [message, setMessage] = useState("");
@@ -175,6 +229,19 @@ export default function AdminPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  // Relance des traductions. Celle-ci est attendue (trois appels à Haiku),
+  // là où la publication ne l'attend pas : ici, le résultat EST la réponse.
+  const [traduisant, setTraduisant] = useState<string | null>(null);
+  const retraduire = async (name: string) => {
+    setTraduisant(name);
+    try {
+      const ok = await act(name, "retranslate");
+      if (ok) setMessage(t("admin.tr.done", { name }));
+    } finally {
+      setTraduisant(null);
+    }
+  };
+
   const act = async (name: string, action: string, extra: Record<string, unknown> = {}) => {
     setMessage("");
     const response = await fetch(`/api/prompts/${encodeURIComponent(name)}`, {
@@ -186,7 +253,9 @@ export default function AdminPage() {
       const data = await response.json().catch(() => ({}));
       const code = String(data?.error?.code ?? response.status);
       dernierCode.current = code;
-      setMessage(`Échec de « ${action} » sur ${name} (${expliquer(code)}).`);
+      // « action » reste le code envoyé au serveur : c'est lui qu'on relit
+      // dans les journaux quand on remonte un incident.
+      setMessage(t("admin.msg.actionFailed", { action, name, reason: expliquer(t, code) }));
       return false;
     }
     dernierCode.current = "";
@@ -207,8 +276,7 @@ export default function AdminPage() {
   const dupliquer = async () => {
     if (!editing) return;
     const nom = window.prompt(
-      `Nom du nouveau tuteur, copié depuis « ${editing.name} » ?\n` +
-      "Il naîtra en brouillon, avec la filiation « inspiré de » et son propre lien secret.",
+      `${t("admin.duplicate.ask", { name: editing.name })}\n${t("admin.duplicate.askHint")}`,
       `${editing.name}-2`);
     if (!nom) return;
     setMessage("");
@@ -222,11 +290,11 @@ export default function AdminPage() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setMessage(`Duplication impossible (${data?.error?.code ?? response.status}).`);
+      setMessage(t("admin.msg.duplicateFailed", { code: String(data?.error?.code ?? response.status) }));
       return;
     }
     setEditing(null);
-    setMessage(`« ${nom.trim()} » créé en brouillon, inspiré de « ${editing.name} ».`);
+    setMessage(t("admin.msg.duplicated", { name: nom.trim(), source: editing.name }));
     reload();
   };
 
@@ -246,13 +314,11 @@ export default function AdminPage() {
     // reste ouvert si l'on dépublie depuis la ligne juste au-dessus, et
     // l'avertissement mentirait alors sur l'état réel.
     const publie = prompts.find(x => x.name === editing.name)?.status === "published";
-    if (!nouveauNom) { setMessage("Le nom ne peut pas être vide."); return; }
+    if (!nouveauNom) { setMessage(t("admin.msg.nameEmpty")); return; }
 
     if (nouveauNom !== editing.name && publie && !window.confirm(
-      `Renommer « ${editing.name} » en « ${nouveauNom} » ?\n\n` +
-      "ATTENTION : ce tuteur est PUBLIÉ. Son nom est son adresse publique (/p/nom) : " +
-      "les liens déjà partagés tomberont, et les conversations en cours n'afficheront plus leur tuteur. " +
-      "Ses compteurs et ses versions, eux, sont conservés.")) return;
+      `${t("admin.confirm.rename", { name: editing.name, newName: nouveauNom })}\n\n` +
+      t("admin.confirm.renameWarning"))) return;
 
     if (!await act(editing.name, "edit", { description: editing.description, body: editing.body })) return;
     if (nouveauNom !== editing.name && !await act(editing.name, "rename", { newName: nouveauNom })) {
@@ -260,9 +326,10 @@ export default function AdminPage() {
       // la RAISON du refus (sans elle, « ça n'a pas marché » ne mène nulle
       // part) et le formulaire OUVERT, pour que le nom saisi reste corrigeable
       // au lieu d'être à retaper de mémoire.
-      setMessage(
-        `Texte enregistré, mais « ${editing.name} » n'a pas pu être renommé en « ${nouveauNom} » : ` +
-        expliquer(dernierCode.current || "inconnu"));
+      setMessage(t("admin.msg.renameFailed", {
+        name: editing.name, newName: nouveauNom,
+        reason: expliquer(t, dernierCode.current || "ERR_UNKNOWN"),
+      }));
       return;
     }
     setEditing(null);
@@ -270,8 +337,7 @@ export default function AdminPage() {
 
   const archive = async (name: string) => {
     if (!window.confirm(
-      `Archiver « ${name} » ?\nLe prompt disparaît DÉFINITIVEMENT de cette interface, mais reste en base ` +
-      `avec ses compteurs (rien n'est supprimé).`)) return;
+      `${t("admin.confirm.archive", { name })}\n${t("admin.confirm.archiveHint")}`)) return;
     await act(name, "archive");
   };
 
@@ -283,7 +349,9 @@ export default function AdminPage() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage(`Échec de modération du commentaire #${c.id} (${data?.error?.code ?? response.status}).`);
+      setMessage(t("admin.msg.moderationFailed", {
+        id: c.id, code: String(data?.error?.code ?? response.status),
+      }));
     }
     reload();
   };
@@ -297,7 +365,9 @@ export default function AdminPage() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage(`Échec de mise à jour du compte ${email} (${data?.error?.code ?? response.status}).`);
+      setMessage(t("admin.msg.userUpdateFailed", {
+        email, code: String(data?.error?.code ?? response.status),
+      }));
     }
     reload();
   };
@@ -315,7 +385,7 @@ export default function AdminPage() {
         billingEmail: form.billingEmail,
       }),
     });
-    if (!response.ok) { setMessage("Échec d'enregistrement de l'établissement."); return; }
+    if (!response.ok) { setMessage(t("admin.msg.schoolSaveFailed")); return; }
     setForm({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
     reload();
   };
@@ -338,40 +408,51 @@ export default function AdminPage() {
     // qui refusent l'entrée doivent le faire de la même façon.
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>Administration — EduChat</title></Head>
+        <Head><title>{t("admin.title")} — EduChat</title></Head>
         <MdAdminPanelSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
-        <h1 className="text-2xl font-bold">Espace réservé à l&apos;administration</h1>
+        <h1 className="text-2xl font-bold">{t("admin.denied.title")}</h1>
         <p className="mt-3 opacity-80">
           {account
-            ? `Le compte ${account.email} n'est pas administrateur — la liste est définie sur le serveur.`
-            : "Identifiez-vous d'abord : un code reçu par email, sans mot de passe."}
+            ? t("admin.denied.notAdmin", { email: account.email })
+            : t("admin.denied.anonymous")}
         </p>
         <div className="mt-6 flex justify-center gap-3">
           {!account && (
             <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-              Vérifier mon email
+              {t("compte.anonymousCta")}
             </Link>
           )}
           <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            Retour au catalogue
+            {t("admin.denied.backCatalogue")}
           </Link>
         </div>
       </div>
     );
   }
 
+  // Les états d'un tuteur, dits à un humain. Le serveur, lui, garde ses
+  // identifiants (published, draft, pending, retired) : ils ne changent pas.
+  const libelleEtat = (status: string) => {
+    switch (status) {
+      case "published": return t("admin.status.published");
+      case "draft": return t("admin.status.draft");
+      case "pending": return t("admin.status.pending");
+      case "retired": return t("admin.status.retired");
+      default: return status;
+    }
+  };
 
   const statusBadge = (status: string) => (
     <span className={`rounded px-1.5 text-xs ${status === "published" ? "bg-green-600/30"
       : status === "draft" ? "bg-yellow-600/30" : status === "pending" ? "bg-orange-600/30" : "bg-gray-600/30"}`}>
-      {status === "retired" ? "dépublié" : status}
+      {libelleEtat(status)}
     </span>
   );
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-6 pb-16 text-primary">
-      <Head><title>Administration — EduChat</title></Head>
-      <h1 className="text-2xl font-bold">Administration</h1>
+      <Head><title>{t("admin.title")} — EduChat</title></Head>
+      <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
       {message && <p className="mt-2 text-sm text-red-400">{message}</p>}
 
       {/* ---- Modération des prompts ---- */}
@@ -379,28 +460,30 @@ export default function AdminPage() {
       {!seule && (<>
       {/* ─── Zone 1 : Prompts ─── */}
       <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
-        Prompts
+        {t("admin.zone.prompts")}
       </h2>
       </>)}
       {(!seule || seule === "prompts") && (
       <section className="mt-8">
-        <h2 className="text-lg font-bold">À valider ({pending.length})</h2>
-        {pending.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun prompt en attente.</p>}
+        <h2 className="text-lg font-bold">{t("admin.prompts.toValidate", { n: pending.length })}</h2>
+        {pending.length === 0 && <p className="mt-2 text-sm opacity-60">{t("admin.prompts.noneWaiting")}</p>}
         <ul className="mt-2 flex flex-col gap-2">
           {pending.map(p => (
             <li key={p.name} className="rounded border border-yellow-500/30 bg-secondary p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <b>{p.name}</b>
-                <span className="opacity-60">par {p.authorEmail ? `${p.authorName} <${p.authorEmail}>` : "Anonyme"}</span>
-                <span className="opacity-60">{(p.sizeBytes / 1024).toFixed(1)} Ko</span>
+                <span className="opacity-60">
+                  {t("home.by")} {p.authorEmail ? `${p.authorName} <${p.authorEmail}>` : t("admin.anonymous")}
+                </span>
+                <span className="opacity-60">{t("admin.prompts.size", { n: (p.sizeBytes / 1024).toFixed(1) })}</span>
                 <button onClick={() => setExpanded(expanded === p.name ? null : p.name)} className="underline opacity-70">
-                  {expanded === p.name ? "replier" : "lire le prompt"}
+                  {expanded === p.name ? t("admin.prompts.collapse") : t("admin.prompts.read")}
                 </button>
                 <span className="flex-grow" />
                 <button onClick={() => act(p.name, "approve")}
-                  className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> Publier</button>
-                <button onClick={() => archive(p.name)} title="Refuser : masquer définitivement de cette interface (conservé en base)"
-                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdArchive /> Archiver</button>
+                  className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> {t("admin.btn.publish")}</button>
+                <button onClick={() => archive(p.name)} title={t("admin.prompts.refuseTitle")}
+                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdArchive /> {t("admin.btn.archive")}</button>
               </div>
               <p className="mt-1 opacity-80">{p.description}</p>
               {expanded === p.name && (
@@ -410,15 +493,13 @@ export default function AdminPage() {
           ))}
         </ul>
 
-        <h2 className="mt-6 text-lg font-bold">Tous les prompts{listePrompts.barre}</h2>
+        <h2 className="mt-6 text-lg font-bold">{t("admin.prompts.allHeading")}{listePrompts.barre}</h2>
+        {/* Le gras porte l'état ; le reste de la phrase suit dans la même
+            langue — d'où le découpage en fragments plutôt qu'un seul texte. */}
         <p className="mt-1 text-xs opacity-60">
-          Rien n'est jamais supprimé. <b>Publié</b> : dépublier · modifier. <b>Dépublié</b> :
-          republier · archiver — pour retoucher un tuteur dépublié, republiez-le d'abord.
-          « Modifier » couvre le nom, la description et le texte ; retoucher le TEXTE crée une
-          nouvelle version (le nom et la description sont corrigés sur place). Pour partir d'un
-          tuteur sans le toucher, ouvrez « Modifier » puis « Dupliquer » — donc republiez-le
-          d'abord s'il est dépublié. Archiver ne fait que nettoyer cette liste — le tuteur reste en base
-          avec ses compteurs, et la facturation reste calculable.
+          {t("admin.prompts.helpNothingDeleted")}{" "}
+          <b>{t("admin.prompts.helpPublished")}</b>{t("admin.prompts.helpPublishedRest")}{" "}
+          <b>{t("admin.prompts.helpRetired")}</b>{t("admin.prompts.helpRetiredRest")}
         </p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {listePrompts.visibles.map(p => (
@@ -426,7 +507,8 @@ export default function AdminPage() {
               <div className="flex flex-wrap items-center gap-2">
                 {statusBadge(p.status)}
                 <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
-                <span className="opacity-60">{p.usageCount} usages · {formatTokens(p.tokensTotal)}</span>
+                <span className="opacity-60">{p.usageCount} {t("home.uses")} · {formatTokens(p.tokensTotal)}</span>
+                {p.status === "published" && <BadgeTraductions resume={p.translations} />}
                 <span className="flex-grow" />
                 {/* Un état, un jeu d'actions — jamais de bouton désactivé :
                     « republier » et « dépublier » sont les deux faces d'une
@@ -440,60 +522,74 @@ export default function AdminPage() {
                     se fait plus haut, dans la file de validation. */}
                 {p.status === "published" ? (
                   <>
-                    <button onClick={() => act(p.name, "retire")} title="Dépublier (réversible : le prompt reste en base)"
-                      className={BTN}><MdVisibilityOff /> Dépublier</button>
-                    <button onClick={() => ouvrirEdition(p)} title="Modifier le nom, la description et le texte : crée une nouvelle version"
-                      className={BTN}><MdEdit /> Modifier</button>
+                    <button onClick={() => act(p.name, "retire")} title={t("admin.prompts.retireTitle")}
+                      className={BTN}><MdVisibilityOff /> {t("compte.prompts.retire")}</button>
+                    <button onClick={() => ouvrirEdition(p)} title={t("admin.prompts.editTitle")}
+                      className={BTN}><MdEdit /> {t("admin.btn.edit")}</button>
+                    {/* Le « en cas de validation » du cycle de traduction : tant
+                        que ce bouton n'a pas été cliqué, une traduction périmée
+                        n'est pas servie et l'élève lit l'original. */}
+                    {(p.translations.aVerifier || p.translations.enEchec
+                      || p.translations.pretes < p.translations.total) && (
+                      <button onClick={() => retraduire(p.name)} disabled={traduisant === p.name}
+                        title={t("admin.tr.retranslateTitle")}
+                        className="flex items-center gap-1 rounded border border-[#DC6521]/60 px-2 py-0.5 text-xs hover:bg-[#DC6521]/10 disabled:opacity-40">
+                        <MdTranslate />{" "}
+                        {traduisant === p.name ? t("admin.tr.working")
+                          : p.translations.aVerifier ? t("admin.tr.checkAndRetranslate")
+                            : t("admin.tr.translate")}
+                      </button>
+                    )}
                   </>
                 ) : p.status === "retired" ? (
                   <>
-                    <button onClick={() => act(p.name, "republish")} title="Republier au catalogue tel quel"
-                      className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> Republier</button>
-                    <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
-                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                    <button onClick={() => act(p.name, "republish")} title={t("admin.prompts.republishTitle")}
+                      className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10"><MdPublish /> {t("compte.prompts.republish")}</button>
+                    <button onClick={() => archive(p.name)} title={t("admin.prompts.archiveTitle")}
+                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> {t("admin.btn.archive")}</button>
                   </>
                 ) : (
                   <>
-                    <button onClick={() => ouvrirEdition(p)} title="Modifier le nom, la description et le texte : crée une nouvelle version"
-                      className={BTN}><MdEdit /> Modifier</button>
-                    <button onClick={() => archive(p.name)} title="Masquer définitivement de cette interface (conservé en base)"
-                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> Archiver</button>
+                    <button onClick={() => ouvrirEdition(p)} title={t("admin.prompts.editTitle")}
+                      className={BTN}><MdEdit /> {t("admin.btn.edit")}</button>
+                    <button onClick={() => archive(p.name)} title={t("admin.prompts.archiveTitle")}
+                      className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> {t("admin.btn.archive")}</button>
                   </>
                 )}
               </div>
               {editing?.name === p.name && (
                 <form onSubmit={saveEdit} className="mt-2 flex flex-col gap-2 rounded border border-white/10 bg-secondary p-3">
                   <label className="flex flex-col gap-1 text-xs opacity-70">
-                    Identifiant du tuteur — c&apos;est son adresse publique (/p/nom)
+                    {t("admin.edit.nameLabel")}
                     <input value={editing.nom}
                       onChange={e => setEditing({ ...editing, nom: e.target.value })}
                       maxLength={64} className="rounded bg-tertiary p-2 font-mono text-sm text-primary" />
                   </label>
                   {prompts.find(x => x.name === editing.name)?.status === "published" && editing.nom.trim() !== editing.name && (
                     <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-                      Ce tuteur est <b>publié</b> : le renommer fera tomber les liens déjà partagés,
-                      et les conversations en cours n&apos;afficheront plus leur tuteur. Compteurs et
-                      versions sont conservés.
+                      {t("admin.edit.warnBefore")}{" "}
+                      <b>{t("compte.prompts.status.published")}</b>{t("admin.edit.warnRest")}
                     </p>
                   )}
                   <input value={editing.description}
                     onChange={e => setEditing({ ...editing, description: e.target.value })}
-                    maxLength={500} placeholder="Description (catalogue)"
+                    maxLength={500} placeholder={t("admin.edit.descriptionPlaceholder")}
                     className="rounded bg-tertiary p-2 text-sm" />
                   <textarea value={editing.body}
                     onChange={e => setEditing({ ...editing, body: e.target.value })}
-                    rows={12} className="rounded bg-tertiary p-2 font-mono text-xs leading-relaxed" />
+                    rows={12}
+                    className="rounded bg-tertiary p-2 font-mono text-xs leading-relaxed" />
                   <div className="flex gap-2">
                     <button type="submit" className="rounded bg-[#DC6521] px-3 py-1.5 text-xs font-bold hover:opacity-90">
-                      Enregistrer
+                      {t("compte.identity.save")}
                     </button>
                     <button type="button" onClick={() => void dupliquer()}
-                      title="Créer un tuteur SÉPARÉ à partir de ce texte, sans toucher à l'original"
+                      title={t("admin.edit.duplicateTitle")}
                       className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">
-                      Dupliquer — nouveau tuteur
+                      {t("admin.btn.duplicate")}
                     </button>
                     <button type="button" onClick={() => setEditing(null)}
-                      className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">Annuler</button>
+                      className="rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">{t("admin.btn.cancel")}</button>
                   </div>
                 </form>
               )}
@@ -505,24 +601,21 @@ export default function AdminPage() {
 
       {(!seule || seule === "commentaires") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Commentaires à modérer ({pendingComments.length}){listeCommentaires.barre}</h2>
-        <p className="mt-1 text-xs opacity-60">
-          Les auteurs modèrent les commentaires de leurs propres tuteurs ; vous couvrez tout —
-          en particulier les tuteurs anonymes. Masquer ne supprime jamais.
-        </p>
-        {pendingComments.length === 0 && <p className="mt-2 text-sm opacity-60">Aucun commentaire en attente.</p>}
+        <h2 className="text-lg font-bold">{t("admin.comments.heading", { n: pendingComments.length })}{listeCommentaires.barre}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.comments.help")}</p>
+        {pendingComments.length === 0 && <p className="mt-2 text-sm opacity-60">{t("admin.comments.empty")}</p>}
         <ul className="mt-2 flex flex-col gap-2">
           {listeCommentaires.visibles.map(c => (
             <li key={c.id} className="rounded border border-yellow-500/30 bg-secondary p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2 text-xs opacity-70">
                 <Link href={`/p/${encodeURIComponent(c.promptName)}`} className="font-bold underline">{c.promptName}</Link>
                 <span>{new Date(c.createdAt).toLocaleString("fr-CH")}</span>
-                {!c.promptAuthorEmail && <span className="rounded bg-orange-600/30 px-1.5">tuteur anonyme — à vous</span>}
+                {!c.promptAuthorEmail && <span className="rounded bg-orange-600/30 px-1.5">{t("admin.comments.anonymousTutor")}</span>}
                 <span className="flex-grow" />
                 <button onClick={() => moderateComment(c, "approve")}
-                  className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> Approuver</button>
+                  className="flex items-center gap-1 rounded bg-green-600/80 px-2 py-1 hover:bg-green-600"><MdCheck /> {t("admin.btn.approve")}</button>
                 <button onClick={() => moderateComment(c, "hide")}
-                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdVisibilityOff /> Masquer</button>
+                  className="flex items-center gap-1 rounded bg-gray-600/70 px-2 py-1 hover:bg-gray-600"><MdVisibilityOff /> {t("admin.btn.hide")}</button>
               </div>
               <p className="mt-2 whitespace-pre-wrap">{c.body}</p>
             </li>
@@ -531,15 +624,17 @@ export default function AdminPage() {
         {moderatedComments.length > 0 && (
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer opacity-70">
-              Commentaires déjà modérés ({moderatedTotal > moderatedComments.length
-                ? `${moderatedComments.length} affichés sur ${moderatedTotal}`
-                : moderatedComments.length})
+              {t("admin.comments.moderated", {
+                n: moderatedTotal > moderatedComments.length
+                  ? t("admin.comments.shownOf", { n: moderatedComments.length, total: moderatedTotal })
+                  : moderatedComments.length,
+              })}
             </summary>
             <ul className="mt-2 flex flex-col gap-1">
               {moderatedComments.map(c => (
                 <li key={c.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1 text-xs">
                   <span className={`rounded px-1.5 ${c.status === "approved" ? "bg-green-600/30" : "bg-gray-600/30"}`}>
-                    {c.status === "approved" ? "approuvé" : "masqué"}
+                    {c.status === "approved" ? t("admin.comments.approved") : t("admin.comments.hidden")}
                   </span>
                   <Link href={`/p/${encodeURIComponent(c.promptName)}`} className="underline">{c.promptName}</Link>
                   <span className="max-w-md truncate opacity-70">{c.body}</span>
@@ -547,7 +642,7 @@ export default function AdminPage() {
                   <span className="opacity-50">{c.moderatedBy ?? ""}</span>
                   <button onClick={() => moderateComment(c, c.status === "approved" ? "hide" : "approve")}
                     className="rounded border border-white/20 px-2 py-0.5 hover:bg-tertiary">
-                    {c.status === "approved" ? "Masquer" : "Approuver"}
+                    {c.status === "approved" ? t("admin.btn.hide") : t("admin.btn.approve")}
                   </button>
                 </li>
               ))}
@@ -560,25 +655,21 @@ export default function AdminPage() {
       {!seule && (<>
       {/* ─── Zone 2 : Comptes ─── */}
       <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
-        Comptes
+        {t("admin.zone.accounts")}
       </h2>
       </>)}
       {(!seule || seule === "comptes") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Comptes ({users.length}){listeComptes.barre}</h2>
-        <p className="mt-1 text-xs opacity-60">
-          Chacun peut se créer un compte sur /verifier (jamais obligatoire, jamais pour les élèves).
-          Ici : rattachement d'un enseignant à son établissement, et attestation de majorité.
-          Attester de la majorité donne accès aux LLM non compatibles RGPD.
-        </p>
+        <h2 className="text-lg font-bold">{t("admin.accounts.heading", { n: users.length })}{listeComptes.barre}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.accounts.help")}</p>
         {users.length === 0 ? (
-          <p className="mt-2 text-sm opacity-60">Aucun compte vérifié pour l'instant.</p>
+          <p className="mt-2 text-sm opacity-60">{t("admin.accounts.empty")}</p>
         ) : (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase opacity-60">
-                <tr><th className="py-1 pr-2">Compte</th><th className="pr-2">Rôles</th>
-                  <th className="pr-2">Établissement</th><th className="pr-2">Majorité certifiée par</th><th className="pr-2">Prompts</th><th>Créé le</th></tr>
+                <tr><th className="py-1 pr-2">{t("admin.col.account")}</th><th className="pr-2">{t("admin.col.roles")}</th>
+                  <th className="pr-2">{t("admin.col.school")}</th><th className="pr-2">{t("admin.col.adultCertifiedBy")}</th><th className="pr-2">{t("admin.col.prompts")}</th><th>{t("admin.col.createdAt")}</th></tr>
               </thead>
               <tbody>
                 {listeComptes.visibles.map(u => (
@@ -586,7 +677,7 @@ export default function AdminPage() {
                     <td className="py-1.5 pr-2">
                       <b>{u.name || "—"}</b>
                       <span className="ml-1 opacity-60">{u.email}</span>
-                      {!!u.syncOptin && <span className="ml-1 rounded bg-blue-600/30 px-1 text-xs" title="Profil synchronisé sur le serveur">sync</span>}
+                      {!!u.syncOptin && <span className="ml-1 rounded bg-blue-600/30 px-1 text-xs" title={t("admin.accounts.syncTitle")}>{t("admin.accounts.sync")}</span>}
                     </td>
                     <td className="pr-2 whitespace-nowrap">
                       {/* « promptagogue » ne disait rien : tout compte vérifié
@@ -595,16 +686,19 @@ export default function AdminPage() {
                           jamais depuis un réseau scolaire. Cocher sans nom de
                           garant vous désigne vous-même. */}
                       <label className="mr-2 text-xs" title={u.adultVerifiedAt
-                        ? `Majorité attestée le ${new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH")} par ${u.adultVerifiedBy}`
-                        : "Attester de la majorité : donne accès aux LLM non compatibles RGPD, hors réseau scolaire"}>
+                        ? t("admin.accounts.adultOnTitle", {
+                            date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
+                            name: u.adultVerifiedBy ?? "",
+                          })
+                        : t("admin.accounts.adultOffTitle")}>
                         <input type="checkbox" checked={!!u.adultVerifiedAt}
                           onChange={e => updateUser(u.email, {
                             adultVerifiedBy: e.target.checked ? (u.adultVerifiedBy || moi || "administration") : "",
-                          })} /> adulte
+                          })} /> {t("admin.accounts.adult")}
                       </label>
                       <label className="text-xs">
                         <input type="checkbox" checked={!!u.isTeacher}
-                          onChange={e => updateUser(u.email, { isTeacher: e.target.checked })} /> enseignant
+                          onChange={e => updateUser(u.email, { isTeacher: e.target.checked })} /> {t("admin.accounts.teacher")}
                       </label>
                     </td>
                     <td className="pr-2">
@@ -612,7 +706,7 @@ export default function AdminPage() {
                         <select value={u.etablissementId ?? ""}
                           onChange={e => updateUser(u.email, { etablissementId: e.target.value || null })}
                           className="rounded bg-tertiary p-1 text-xs">
-                          <option value="">— aucun —</option>
+                          <option value="">{t("admin.accounts.noSchool")}</option>
                           {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
                         </select>
                       ) : <span className="text-xs opacity-40">—</span>}
@@ -623,10 +717,13 @@ export default function AdminPage() {
                           l'entretien vidéo sert à décider, pas à archiver. */}
                       <input
                         defaultValue={u.adultVerifiedBy ?? ""}
-                        placeholder="certifié adulte par…"
+                        placeholder={t("admin.accounts.certifiedByPlaceholder")}
                         title={u.adultVerifiedAt
-                          ? `Majorité certifiée le ${new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH")} par ${u.adultVerifiedBy}. Vider le champ pour retirer.`
-                          : "Nom de la personne qui se porte garante de la majorité (vous après un entretien vidéo, ou un enseignant pour ses élèves majeurs). Vide = non certifié."}
+                          ? t("admin.accounts.certifiedOnTitle", {
+                              date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
+                              name: u.adultVerifiedBy ?? "",
+                            })
+                          : t("admin.accounts.certifyHint")}
                         onBlur={e => {
                           if ((e.target.value.trim() || "") !== (u.adultVerifiedBy ?? "")) {
                             updateUser(u.email, { adultVerifiedBy: e.target.value.trim() });
@@ -650,26 +747,26 @@ export default function AdminPage() {
       {(!seule || seule === "facturation") && (
       <section className="mt-10">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-bold">Facturation de la clé interne{listeFacture.barre}</h2>
+          <h2 className="text-lg font-bold">{t("admin.billing.heading")}{listeFacture.barre}</h2>
           <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
             className="rounded bg-tertiary p-1 text-sm" />
           <button onClick={downloadCsv}
             className="flex items-center gap-1 rounded border border-white/20 px-2 py-1 text-xs hover:bg-tertiary">
-            <MdDownload /> Export CSV
+            <MdDownload /> {t("admin.billing.exportCsv")}
           </button>
         </div>
         {billing.length === 0 ? (
-          <p className="mt-2 text-sm opacity-60">Aucune consommation sur la clé interne pour cette période.</p>
+          <p className="mt-2 text-sm opacity-60">{t("admin.billing.empty")}</p>
         ) : (
           <table className="mt-3 w-full text-left text-sm">
             <thead className="text-xs uppercase opacity-60">
-              <tr><th className="py-1">Établissement</th><th>IP</th><th>Fournisseur</th>
-                <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
+              <tr><th className="py-1">{t("admin.col.school")}</th><th>{t("admin.col.ip")}</th><th>{t("admin.col.provider")}</th>
+                <th className="text-right">{t("admin.col.requests")}</th><th className="text-right">{t("admin.col.tokens")}</th></tr>
             </thead>
             <tbody>
               {listeFacture.visibles.map((row, i) => (
                 <tr key={i} className="border-b border-white/5">
-                  <td className="py-1">{row.etablissement}{!!row.respire && <span className="ml-1 rounded bg-green-600/30 px-1 text-xs">gratuit</span>}</td>
+                  <td className="py-1">{row.etablissement}{!!row.respire && <span className="ml-1 rounded bg-green-600/30 px-1 text-xs">{t("admin.billing.free")}</span>}</td>
                   <td className="font-mono text-xs">{row.ip}</td>
                   <td>{row.provider}</td>
                   <td className="text-right">{row.requests}</td>
@@ -681,11 +778,11 @@ export default function AdminPage() {
         )}
         {teacherBilling.length > 0 && (
           <>
-            <h3 className="mt-6 font-bold">Par enseignant (sessions de classe)</h3>
+            <h3 className="mt-6 font-bold">{t("admin.billing.byTeacher")}</h3>
             <table className="mt-2 w-full text-left text-sm">
               <thead className="text-xs uppercase opacity-60">
-                <tr><th className="py-1">Enseignant</th><th>Établissement</th><th>Fournisseur</th>
-                  <th className="text-right">Requêtes</th><th className="text-right">Tokens</th></tr>
+                <tr><th className="py-1">{t("admin.col.teacher")}</th><th>{t("admin.col.school")}</th><th>{t("admin.col.provider")}</th>
+                  <th className="text-right">{t("admin.col.requests")}</th><th className="text-right">{t("admin.col.tokens")}</th></tr>
               </thead>
               <tbody>
                 {teacherBilling.map((row, i) => (
@@ -701,49 +798,48 @@ export default function AdminPage() {
             </table>
           </>
         )}
-        <p className="mt-2 text-xs opacity-50">
-          Montants exprimés en tokens par fournisseur — le tarif appliqué à la facture reste à votre main.
-          Les établissements RESPIRE apparaissent pour information, à 0.
-          Une alerte email part automatiquement dès qu'une IP dépasse le seuil quotidien
-          de tokens sur la clé interne (SECRET_ALERT_IP_TOKENS_DAILY).
-        </p>
+        <p className="mt-2 text-xs opacity-50">{t("admin.billing.note")}</p>
       </section>
       )}
 
       {(!seule || seule === "etablissements") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Établissements (clients){listeEtabs.barre}</h2>
-        <p className="mt-1 text-xs opacity-60">Horaires, quota par élève et plafond mensuel sont aussi modifiables par le responsable rattaché depuis sa page « Mon établissement » (/etablissement).</p>
+        <h2 className="text-lg font-bold">{t("admin.schools.heading")}{listeEtabs.barre}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.schools.help")}</p>
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {listeEtabs.visibles.map(e => (
             <li key={e.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
               <b>{e.name}</b>
-              <span className="opacity-60">{e.ips || "aucune IP"}</span>
-              {!!e.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">RESPIRE — gratuit</span>}
-              <span className="opacity-60">quota : {e.token_quota_monthly > 0 ? formatTokens(e.token_quota_monthly) + "/mois" : "illimité"}</span>
+              <span className="opacity-60">{e.ips || t("admin.schools.noIp")}</span>
+              {!!e.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.schools.respire")}</span>}
+              <span className="opacity-60">{t("admin.schools.quota", {
+                v: e.token_quota_monthly > 0
+                  ? t("admin.schools.perMonth", { v: formatTokens(e.token_quota_monthly) })
+                  : t("admin.schools.unlimited"),
+              })}</span>
               <span className="flex-grow" />
               <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String((e as any).quota_per_student_daily || ""), billingEmail: e.billing_email })}
-                className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">Modifier</button>
+                className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">{t("admin.btn.edit")}</button>
             </li>
           ))}
         </ul>
         <form onSubmit={saveEtab} className="mt-3 grid grid-cols-1 gap-2 rounded border border-white/10 bg-secondary p-3 text-sm md:grid-cols-2">
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required
-            placeholder="Nom de l'établissement" className="rounded bg-tertiary p-2" />
+            placeholder={t("admin.schools.namePlaceholder")} className="rounded bg-tertiary p-2" />
           <input value={form.ips} onChange={e => setForm({ ...form, ips: e.target.value })}
-            placeholder="IPs, séparées par des virgules" className="rounded bg-tertiary p-2" />
+            placeholder={t("admin.schools.ipsPlaceholder")} className="rounded bg-tertiary p-2" />
           <input value={form.quota} onChange={e => setForm({ ...form, quota: e.target.value })}
-            placeholder="Quota mensuel de tokens (vide = illimité)" inputMode="numeric" className="rounded bg-tertiary p-2" />
+            placeholder={t("admin.schools.quotaPlaceholder")} inputMode="numeric" className="rounded bg-tertiary p-2" />
           <input value={form.perStudent} onChange={e => setForm({ ...form, perStudent: e.target.value })}
-            placeholder="Quota quotidien par élève (vide = illimité)" inputMode="numeric" className="rounded bg-tertiary p-2" />
+            placeholder={t("admin.schools.perStudentPlaceholder")} inputMode="numeric" className="rounded bg-tertiary p-2" />
           <input value={form.billingEmail} onChange={e => setForm({ ...form, billingEmail: e.target.value })}
-            placeholder="Email de facturation" type="email" className="rounded bg-tertiary p-2" />
+            placeholder={t("admin.schools.billingEmailPlaceholder")} type="email" className="rounded bg-tertiary p-2" />
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.respire} onChange={e => setForm({ ...form, respire: e.target.checked })} />
-            École RESPIRE (gratuite — financée par les autres revenus)
+            {t("admin.schools.respireLabel")}
           </label>
           <button type="submit" className="rounded bg-[#DC6521] px-3 py-2 font-bold hover:opacity-90">
-            {form.id ? `Enregistrer #${form.id}` : "Ajouter l'établissement"}
+            {form.id ? t("admin.schools.saveId", { id: form.id }) : t("admin.schools.add")}
           </button>
         </form>
       </section>
@@ -752,32 +848,29 @@ export default function AdminPage() {
       {!seule && (<>
       {/* ─── Zone 3 : Modèles ─── */}
       <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
-        Modèles
+        {t("admin.zone.models")}
       </h2>
       </>)}
       {(!seule || seule === "echelle") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Échelle des modèles</h2>
+        <h2 className="text-lg font-bold">{t("admin.ladder.heading")}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.ladder.help1")}</p>
+        {/* Deux mots en gras au milieu de la phrase : découpés pour que chaque
+            langue place le sien où sa syntaxe le veut. */}
         <p className="mt-1 text-xs opacity-60">
-          Ce que l&apos;apprenant obtient quand il choisit un fournisseur. On part TOUJOURS du
-          barreau 1, le plus économe ; le bouton « Régénérer » d&apos;une réponse monte d&apos;un cran.
-          Le nom du modèle n&apos;est plus montré aux apprenants — seuls les promptagogues gardent
-          un champ Modèle explicite. Laisser les trois cases vides revient à la proposition
-          d&apos;origine.
-        </p>
-        <p className="mt-1 text-xs opacity-60">
-          La colonne <b>proposition</b> est celle du code, vérifiée contre les catalogues réels ;
-          la ligne du dessous est <b>votre réglage</b>. Un barreau que le fournisseur ne publie
-          plus est signalé en rouge : c&apos;est ainsi qu&apos;on évite un chat cassé en silence.
+          {t("admin.ladder.help2a")}{" "}
+          <b>{t("admin.ladder.suggestion")}</b>{" "}
+          {t("admin.ladder.help2b")}{" "}
+          <b>{t("admin.ladder.yourSetting")}</b>{t("admin.ladder.help2c")}
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="uppercase opacity-60">
               <tr>
-                <th className="py-1 pr-2">Fournisseur</th>
-                <th className="pr-2">1 · rapide</th>
-                <th className="pr-2">2 · équilibré</th>
-                <th className="pr-2">3 · approfondi</th>
+                <th className="py-1 pr-2">{t("admin.col.provider")}</th>
+                <th className="pr-2">{t("admin.ladder.rung1")}</th>
+                <th className="pr-2">{t("admin.ladder.rung2")}</th>
+                <th className="pr-2">{t("admin.ladder.rung3")}</th>
                 <th></th>
               </tr>
             </thead>
@@ -790,8 +883,8 @@ export default function AdminPage() {
                       <td className="py-1 pr-2 align-top">
                         <b>{row.provider}</b>
                         {row.custom
-                          ? <span className="block text-[10px] text-[#DC6521]">votre réglage</span>
-                          : <span className="block text-[10px] opacity-50">proposition suivie</span>}
+                          ? <span className="block text-[10px] text-[#DC6521]">{t("admin.ladder.yourSetting")}</span>
+                          : <span className="block text-[10px] opacity-50">{t("admin.ladder.suggestionFollowed")}</span>}
                       </td>
                       {[0, 1, 2].map(i => (
                         <td key={i} className="pr-2 align-top">
@@ -805,10 +898,10 @@ export default function AdminPage() {
                             placeholder={row.suggested[i] ?? "—"}
                             className="w-44 rounded bg-tertiary px-1 py-0.5 text-xs" />
                           <span className="block text-[10px] opacity-50">
-                            proposition : {row.suggested[i] ?? "—"}
+                            {t("admin.ladder.suggestionLine", { v: row.suggested[i] ?? "—" })}
                           </span>
                           {row.unknown.includes(valeurs[i]) && (
-                            <span className="block text-[10px] text-red-400">absent du catalogue</span>
+                            <span className="block text-[10px] text-red-400">{t("admin.ladder.notInCatalogue")}</span>
                           )}
                         </td>
                       ))}
@@ -821,17 +914,17 @@ export default function AdminPage() {
                               headers: { "Content-Type": "application/json", ...authHeaders() },
                               body: JSON.stringify({ provider: row.provider, rungs: valeurs }),
                             });
-                            if (!response.ok) { setMessage(`Échec de l'enregistrement pour ${row.provider}.`); return; }
-                            setMessage(`Échelle de ${row.provider} enregistrée.`);
+                            if (!response.ok) { setMessage(t("admin.msg.ladderSaveFailed", { provider: row.provider })); return; }
+                            setMessage(t("admin.msg.ladderSaved", { provider: row.provider }));
                             setLadderEdit(prev => { const c = { ...prev }; delete c[row.provider]; return c; });
                             fetch("/api/admin/ladder", { headers: authHeaders() })
                               .then(r => r.json()).then(d => setLadders(d.ladders ?? [])).catch(() => {});
                           }}
                           className="rounded border border-white/20 px-2 py-1 hover:bg-tertiary">
-                          Enregistrer
+                          {t("compte.identity.save")}
                         </button>
                         {!row.verifiable && (
-                          <span className="block text-[10px] opacity-50">catalogue non vérifiable (pas de clé serveur)</span>
+                          <span className="block text-[10px] opacity-50">{t("admin.ladder.notVerifiable")}</span>
                         )}
                       </td>
                     </tr>
@@ -846,19 +939,14 @@ export default function AdminPage() {
 
       {(!seule || seule === "catalogue") && (
       <section className="mt-10">
-        <h2 className="text-lg font-bold">Catalogue des modèles</h2>
+        <h2 className="text-lg font-bold">{t("admin.catalogue.heading")}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.catalogue.help")}</p>
+        {/* native / openrouter / defaut sont les valeurs rendues par l'API :
+            elles restent en dur, seule leur explication est traduite. */}
         <p className="mt-1 text-xs opacity-60">
-          La liste proposée dans le champ « Modèle » du chat. Elle se reconstruit toute seule
-          une fois par jour, à la première visite qui suit l&apos;échéance — il n&apos;y a pas de tâche
-          planifiée : rien ne tourne quand personne ne vient. Le bouton force la reconstruction
-          immédiate, utile après avoir ajouté une clé API dans educhat.env.
-        </p>
-        <p className="mt-1 text-xs opacity-60">
-          <b>native</b> = la liste publiée par l&apos;éditeur lui-même (exacte) ·{" "}
-          <b>openrouter</b> = déduite du catalogue public, pour les trois éditeurs dont
-          l&apos;identifiant s&apos;en déduit exactement ·{" "}
-          <b>defaut</b> = aucune clé côté serveur, seul le modèle par défaut est proposé —
-          la liste se complète alors avec la clé personnelle du visiteur.
+          <b>native</b>{" = "}{t("admin.catalogue.sourceNative")}{" · "}
+          <b>openrouter</b>{" = "}{t("admin.catalogue.sourceOpenrouter")}{" · "}
+          <b>defaut</b>{" = "}{t("admin.catalogue.sourceDefaut")}
         </p>
         <button
           onClick={async () => {
@@ -868,21 +956,21 @@ export default function AdminPage() {
               const data = await response.json();
               if (!response.ok) throw new Error();
               setCatalogue(data.catalogue ?? []);
-              setMessage("Catalogue reconstruit.");
+              setMessage(t("admin.msg.catalogueRebuilt"));
             } catch {
-              setMessage("Échec de la reconstruction du catalogue.");
+              setMessage(t("admin.msg.catalogueFailed"));
             } finally {
               setRefreshing(false);
             }
           }}
           disabled={refreshing}
           className="mt-3 rounded bg-[#DC6521] px-3 py-1.5 text-sm font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
-          {refreshing ? "Reconstruction…" : "Rafraîchir maintenant"}
+          {refreshing ? t("admin.catalogue.rebuilding") : t("admin.catalogue.refreshNow")}
         </button>
         {catalogue.length > 0 && (
           <table className="mt-3 w-full text-left text-xs">
             <thead className="uppercase opacity-60">
-              <tr><th className="py-1">Fournisseur</th><th>Source</th><th className="text-right">Modèles</th><th className="text-right">Mis à jour</th></tr>
+              <tr><th className="py-1">{t("admin.col.provider")}</th><th>{t("admin.col.source")}</th><th className="text-right">{t("admin.col.models")}</th><th className="text-right">{t("admin.col.updatedAt")}</th></tr>
             </thead>
             <tbody>
               {catalogue.map(row => (

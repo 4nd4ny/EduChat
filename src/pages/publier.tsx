@@ -123,6 +123,18 @@ export default function PublierPage() {
         dépublier.
       </p>
 
+      {/* Une conséquence de la publication que l'auteur doit connaître AVANT
+          d'écrire : son texte sera relu par des lecteurs dans trois langues
+          qu'il n'a pas choisies. */}
+      <p className="mt-3 text-sm opacity-80">
+        <b>Votre tuteur sera traduit.</b> Dès sa validation, son nom, sa description et son
+        texte intégral sont traduits automatiquement en anglais, en italien et en allemand,
+        puis servis aux lecteurs de ces langues — un élève germanophone doit pouvoir être
+        questionné en allemand. La traduction est machine, jamais retouchée à votre place ;
+        l&apos;original reste la référence, et il reprend seul la main dès que vous modifiez
+        votre texte, le temps que la nouvelle version soit retraduite.
+      </p>
+
       <div className="mt-4 rounded border border-white/10 bg-secondary p-3 text-sm">
         {account ? (
           <>Publication au nom de <b>{account.name || account.email}</b>.{" "}

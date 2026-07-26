@@ -1,4 +1,5 @@
 import { getToken } from "./account";
+import { currentLocale } from '../i18n/useT';
 
 // Appel client de /api/completion — avec ou sans streaming.
 //
@@ -66,7 +67,7 @@ export async function requestCompletion(
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ ...body, stream: !!handlers.onDelta }),
+    body: JSON.stringify({ ...body, locale: currentLocale(), stream: !!handlers.onDelta }),
   });
 
   const contentType = response.headers.get("content-type") || "";
