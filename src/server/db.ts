@@ -426,6 +426,14 @@ export function getDb(): Database.Database {
     // deux fois — deux webhooks simultanés sont un cas NORMAL.
     "ALTER TABLE credit_mouvements ADD COLUMN paypal_id TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_paypal ON credit_mouvements(paypal_id) WHERE paypal_id IS NOT NULL",
+    // TAUX DE CONTRIBUTION de l'école aux frais de fonctionnement, en pourcent.
+    // Réglable par l'école elle-même entre 3.5 et 10 : c'est ce qui rend le
+    // service difficile à copier — la valeur n'est pas dans la marge, elle est
+    // dans le service, et une école qui choisit ce qu'elle donne n'a aucune
+    // raison d'aller voir ailleurs. 3.5 % ne couvre QUE les frais PayPal :
+    // à ce niveau la plateforme paie le serveur de sa poche. -1 = pas encore
+    // choisi, on retombe alors sur le réglage global du serveur.
+    "ALTER TABLE etablissements ADD COLUMN contribution_pct REAL NOT NULL DEFAULT -1",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec
@@ -436,6 +444,46 @@ export function getDb(): Database.Database {
     "ALTER TABLE prompt_translations ADD COLUMN detail TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE prompt_translations ADD COLUMN model TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE prompt_translations ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0",
+    // ADRESSE POSTALE de facturation, saisie à l'inscription en libre-service
+    // (src/pages/api/etablissement/inscription.ts). Colonne SÉPARÉE de
+    // billing_email, qui est lu comme une adresse EMAIL par la relance de
+    // facture et l'état des porte-monnaie : y loger une adresse postale
+    // casserait les deux en silence.
+    "ALTER TABLE etablissements ADD COLUMN billing_address TEXT NOT NULL DEFAULT ''",
+    // FOURNISSEURS AUTORISÉS PENDANT LA SÉANCE : identifiants séparés par des
+    // virgules, cochés par l'enseignant depuis /session et expirant avec le
+    // reste de la séance (expires_at). VIDE = aucune restriction, c'est-à-dire
+    // tous ceux que l'école peut déjà utiliser ; le jeton « aucun » (voir
+    // src/server/seance.ts) dit l'inverse — une restriction qui n'autorise plus
+    // personne — parce que la colonne vide, elle, ne pouvait pas le dire. Ce
+    // que la colonne NE dit jamais : une liste vide n'est pas un défaut ouvert,
+    // seule l'absence de restriction l'est. Ce filtre s'AJOUTE aux règles
+    // de la plateforme (AI Act, drapeau rouge), il ne les remplace jamais : un
+    // fournisseur coché ici mais refusé ailleurs reste refusé.
+    "ALTER TABLE session_settings ADD COLUMN providers TEXT NOT NULL DEFAULT ''",
+    // LES TUTEURS D'UNE ÉCOLE LUI APPARTIENNENT.
+    //
+    // Rattachement : l'établissement de l'AUTEUR au moment de la création
+    // (users.etablissement_id). NULL pour une proposition anonyme, pour un
+    // auteur sans école, et pour TOUTES les lignes antérieures — et ce NULL
+    // est le catalogue de la PLATEFORME (tuteurs fondateurs compris), visible
+    // de tous. C'est lui qui garantit qu'après migration le visiteur hors
+    // établissement voit exactement le catalogue d'avant.
+    "ALTER TABLE prompts ADD COLUMN etablissement_id INTEGER",
+    // Un tuteur rattaché est RÉSERVÉ à son école tant que l'administration de
+    // cette école ne le rend pas public : écrire un tuteur pour ses élèves ne
+    // doit pas revenir à le publier pour le monde entier. Défaut fermé, y
+    // compris pour un tuteur déjà validé. Sans effet sur un tuteur non
+    // rattaché, qui est public par nature.
+    "ALTER TABLE prompts ADD COLUMN publie INTEGER NOT NULL DEFAULT 0",
+    // Le versant ENTRANT de la même décision : l'école dit si ses élèves
+    // voient AUSSI les tuteurs publics des AUTRES écoles. Défaut fermé —
+    // ouvrir à des élèves le catalogue du monde est un choix, pas un état de
+    // fait. Le catalogue de la plateforme (rattachement NULL) reste visible
+    // dans tous les cas : ce réglage ne parle que des tuteurs d'autrui.
+    "ALTER TABLE etablissements ADD COLUMN catalogue_ouvert INTEGER NOT NULL DEFAULT 0",
+    // Le catalogue filtre désormais sur le rattachement à chaque requête.
+    "CREATE INDEX IF NOT EXISTS idx_prompts_etab ON prompts(etablissement_id)",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }
@@ -455,6 +503,10 @@ export type PromptRow = {
   rating_sum: number; rating_count: number; size_bytes: number;
   inspired_by: number | null;
   archived: number;
+  /** École propriétaire, ou NULL : catalogue de la plateforme (voir migrations). */
+  etablissement_id: number | null;
+  /** Rendu public HORS de son école par l'administration de celle-ci. */
+  publie: number;
 };
 
 /** Ligne de la table comments (commentaires anonymes sur les fiches). */

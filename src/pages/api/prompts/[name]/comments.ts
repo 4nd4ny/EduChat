@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { CommentRow, getDb } from '../../../../server/db';
-import { getByName } from '../../../../server/prompts';
+import { getByName, estVisible, porteeDepuisIp } from '../../../../server/prompts';
 import { requireAuth, isAdminEmail } from '../../../../server/token';
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { notifyAdmin } from '../../../../server/mail';
@@ -29,10 +29,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const isAuthor = !!auth && !!row.author_email && auth.email === row.author_email;
   const moderator = isAdmin || isAuthor;
 
-  // Pour le PUBLIC, seuls les prompts PUBLIÉS existent : répondre 200 sur un
-  // brouillon/dépublié/archivé confirmerait son existence (la fiche, elle,
-  // répond 404). Les modérateurs gardent l'accès quel que soit le statut.
-  if (!moderator && (row.status !== 'published' || row.archived)) {
+  // Pour le PUBLIC, seuls existent les tuteurs qu'il a le droit de VOIR :
+  // ni brouillon, ni dépublié, ni archivé — et pas davantage le tuteur réservé
+  // à une autre école, sans quoi cette route dirait par un 200 ce que la fiche
+  // cache par un 404. Les modérateurs gardent l'accès quel que soit l'état.
+  if (!moderator && !estVisible(row, porteeDepuisIp(getClientIp(req)))) {
     return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   }
 

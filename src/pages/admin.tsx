@@ -23,10 +23,17 @@ type AdminPrompt = {
   description: string; body: string; version: number; status: string;
   usageCount: number; tokensTotal: number; sizeBytes: number;
   translations: ResumeTraductions;
+  // École propriétaire (null = catalogue de la plateforme) et sortie hors de
+  // ses murs. Ces deux champs ne quittent JAMAIS l'administration : la carte
+  // publique ne dit pas quelle école a écrit quel tuteur.
+  etablissementId: number | null; publie: number;
 };
 type Etab = {
   id: number; name: string; ips: string; respire: number;
-  token_quota_monthly: number; active_provider: string; billing_email: string;
+  token_quota_monthly: number; quota_per_student_daily: number;
+  active_provider: string; billing_email: string;
+  /** Les élèves voient AUSSI les tuteurs publics des autres écoles. */
+  catalogue_ouvert: number;
 };
 type BillingRow = {
   etablissement: string; respire: number; ip: string; provider: string;
@@ -80,6 +87,7 @@ function expliquer(t: ReturnType<typeof useT>, code: string): string {
     case "ERR_FORBIDDEN": return t("admin.err.forbidden");
     case "ERR_BODY_TOO_SHORT": return t("admin.err.bodyTooShort");
     case "ERR_QUOTA_USER": return t("admin.err.quotaUser");
+    case "ERR_NOT_SCHOOL_OWNED": return t("admin.err.notSchoolOwned");
     case "ERR_UNKNOWN": return t("admin.err.unknown");
     default: return code;
   }
@@ -129,7 +137,7 @@ type FactureRow = {
 };
 type Compte = { etablissementId: number; etablissement: string; respire: boolean; solde: number;
   devise: string; billingEmail: string; depense30: number; jours: number | null;
-  recharge: number; aSec: boolean };
+  recharge: number; aSec: boolean; contributionPct: number };
 type MouvementRow = { id: number; ts: number; genre: string; montant: number; solde: number; detail: string; par: string };
 type Participation = { devise: string; pct: number; collectee: number; demo: number; respire: number; jetonsOfferts: number };
 type PropositionTarif = { modele: string; entreeMtok: number; sortieMtok: number;
@@ -177,6 +185,15 @@ export default function AdminPage() {
   const [isSuper, setIsSuper] = useState(false);
   // Qui coche : sert de garant par défaut quand on atteste la majorité.
   const moi = account?.name || account?.email || "";
+  // SA PROPRE LIGNE. Un administrateur d'ÉCOLE ne certifie pas sa propre
+  // majorité : le garant répond de quelqu'un d'autre, et depuis l'inscription
+  // en libre-service ce rang s'obtient en trois champs — cocher sa case
+  // ouvrirait seul les fournisseurs écartés au titre de l'AI Act. La règle
+  // vit sur le SERVEUR (ERR_SELF_CERT_FORBIDDEN, src/pages/api/admin/users.ts) ;
+  // ici on se contente de ne pas montrer une case qui répondrait 403 — même
+  // honnêteté d'interface que pour les super-administrateurs.
+  const sansAutoCertif = (email: string) =>
+    !isSuper && !!account?.email && email.toLowerCase() === account.email.toLowerCase();
 
   // Dérivations remontées AVANT la garde d'accès : les hooks de liste en
   // dépendent, et un hook ne peut pas vivre après un retour conditionnel.
@@ -224,6 +241,7 @@ export default function AdminPage() {
   const [factures, setFactures] = useState<FactureRow[]>([]);
   const [comptes, setComptes] = useState<Compte[]>([]);
   const [mouvements, setMouvements] = useState<MouvementRow[]>([]);
+  const [bornes, setBornes] = useState({ min: 3.5, max: 10, frais: 3.5, paypal: false });
   const [participation, setParticipation] = useState<Participation | null>(null);
   const [tarifsListe, setTarifsListe] = useState<TarifRow[]>([]);
   const [sondeEnCours, setSondeEnCours] = useState(false);
@@ -249,7 +267,11 @@ export default function AdminPage() {
     fetch("/api/admin/tarifs", { headers: authHeaders() })
       .then(r => r.json()).then(d => setTarifsListe(d.tarifs ?? [])).catch(() => {});
     fetch("/api/admin/credits", { headers: authHeaders() })
-      .then(r => r.json()).then(d => { setComptes(d.comptes ?? []); setMouvements(d.mouvements ?? []); })
+      .then(r => r.json()).then(d => {
+        setComptes(d.comptes ?? []); setMouvements(d.mouvements ?? []);
+        setBornes({ min: d.contributionMin ?? 3.5, max: d.contributionMax ?? 10,
+          frais: d.fraisPaypalPct ?? 3.5, paypal: !!d.paypalActif });
+      })
       .catch(() => {});
     fetch("/api/admin/comments", { headers: authHeaders() })
       .then(r => r.json())
@@ -425,6 +447,24 @@ export default function AdminPage() {
     reload();
   };
 
+  /**
+   * Ouvrir ou fermer le catalogue d'une école — le SEUL réglage d'établissement
+   * qu'un administrateur d'école règle lui-même. Action à part, et non le
+   * grand formulaire : celui-ci porte les IP, les quotas et RESPIRE, qui
+   * restent la main du site. Le serveur ignore l'identifiant envoyé quand
+   * l'appelant n'est pas le site : on ne règle que chez soi.
+   */
+  const reglerCatalogue = async (id: number, ouvert: boolean) => {
+    setMessage("");
+    const response = await fetch("/api/admin/etablissements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ action: "catalogue", id, catalogueOuvert: ouvert }),
+    });
+    if (!response.ok) { setMessage(t("admin.msg.schoolSaveFailed")); return; }
+    reload();
+  };
+
   // La facture en MONNAIE, période par période. Le relevé en jetons plus haut
   // reste le détail ; ceci en est la traduction en francs, participation
   // comprise et nommée.
@@ -448,6 +488,32 @@ export default function AdminPage() {
     fetch(`/api/admin/factures?year=${yy}&month=${Number(mm)}`, { headers: authHeaders() })
       .then(x => x.json()).then(d => setFactures(d.factures ?? []))
       .catch(() => {});
+  };
+
+  const relireCredits = () => fetch("/api/admin/credits", { headers: authHeaders() })
+    .then(x => x.json()).then(d => { setComptes(d.comptes ?? []); setMouvements(d.mouvements ?? []); })
+    .catch(() => {});
+
+  const reglerContribution = async (etablissementId: number, pct: number) => {
+    await fetch("/api/admin/credits", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ action: "contribution", etablissementId, pct }),
+    });
+    void relireCredits();
+  };
+
+  const rembourser = async (c: Compte) => {
+    if (!bornes.paypal) { setMessage(t("admin.credit.refundOff")); return; }
+    if (!window.confirm(t("admin.credit.refundConfirm", { montant: c.solde.toFixed(2), devise: c.devise }))) return;
+    const r = await fetch("/api/admin/credits", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ action: "rembourser", etablissementId: c.etablissementId }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setMessage(r.ok
+      ? t("admin.credit.refundDone", { montant: Number(d.rembourse ?? 0).toFixed(2), devise: c.devise })
+      : t("admin.credit.refundFailed"));
+    void relireCredits();
   };
 
   const recharger = async (etablissementId: number, montant: number) => {
@@ -810,13 +876,17 @@ export default function AdminPage() {
                           ouvre les fournisseurs écartés au titre de l'AI Act —
                           jamais depuis un réseau scolaire. Cocher sans nom de
                           garant vous désigne vous-même. */}
-                      <label className="mr-2 text-xs" title={u.adultVerifiedAt
-                        ? t("admin.accounts.adultOnTitle", {
-                            date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
-                            name: u.adultVerifiedBy ?? "",
-                          })
-                        : t("admin.accounts.adultOffTitle")}>
+                      <label className={`mr-2 text-xs ${sansAutoCertif(u.email) ? "opacity-50" : ""}`}
+                        title={sansAutoCertif(u.email)
+                          ? t("admin.accounts.noSelfCert")
+                          : u.adultVerifiedAt
+                            ? t("admin.accounts.adultOnTitle", {
+                                date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
+                                name: u.adultVerifiedBy ?? "",
+                              })
+                            : t("admin.accounts.adultOffTitle")}>
                         <input type="checkbox" checked={!!u.adultVerifiedAt}
+                          disabled={sansAutoCertif(u.email)}
                           onChange={e => updateUser(u.email, {
                             adultVerifiedBy: e.target.checked ? (u.adultVerifiedBy || moi || "administration") : "",
                           })} /> {t("admin.accounts.adult")}
@@ -853,12 +923,15 @@ export default function AdminPage() {
                       <input
                         defaultValue={u.adultVerifiedBy ?? ""}
                         placeholder={t("admin.accounts.certifiedByPlaceholder")}
-                        title={u.adultVerifiedAt
-                          ? t("admin.accounts.certifiedOnTitle", {
-                              date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
-                              name: u.adultVerifiedBy ?? "",
-                            })
-                          : t("admin.accounts.certifyHint")}
+                        disabled={sansAutoCertif(u.email)}
+                        title={sansAutoCertif(u.email)
+                          ? t("admin.accounts.noSelfCert")
+                          : u.adultVerifiedAt
+                            ? t("admin.accounts.certifiedOnTitle", {
+                                date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
+                                name: u.adultVerifiedBy ?? "",
+                              })
+                            : t("admin.accounts.certifyHint")}
                         onBlur={e => {
                           if ((e.target.value.trim() || "") !== (u.adultVerifiedBy ?? "")) {
                             updateUser(u.email, { adultVerifiedBy: e.target.value.trim() });
@@ -1065,6 +1138,7 @@ export default function AdminPage() {
           <>
             <h3 className="mt-6 font-bold">{t("admin.credit.heading")}</h3>
             <p className="mt-1 text-xs opacity-60">{t("admin.credit.help")}</p>
+            <p className="mt-1 text-xs opacity-60">{t("admin.credit.rateHelp", { min: bornes.min, max: bornes.max })}</p>
             <table className="mt-2 w-full text-left text-sm">
               <thead className="text-xs uppercase opacity-60">
                 <tr><th className="py-1">{t("admin.col.school")}</th>
@@ -1086,11 +1160,41 @@ export default function AdminPage() {
                     <td className="text-right text-xs">{c.jours === null ? t("admin.credit.unknown") : t("admin.credit.daysValue", { n: c.jours })}</td>
                     <td className="text-right font-mono text-xs">{c.respire ? "—" : `${c.recharge.toFixed(0)} ${c.devise}`}</td>
                     <td className="text-right">
-                      {isSuper && !c.respire && (
-                        <button onClick={() => { const v = Number(window.prompt(t("admin.credit.topUp"), String(c.recharge || 100)));
-                          if (Number.isFinite(v) && v > 0) void recharger(c.etablissementId, v); }} className={BTN}>
-                          {t("admin.credit.topUp")}
-                        </button>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {isSuper && !c.respire && (
+                          <button onClick={() => { const v = Number(window.prompt(t("admin.credit.topUp"), String(c.recharge || 100)));
+                            if (Number.isFinite(v) && v > 0) void recharger(c.etablissementId, v); }} className={BTN}>
+                            {t("admin.credit.topUp")}
+                          </button>
+                        )}
+                        {!c.respire && c.solde > 0 && (
+                          <button onClick={() => void rembourser(c)} disabled={!bornes.paypal}
+                            title={bornes.paypal ? t("admin.credit.refundTitle", { pct: bornes.frais }) : t("admin.credit.refundOff")}
+                            className={`${BTN} disabled:opacity-40`}>
+                            {t("admin.credit.refund")}
+                          </button>
+                        )}
+                      </div>
+                      {/* LE TAUX EST À L'ÉCOLE. Un curseur plutôt qu'un champ :
+                          il montre d'un coup d'œil où l'on se situe entre le
+                          plancher — qui ne couvre que les frais PayPal — et le
+                          plafond. C'est ce choix laissé à l'école qui rend le
+                          service difficile à copier. */}
+                      {!c.respire && (
+                        <label className="mt-1 flex items-center justify-end gap-2 text-xs opacity-70">
+                          <span>{t("admin.credit.rate")}</span>
+                          <input type="range" min={bornes.min} max={bornes.max} step={0.5}
+                            defaultValue={c.contributionPct}
+                            onMouseUp={e => void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value))}
+                            onTouchEnd={e => void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value))}
+                            className="w-28" />
+                          <span className="w-24 text-left font-mono">
+                            {c.contributionPct.toFixed(1)} %
+                            {c.contributionPct <= bornes.min && (
+                              <span className="ml-1 text-amber-300" title={t("admin.credit.rateFloor")}>⚠</span>
+                            )}
+                          </span>
+                        </label>
                       )}
                     </td>
                   </tr>
@@ -1117,27 +1221,75 @@ export default function AdminPage() {
       </section>
       )}
 
-      {isSuper && (!seule || seule === "etablissements") && (
+      {/* Cette section n'est plus réservée au site : LES TUTEURS D'UNE ÉCOLE
+          LUI APPARTIENNENT, donc c'est ici que l'administrateur d'école dispose
+          des siens et décide de ce que ses élèves voient. Le serveur ne lui
+          rend que SA ligne (GET /api/admin/etablissements), et n'accepte de lui
+          que l'action « catalogue » : l'affichage ci-dessous ne fait que suivre. */}
+      {(isSuper || etabs.length > 0) && (!seule || seule === "etablissements") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">{t("admin.schools.heading")}{listeEtabs.barre}</h2>
         <p className="mt-1 text-xs opacity-60">{t("admin.schools.help")}</p>
-        <ul className="mt-2 flex flex-col gap-1 text-sm">
-          {listeEtabs.visibles.map(e => (
-            <li key={e.id} className="flex flex-wrap items-center gap-2 border-b border-white/5 py-1">
-              <b>{e.name}</b>
-              <span className="opacity-60">{e.ips || t("admin.schools.noIp")}</span>
-              {!!e.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.schools.respire")}</span>}
-              <span className="opacity-60">{t("admin.schools.quota", {
-                v: e.token_quota_monthly > 0
-                  ? t("admin.schools.perMonth", { v: formatTokens(e.token_quota_monthly) })
-                  : t("admin.schools.unlimited"),
-              })}</span>
-              <span className="flex-grow" />
-              <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String((e as any).quota_per_student_daily || ""), billingEmail: e.billing_email })}
-                className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">{t("admin.btn.edit")}</button>
+        <p className="mt-1 text-xs opacity-60">{t("admin.schools.catalogue.help")}</p>
+        <ul className="mt-2 flex flex-col gap-3 text-sm">
+          {listeEtabs.visibles.map(e => {
+            // Les tuteurs RATTACHÉS à cette école. Le serveur ne renvoie à un
+            // administrateur d'école que les siens et ceux de la plateforme :
+            // ce filtre ne cache donc rien qu'il aurait le droit de voir.
+            const siens = prompts.filter(p => p.etablissementId === e.id);
+            return (
+            <li key={e.id} className="border-b border-white/5 pb-2">
+              <div className="flex flex-wrap items-center gap-2 py-1">
+                <b>{e.name}</b>
+                <span className="opacity-60">{e.ips || t("admin.schools.noIp")}</span>
+                {!!e.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.schools.respire")}</span>}
+                <span className="opacity-60">{t("admin.schools.quota", {
+                  v: e.token_quota_monthly > 0
+                    ? t("admin.schools.perMonth", { v: formatTokens(e.token_quota_monthly) })
+                    : t("admin.schools.unlimited"),
+                })}</span>
+                <span className="flex-grow" />
+                {isSuper && (
+                  <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String(e.quota_per_student_daily || ""), billingEmail: e.billing_email })}
+                    className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">{t("admin.btn.edit")}</button>
+                )}
+              </div>
+              {/* Réglage ENTRANT : ce que les élèves de l'école voient en plus. */}
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={!!e.catalogue_ouvert}
+                  onChange={ev => void reglerCatalogue(e.id, ev.target.checked)} />
+                {t("admin.schools.catalogue.label")}
+              </label>
+              {/* Réglage SORTANT : tuteur par tuteur, ce que l'école laisse
+                  paraître au-dehors. Fermé tant qu'elle ne l'a pas ouvert. */}
+              <div className="mt-1 text-xs">
+                <span className="opacity-60">{t("admin.schools.tutors.heading", { n: siens.length })}</span>
+                {siens.length === 0 ? (
+                  <span className="ml-1 opacity-40">{t("admin.schools.tutors.none")}</span>
+                ) : (
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {siens.map(p => (
+                      <li key={p.name} className="flex flex-wrap items-center gap-2">
+                        <span>{p.name}</span>
+                        <span className={p.publie
+                          ? "rounded border border-green-500/40 px-1 text-green-300"
+                          : "rounded border border-white/20 px-1 opacity-70"}>
+                          {p.publie ? t("admin.schools.tutors.public") : t("admin.schools.tutors.private")}
+                        </span>
+                        <button onClick={() => void act(p.name, p.publie ? "reserver" : "partager")}
+                          className={BTN}>
+                          {p.publie ? t("admin.schools.tutors.keep") : t("admin.schools.tutors.share")}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
+        {isSuper && (
         <form onSubmit={saveEtab} className="mt-3 grid grid-cols-1 gap-2 rounded border border-white/10 bg-secondary p-3 text-sm md:grid-cols-2">
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required
             placeholder={t("admin.schools.namePlaceholder")} className="rounded bg-tertiary p-2" />
@@ -1157,6 +1309,7 @@ export default function AdminPage() {
             {form.id ? t("admin.schools.saveId", { id: form.id }) : t("admin.schools.add")}
           </button>
         </form>
+        )}
       </section>
       )}
 

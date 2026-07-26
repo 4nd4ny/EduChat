@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import crypto from 'crypto';
 import { getDb } from '../../../server/db';
 import {
-  listPublished, isValidPromptName, getByName,
+  listPublished, isValidPromptName, getByName, porteeDepuisIp,
   MAX_PROMPT_BYTES, MAX_USER_BYTES,
 } from '../../../server/prompts';
 import { requireAuth } from '../../../server/token';
@@ -11,7 +11,9 @@ import { ERR } from '../../../shared/providers';
 
 export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 
-// GET  /api/prompts — catalogue public trié en base.
+// GET  /api/prompts — catalogue trié en base, et FILTRÉ SELON L'APPELANT :
+//   l'IP dit de quelle école il relève, l'école dit ce que ses élèves voient
+//   (voir porteeDepuisIp, src/server/prompts.ts).
 // POST /api/prompts — créer un BROUILLON (« en construction ») :
 //   - signé (Authorization: Bearer) : rattaché à l'auteur, soumis à son quota de 1 Mo ;
 //   - anonyme : possible (décision client), la validation admin sera le seul filtre,
@@ -26,7 +28,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // reçoit pas du routage i18n, et la déduire de Accept-Language
     // contredirait le choix de langue explicite du visiteur.
     const locale = String(req.query.locale ?? '').slice(0, 5);
-    return res.status(200).json({ prompts: listPublished(sort, q, locale) });
+    // Le catalogue dépend de QUI appelle : l'IP dit de quelle école relève le
+    // navigateur, et l'école décide de ce que ses élèves voient. Un visiteur
+    // hors établissement reçoit le catalogue public — celui d'avant.
+    return res.status(200).json({
+      prompts: listPublished(sort, q, locale, porteeDepuisIp(getClientIp(req))),
+    });
   }
 
   if (req.method !== 'POST') {
@@ -70,16 +77,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
+  // RATTACHEMENT À L'ÉCOLE DE L'AUTEUR — lu en base sur le compte signataire,
+  // jamais reçu du client : c'est une propriété, pas une préférence. Une
+  // proposition anonyme, ou celle d'un auteur sans école, reste NULL et
+  // rejoint le catalogue de la plateforme, comme avant.
+  const etablissementId = auth
+    ? ((db.prepare('SELECT etablissement_id FROM users WHERE email = ?').get(auth.email) as
+      { etablissement_id: number | null } | undefined)?.etablissement_id ?? null)
+    : null;
+
   const now = Date.now();
   const shareToken = crypto.randomBytes(16).toString('hex');
   const info = db.prepare(`
     INSERT INTO prompts (name, author_email, author_name, language, description, body, version,
-                         status, share_token, web_search, created_at, updated_at, size_bytes, inspired_by)
+                         status, share_token, web_search, created_at, updated_at, size_bytes, inspired_by,
+                         etablissement_id)
     VALUES (@name, @email, @authorName, @language, @description, @body, 1,
-            'draft', @shareToken, @webSearch, @now, @now, @sizeBytes, @inspiredById)
+            'draft', @shareToken, @webSearch, @now, @now, @sizeBytes, @inspiredById,
+            @etablissementId)
   `).run({
     name, email: auth?.email ?? null, authorName: auth?.name ?? '',
     language, description, body, shareToken, webSearch, now, sizeBytes, inspiredById,
+    etablissementId,
   });
   db.prepare('INSERT INTO prompt_versions (prompt_id, version, body, created_at) VALUES (?, 1, ?, ?)')
     .run(info.lastInsertRowid, body, now);

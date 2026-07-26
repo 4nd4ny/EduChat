@@ -1,6 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireAdmin, requireSuperAdmin } from '../../../server/admin';
-import { etatDesComptes, mouvements, bouger } from '../../../server/porteMonnaie';
+import { etatDesComptes, mouvements, bouger, reglerContribution,
+  CONTRIBUTION_MIN, CONTRIBUTION_MAX } from '../../../server/porteMonnaie';
+import { paypalActif, rembourser, FRAIS_PAYPAL_PCT } from '../../../server/paypal';
 import { ERR } from '../../../shared/providers';
 
 // PORTE-MONNAIE DES ÉTABLISSEMENTS.
@@ -9,7 +11,7 @@ import { ERR } from '../../../shared/providers';
 //          site les lit tous, et voit d'un coup d'œil celles qui sont à sec.
 //   POST — recharger ou ajuster : réservé au site. Une école qui pourrait se
 //          créditer elle-même n'aurait plus de porte-monnaie du tout.
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const admin = requireAdmin(req);
   if (!admin) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   const portee = admin.niveau === 'ecole' ? admin.etablissementId : null;
@@ -18,12 +20,45 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const comptes = etatDesComptes(portee);
     return res.status(200).json({
       comptes,
+      contributionMin: CONTRIBUTION_MIN, contributionMax: CONTRIBUTION_MAX,
+      fraisPaypalPct: FRAIS_PAYPAL_PCT,
+      paypalActif: paypalActif(),
       // L'historique n'a de sens que pour UNE école : celle qu'on regarde.
       mouvements: portee ? mouvements(portee) : [],
     });
   }
 
   if (req.method === 'POST') {
+    const cible = Number(req.body?.etablissementId) || portee || 0;
+    // Une école règle SON taux et demande SON remboursement. Les deux touchent
+    // à son propre argent, jamais à celui d'une autre — le site, lui, peut
+    // agir partout.
+    const sienne = admin.niveau === 'super' || cible === portee;
+
+    // TAUX DE CONTRIBUTION, borné entre 3.5 et 10 %. C'est l'école qui choisit
+    // ce qu'elle donne : à 3.5 % elle ne couvre que les frais PayPal, et la
+    // plateforme paie le serveur de sa poche. L'interface le dit en clair.
+    if (req.body?.action === 'contribution') {
+      if (!cible || !sienne) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+      const pct = Number(req.body?.pct);
+      if (!Number.isFinite(pct)) return res.status(400).json({ error: { code: 'ERR_AMOUNT_INVALID' } });
+      return res.status(200).json({ ok: true, pct: reglerContribution(cible, pct) });
+    }
+
+    // REMBOURSEMENT du crédit restant, moins les frais PayPal non récupérables.
+    // L'argent ne peut repartir que vers le payeur d'origine : c'est PayPal qui
+    // le garantit, pas nous.
+    if (req.body?.action === 'rembourser') {
+      if (!cible || !sienne) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+      if (!paypalActif()) return res.status(503).json({ error: { code: 'ERR_PAYPAL_OFF' } });
+      try {
+        return res.status(200).json({ ok: true, ...(await rembourser(cible, admin.auth.email)) });
+      } catch (erreur) {
+        console.error('Remboursement impossible :', erreur);
+        return res.status(502).json({ error: { code: 'ERR_REFUND_FAILED' } });
+      }
+    }
+
     const scope = requireSuperAdmin(req);
     if (!scope) return res.status(403).json({ error: { code: 'ERR_SUPER_ONLY' } });
     const etablissementId = Number(req.body?.etablissementId);

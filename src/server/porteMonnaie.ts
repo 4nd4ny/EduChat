@@ -48,6 +48,25 @@ function prixDe(provider: string): { entree: number; sortie: number } {
   return { entree: row.prix_entree_mtok, sortie: row.prix_sortie_mtok };
 }
 
+/** Bornes du taux de contribution. Le plancher couvre les frais PayPal, rien de plus. */
+export const CONTRIBUTION_MIN = 3.5;
+export const CONTRIBUTION_MAX = 10;
+
+/**
+ * Le taux effectif d'une école : le sien s'il a été choisi, sinon celui du
+ * serveur. C'est L'ÉCOLE qui décide de sa contribution, entre 3.5 et 10 % —
+ * ce qui rend le service difficile à copier : la valeur n'est pas dans la
+ * marge, elle est dans le service, et une école qui choisit ce qu'elle donne
+ * n'a aucune raison d'aller voir ailleurs.
+ */
+export function contributionDe(etablissementId: number): number {
+  const row = getDb().prepare('SELECT contribution_pct FROM etablissements WHERE id = ?')
+    .get(etablissementId) as { contribution_pct: number } | undefined;
+  const choisi = row?.contribution_pct ?? -1;
+  if (choisi < 0) return BillingSurchargePct;
+  return Math.min(CONTRIBUTION_MAX, Math.max(CONTRIBUTION_MIN, choisi));
+}
+
 /**
  * Ce que coûte un appel, PARTICIPATION COMPRISE.
  *
@@ -61,15 +80,23 @@ function prixDe(provider: string): { entree: number; sortie: number } {
  * de son auteur ne peut pas se permettre de perdre un demi-centime une fois
  * sur deux.
  */
-export function coutDe(provider: string, tokensIn: number, tokensOut: number): number {
+export function coutDe(provider: string, tokensIn: number, tokensOut: number, pct: number): number {
   const prix = prixDe(provider);
   const brut = (tokensIn * prix.entree + tokensOut * prix.sortie) / 1_000_000;
-  return versLeHaut(brut * (1 + BillingSurchargePct / 100));
+  return versLeHaut(brut * (1 + pct / 100));
 }
 
 /** La part de participation dans un coût — pour la dire, mouvement par mouvement. */
-export function partParticipation(cout: number): number {
-  return versLeHaut(cout - cout / (1 + BillingSurchargePct / 100));
+export function partParticipation(cout: number, pct: number): number {
+  return versLeHaut(cout - cout / (1 + pct / 100));
+}
+
+/** Choisit le taux d'une école, borné. Réservé à qui administre cette école. */
+export function reglerContribution(etablissementId: number, pct: number): number {
+  const borne = Math.min(CONTRIBUTION_MAX, Math.max(CONTRIBUTION_MIN, pct));
+  getDb().prepare('UPDATE etablissements SET contribution_pct = ? WHERE id = ?')
+    .run(borne, etablissementId);
+  return borne;
 }
 
 export function solde(etablissementId: number): number {
@@ -140,11 +167,13 @@ export function decompter(
   const ecole = getDb().prepare('SELECT respire FROM etablissements WHERE id = ?')
     .get(etablissementId) as { respire: number } | undefined;
   if (!ecole || ecole.respire) return 0;
-  const cout = coutDe(provider, tokensIn, tokensOut);
+  const pct = contributionDe(etablissementId);
+  const cout = coutDe(provider, tokensIn, tokensOut, pct);
   if (!cout) return 0;
   // La participation est NOMMÉE dans le mouvement : une école qui lit son
-  // historique voit ligne à ligne ce qu'elle finance pour les autres.
-  const part = partParticipation(cout);
+  // historique voit ligne à ligne ce qu'elle finance pour les autres — et au
+  // taux QU'ELLE a choisi, ce qui rend le chiffre discutable plutôt que subi.
+  const part = partParticipation(cout, pct);
   return bouger(etablissementId, 'consommation', -cout,
     `${provider} · ${modele} · dont ${part.toFixed(2)} de participation`, '');
 }
@@ -168,13 +197,15 @@ export function etatDesComptes(etablissementId: number | null) {
   const depuis = Date.now() - 30 * 86_400_000;
   const rows = db.prepare(`
     SELECT e.id, e.name AS nom, e.respire, e.solde, e.billing_email AS billingEmail,
+           e.contribution_pct AS contributionPct,
            COALESCE((SELECT SUM(-m.montant) FROM credit_mouvements m
                      WHERE m.etablissement_id = e.id AND m.genre = 'consommation' AND m.ts >= ?), 0) AS depense30
     FROM etablissements e
     WHERE (? IS NULL OR e.id = ?)
     ORDER BY e.name
   `).all(depuis, etablissementId, etablissementId) as
-    { id: number; nom: string; respire: number; solde: number; billingEmail: string; depense30: number }[];
+    { id: number; nom: string; respire: number; solde: number; billingEmail: string;
+      contributionPct: number; depense30: number }[];
 
   return rows.map(r => {
     const parJour = r.depense30 / 30;
@@ -182,6 +213,7 @@ export function etatDesComptes(etablissementId: number | null) {
       etablissementId: r.id, etablissement: r.nom, respire: !!r.respire,
       solde: centimes(r.solde), devise: BillingCurrency,
       billingEmail: r.billingEmail,
+      contributionPct: r.contributionPct < 0 ? BillingSurchargePct : r.contributionPct,
       depense30: centimes(r.depense30),
       /** Jours d'autonomie au rythme des trente derniers jours. null = inconnu. */
       jours: parJour > 0 ? Math.max(0, Math.floor(r.solde / parJour)) : null,

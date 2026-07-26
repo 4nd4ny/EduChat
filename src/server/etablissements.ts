@@ -12,6 +12,12 @@ export type EtabRow = {
   id: number; name: string; ips: string; respire: number;
   token_quota_monthly: number; quota_per_student_daily: number;
   hours: string; active_provider: string; billing_email: string; created_at: number;
+  /**
+   * Les élèves de l'école voient-ils AUSSI les tuteurs publics des AUTRES
+   * écoles ? Défaut 0 (fermé). Sans effet sur le catalogue de la plateforme
+   * (tuteurs sans rattachement), toujours visible — voir src/server/prompts.ts.
+   */
+  catalogue_ouvert: number;
 };
 
 export type HourSlot = { day: number; start: string; end: string }; // day 0 = dimanche

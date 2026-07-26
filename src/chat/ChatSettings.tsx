@@ -152,7 +152,13 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
                 avec le compte adulte vérifié. */}
             {visibles.map(id => {
               const item = providerDefaults[id];
-              const cleRequise = served !== null && !served.includes(id);
+              // « clé personnelle » ne se dit QUE là où l'information apprend
+              // quelque chose. Sur un fournisseur à drapeau rouge, elle est
+              // bavarde : ces fournisseurs ne sont montrés qu'en dehors d'un
+              // établissement, à un compte adulte, qui apporte forcément sa
+              // clé — la clé interne ne les paiera jamais. Le drapeau WRNG,
+              // lui, reste : c'est lui qui porte l'avertissement.
+              const cleRequise = served !== null && !served.includes(id) && !item.wrng;
               return (
                 <option key={id} value={id}>
                   {item.label}

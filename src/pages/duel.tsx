@@ -279,7 +279,12 @@ export default function DuelPage() {
                     {providerDefaults[id].label}
                     {providerDefaults[id].gdpr ? ` · ${t("chat.input.gdpr.tag")}`
                       : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
-                    {served !== null && !served.includes(id) ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                    {/* Pas de « clé personnelle » sur un drapeau rouge : ces
+                        fournisseurs ne se montrent qu'à un compte adulte hors
+                        établissement, qui apporte forcément sa clé. Le drapeau
+                        WRNG, lui, dit tout ce qu'il y a à dire. */}
+                    {served !== null && !served.includes(id) && !providerDefaults[id].wrng
+                      ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
                   </option>
                 ))}
               </select>
@@ -315,7 +320,9 @@ export default function DuelPage() {
                     {providerDefaults[id].label}
                     {providerDefaults[id].gdpr ? ` · ${t("chat.input.gdpr.tag")}`
                       : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
-                    {served !== null && !served.includes(id) ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                    {/* Idem : le drapeau rouge se suffit, « clé personnelle » n'y ajoute rien. */}
+                    {served !== null && !served.includes(id) && !providerDefaults[id].wrng
+                      ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
                   </option>
                 ))}
                   </select>

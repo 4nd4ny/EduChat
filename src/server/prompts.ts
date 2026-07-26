@@ -1,7 +1,87 @@
 // Accès aux prompts socratiques — requêtes partagées par les routes API.
 
 import { getDb, PromptRow } from './db';
+import { getEtablissementById, resolveEtablissementByIp } from './etablissements';
 import { traductionFraiche } from './traduction';
+
+// ─── QUI A LE DROIT DE VOIR QUOI ─────────────────────────────────────────────
+//
+// LES TUTEURS D'UNE ÉCOLE LUI APPARTIENNENT. Un tuteur proposé par un membre
+// d'un établissement est RATTACHÉ à cet établissement, et il ne sort de ses
+// murs que si l'administration de l'école l'a explicitement rendu public.
+// Trois familles, donc :
+//
+//   • rattachement NULL — le catalogue de la PLATEFORME : tuteurs fondateurs,
+//     propositions anonymes, auteurs sans école. Visible de TOUS, toujours.
+//     C'est ce qui fait qu'une école qui n'ouvre rien n'a pas une page vide,
+//     et que le visiteur de passage retrouve le catalogue d'avant.
+//   • rattaché à MON école — visible chez moi quoi qu'il arrive : une école
+//     voit toujours ses propres tuteurs, « publie » ne parle que du dehors.
+//   • rattaché AILLEURS — visible seulement s'il est publie = 1, et seulement
+//     si mon école a ouvert son catalogue (hors établissement : toujours, car
+//     « public » veut dire public).
+//
+// CE FILTRE VIT EN BASE, jamais à l'affichage : ce qui ne doit pas être lu ne
+// doit pas sortir de la table. Un filtre appliqué au rendu laisserait le nom
+// d'un tuteur d'une autre école transparaître par la fiche, la notation, la
+// filiation ou la complétion — quatre chemins, un seul verrou.
+export type PorteeCatalogue = {
+  /** L'école d'où vient la requête (résolue par IP), ou null hors établissement. */
+  etablissementId: number | null;
+  /** Les tuteurs publics des AUTRES sont-ils visibles depuis cette portée ? */
+  publicsExternes: boolean;
+};
+
+/**
+ * La portée de lecture d'une IP appelante.
+ *
+ * Hors établissement, « publicsExternes » vaut VRAI : un tuteur rendu public
+ * l'est pour le monde, c'est le sens du geste. Dans une école, c'est elle qui
+ * décide (etablissements.catalogue_ouvert, défaut fermé).
+ */
+export function porteeDepuisIp(ip: string): PorteeCatalogue {
+  const etab = resolveEtablissementByIp(ip);
+  if (!etab) return { etablissementId: null, publicsExternes: true };
+  return { etablissementId: etab.id, publicsExternes: !!etab.catalogue_ouvert };
+}
+
+/**
+ * La portée d'une école DÉSIGNÉE (et non déduite de l'IP) : l'enseignant qui
+ * pose le tuteur par défaut d'une séance le fait pour SON établissement, relu
+ * en base, où qu'il soit lui-même connecté.
+ */
+export function porteeDeLEcole(etablissementId: number): PorteeCatalogue {
+  const etab = getEtablissementById(etablissementId);
+  return { etablissementId, publicsExternes: !!etab?.catalogue_ouvert };
+}
+
+/**
+ * Le prédicat SQL de visibilité, à joindre à tout WHERE qui sert des tuteurs
+ * au public. Il attend l'alias « p » sur la table prompts et les paramètres
+ * nommés de parametresPortee().
+ */
+export const CLAUSE_VISIBLE = `p.status = 'published' AND p.archived = 0
+      AND (p.etablissement_id IS NULL
+           OR (@etab IS NOT NULL AND p.etablissement_id = @etab)
+           OR (@externes = 1 AND p.publie = 1))`;
+
+/** Les paramètres nommés qu'attend CLAUSE_VISIBLE. */
+export function parametresPortee(portee: PorteeCatalogue): { etab: number | null; externes: number } {
+  return { etab: portee.etablissementId, externes: portee.publicsExternes ? 1 : 0 };
+}
+
+/**
+ * La MÊME règle, sur une ligne déjà lue — pour les routes qui ont chargé le
+ * tuteur avant de savoir si elles avaient le droit de le servir (commentaires).
+ * Deux écritures d'une seule règle : toute correction de l'une appelle l'autre,
+ * et c'est CLAUSE_VISIBLE qui fait foi.
+ */
+export function estVisible(row: PromptRow, portee: PorteeCatalogue): boolean {
+  if (row.status !== 'published' || row.archived) return false;
+  if (row.etablissement_id === null) return true;
+  if (portee.etablissementId !== null && row.etablissement_id === portee.etablissementId) return true;
+  return portee.publicsExternes && !!row.publie;
+}
 
 // Champs publics d'une carte du catalogue (jamais le share_token).
 //
@@ -73,7 +153,12 @@ const ORDER_BY: Record<string, string> = {
 // La recherche interroge AUSSI la traduction affichée : chercher « Fragen »
 // sur la version allemande doit trouver un tuteur français traduit, sinon
 // traduire le catalogue ne le rend pas utilisable pour autant.
-export function listPublished(sort: string, search: string, locale?: string): PromptCard[] {
+// La PORTÉE est un argument OBLIGATOIRE, jamais optionnel : un paramètre qu'on
+// peut oublier est un paramètre qu'on oubliera, et l'oubli serait silencieux —
+// le catalogue d'une autre école sortirait sans que rien ne proteste. Ainsi le
+// compilateur énumère lui-même les appelants le jour où la règle change.
+export function listPublished(sort: string, search: string, locale: string | undefined,
+  portee: PorteeCatalogue): PromptCard[] {
   const db = getDb();
   const orderBy = ORDER_BY[sort] ?? ORDER_BY.score;
   const rows = db.prepare(`
@@ -81,18 +166,18 @@ export function listPublished(sort: string, search: string, locale?: string): Pr
     LEFT JOIN prompt_translations t
       ON t.prompt_id = p.id AND t.locale = @locale
      AND t.state = 'ok' AND t.source_version >= p.version
-    WHERE p.status = 'published' AND p.archived = 0
+    WHERE ${CLAUSE_VISIBLE}
       AND (@q = ''
            OR p.name LIKE '%' || @q || '%' OR p.description LIKE '%' || @q || '%'
            OR t.name LIKE '%' || @q || '%' OR t.description LIKE '%' || @q || '%')
     ORDER BY ${orderBy}
-  `).all({ q: search, now: Date.now(), locale: locale ?? '' }) as PromptRow[];
+  `).all({ q: search, now: Date.now(), locale: locale ?? '', ...parametresPortee(portee) }) as PromptRow[];
   return rows.map(row => toCard(row, locale));
 }
 
-export function getPublishedByName(name: string): PromptRow | undefined {
-  return getDb().prepare("SELECT * FROM prompts WHERE name = ? AND status = 'published' AND archived = 0")
-    .get(name) as PromptRow | undefined;
+export function getPublishedByName(name: string, portee: PorteeCatalogue): PromptRow | undefined {
+  return getDb().prepare(`SELECT p.* FROM prompts p WHERE p.name = @name AND ${CLAUSE_VISIBLE}`)
+    .get({ name, ...parametresPortee(portee) }) as PromptRow | undefined;
 }
 
 export function getByName(name: string): PromptRow | undefined {

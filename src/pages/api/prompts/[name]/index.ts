@@ -1,7 +1,11 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb, PromptRow } from '../../../../server/db';
-import { getPublishedByName, getByName, toCard, isValidPromptName, MAX_PROMPT_BYTES, MAX_USER_BYTES } from '../../../../server/prompts';
+import {
+  getPublishedByName, getByName, toCard, isValidPromptName, porteeDepuisIp,
+  CLAUSE_VISIBLE, parametresPortee, MAX_PROMPT_BYTES, MAX_USER_BYTES,
+} from '../../../../server/prompts';
 import { requireAuth, isAdminEmail, TokenPayload } from '../../../../server/token';
+import { requireAdmin, AdminScope } from '../../../../server/admin';
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { notifyAdmin } from '../../../../server/mail';
 import { ERR } from '../../../../shared/providers';
@@ -18,12 +22,21 @@ export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 // l'interface d'administration, mais la ligne reste en base.
 // L'auteur d'un brouillon est identifié par son jeton, OU par l'URL secrète
 // (share_token) pour les propositions anonymes.
+//
+// UN SECOND AXE, INDÉPENDANT DU STATUT : la PORTÉE. « publié » dit que le
+// tuteur est bon ; « partager / reserver » dit jusqu'où il paraît. Un tuteur
+// rattaché à une école est publié CHEZ ELLE et nulle part ailleurs tant que
+// son administration ne l'a pas partagé (voir src/server/prompts.ts).
 
 type Rights = {
   isAuthor: boolean;      // jeton de l'auteur, ou share_token du brouillon
   isAdmin: boolean;
   isPromptagogue: boolean; // compte vérifié : peut approuver (décision client)
   auth: TokenPayload | null;
+  // Portée d'ADMINISTRATION du signataire (site ou école), pour les seules
+  // actions qui relèvent du propriétaire du tuteur — « isAdmin » ci-dessus ne
+  // connaît que le site (SECRET_ADMIN_EMAILS) et n'a jamais vu les écoles.
+  scope: AdminScope | null;
 };
 
 function resolveRights(req: NextApiRequest, row: PromptRow): Rights {
@@ -38,7 +51,7 @@ function resolveRights(req: NextApiRequest, row: PromptRow): Rights {
       { is_promptagogue: number } | undefined;
     isPromptagogue = !!user?.is_promptagogue;
   }
-  return { isAuthor: byToken || byShare, isAdmin, isPromptagogue, auth };
+  return { isAuthor: byToken || byShare, isAdmin, isPromptagogue, auth, scope: requireAdmin(req) };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -46,20 +59,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // ---- GET : fiche publique (prompts publiés uniquement) --------------------
   if (req.method === 'GET') {
-    const row = getPublishedByName(name);
+    // Même portée que le catalogue : un tuteur réservé à une autre école n'a
+    // pas de fiche ici, il n'existe pas pour cet appelant (404, pas 403 — dire
+    // « interdit » avouerait déjà son existence).
+    const portee = porteeDepuisIp(getClientIp(req));
+    const row = getPublishedByName(name, portee);
     if (!row) return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
     const db = getDb();
     const versions = db
       .prepare('SELECT version, created_at AS createdAt, length(body) AS sizeBytes FROM prompt_versions WHERE prompt_id = ? ORDER BY version DESC')
       .all(row.id);
-    // Filiation : le tuteur source (s'il existe encore et est publié) et les
-    // variantes PUBLIÉES qui s'inspirent de celui-ci.
+    // Filiation : le tuteur source et les variantes qui s'inspirent de
+    // celui-ci — sous LA MÊME règle de visibilité. Un simple « publié »
+    // suffirait à faire fuir par la bande le NOM d'un tuteur réservé à une
+    // autre école : la filiation est un chemin de lecture comme un autre.
     const inspiredBy = row.inspired_by
-      ? (db.prepare("SELECT name FROM prompts WHERE id = ? AND status = 'published'")
-        .get(row.inspired_by) as { name: string } | undefined)?.name ?? null
+      ? (db.prepare(`SELECT p.name FROM prompts p WHERE p.id = @id AND ${CLAUSE_VISIBLE}`)
+        .get({ id: row.inspired_by, ...parametresPortee(portee) }) as { name: string } | undefined)?.name ?? null
       : null;
-    const variants = (db.prepare("SELECT name FROM prompts WHERE inspired_by = ? AND status = 'published' ORDER BY name")
-      .all(row.id) as { name: string }[]).map(v => v.name);
+    const variants = (db.prepare(
+      `SELECT p.name FROM prompts p WHERE p.inspired_by = @id AND ${CLAUSE_VISIBLE} ORDER BY p.name`)
+      .all({ id: row.id, ...parametresPortee(portee) }) as { name: string }[]).map(v => v.name);
     // Le CORPS suit la même règle que la carte : la traduction fraîche, ou
     // l'original. C'est ce corps que la fiche affiche en entier — un tuteur
     // appartient au domaine public, sa traduction aussi.
@@ -243,6 +263,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (newName !== row.name && getByName(newName)) return res.status(409).json({ error: { code: 'ERR_NAME_TAKEN' } });
     db.prepare('UPDATE prompts SET name = ?, updated_at = ? WHERE id = ?').run(newName, now, row.id);
     return res.status(200).json({ ok: true, name: newName });
+  }
+
+  // ---- partager / reserver : LE CATALOGUE DE L'ÉCOLE.
+  //
+  // Un tuteur rattaché à un établissement lui appartient : il ne paraît hors
+  // de ses murs que si l'administration de CETTE école le décide (« partager »),
+  // et elle peut le reprendre (« reserver »). Le site, lui, peut trancher
+  // partout — c'est déjà l'autorité de modération.
+  //
+  // La garde n'est PAS isAdminEmail : ce test ne connaît que le site, et
+  // l'école n'aurait alors aucun moyen de disposer de ses propres tuteurs.
+  // C'est requireAdmin (src/server/admin.ts) qui rend la portée, et la portée
+  // « ecole » ne vaut que pour SON établissement.
+  if (action === 'partager' || action === 'reserver') {
+    const scope = rights.scope;
+    if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    const permis = scope.niveau === 'super'
+      || (row.etablissement_id !== null && row.etablissement_id === scope.etablissementId);
+    if (!permis) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    // Un tuteur SANS rattachement appartient déjà au catalogue de la
+    // plateforme : le rendre « public » n'a aucun sens, et le « réserver »
+    // n'aurait aucune école à qui le réserver.
+    if (row.etablissement_id === null) return res.status(409).json({ error: { code: 'ERR_NOT_SCHOOL_OWNED' } });
+    const publie = action === 'partager' ? 1 : 0;
+    db.prepare('UPDATE prompts SET publie = ?, updated_at = ? WHERE id = ?').run(publie, now, row.id);
+    return res.status(200).json({ ok: true, publie: !!publie });
   }
 
   // ---- archive : ADMIN uniquement. Masque DÉFINITIVEMENT le prompt de

@@ -7,9 +7,10 @@ import { mayUseAdultProviders } from "../../server/adult";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { tokensDetail } from "../../server/llm";
 import { readUserKey } from "../../server/userKeys";
-import { getPublishedByName, getByShareToken } from "../../server/prompts";
+import { getPublishedByName, getByShareToken, porteeDepuisIp, PorteeCatalogue } from "../../server/prompts";
 import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
+import { seanceActive, seanceAutoriseFournisseur } from "../../server/seance";
 import { aDuCredit, decompter } from "../../server/porteMonnaie";
 import { notifyAdmin } from "../../server/mail";
 import { touchPresence } from "../../server/stats";
@@ -93,7 +94,8 @@ async function requestJson(url: string, init: RequestInit) {
  * - par URL SECRÈTE (shareToken) : brouillons « en construction », pour le
  *   flux de test de l'étape 7 ; jamais les pending/retired par nom.
  */
-function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string, locale: string):
+function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string, locale: string,
+  portee: PorteeCatalogue):
   { row: PromptRow; system: string } | 'unknown' | null {
   if (shareToken) {
     // Brouillon en cours d'écriture : on sert le texte de l'auteur, jamais une
@@ -103,7 +105,12 @@ function resolveSystemPrompt(promptName: string, promptVersion: number, shareTok
     return { row, system: row.body };
   }
   if (!promptName) return null;
-  const row = getPublishedByName(promptName);
+  // PORTÉE : le tuteur doit être VISIBLE de l'appelant, pas seulement publié.
+  // C'est ici que se joue vraiment la propriété d'un tuteur par son école :
+  // filtrer le catalogue et la fiche sans filtrer la complétion laisserait le
+  // tuteur d'une autre école introuvable… mais parfaitement UTILISABLE dès
+  // qu'on en devine le nom.
+  const row = getPublishedByName(promptName, portee);
   if (!row) return 'unknown';
   if (promptVersion > 0 && promptVersion !== row.version) {
     // Conversation restée sur une version antérieure : elle garde SON texte.
@@ -254,7 +261,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Langue de lecture, envoyée par le client (router.locale) : le routage i18n
   // de Next ne traverse pas les routes d'API.
   const locale = String(body.locale ?? "").slice(0, 5);
-  const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken, locale);
+  const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken, locale,
+    porteeDepuisIp(clientIp));
   if (resolved === 'unknown') return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   const system = resolved?.system ?? "";
   const promptRow = resolved?.row ?? null;
@@ -290,15 +298,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ou trafiquer le clientId rejoint le pot commun de l'IP, sans annuler le quota.
     studentBucket = etab ? (clientId || `ip:${clientIp}`) : "";
 
-    // Réglages de session actifs (étape 14) : override recherche web + attribution enseignant.
-    if (etablissementId) {
-      const settings = getDb().prepare(
-        'SELECT web_search, set_by_email FROM session_settings WHERE etablissement_id = ? AND expires_at > ?')
-        .get(etablissementId, Date.now()) as { web_search: number; set_by_email: string | null } | undefined;
-      if (settings) {
-        if (!settings.web_search) webSearch = false;
-        teacherEmail = settings.set_by_email;
-      }
+    // Réglages de séance actifs (étape 14) : override recherche web,
+    // attribution enseignant, et liste des fournisseurs autorisés (appliquée
+    // plus bas, sur la clé interne uniquement).
+    const seance = seanceActive(etablissementId);
+    if (seance) {
+      if (!seance.webSearch) webSearch = false;
+      teacherEmail = seance.setByEmail;
     }
 
     if (await mayUseServerKeys(clientIp)) {
@@ -311,6 +317,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // scolaire, donc mineur par défaut.
       if (providerDefaults[provider].wrng || providerDefaults[provider].adultOnly) {
         return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
+      }
+      // FOURNISSEURS DE LA SÉANCE. L'enseignant a coché ce que sa classe peut
+      // utiliser aujourd'hui : la règle s'applique ICI, sur le serveur, et pas
+      // seulement dans le sélecteur — un filtre qui ne vivrait que dans le
+      // navigateur n'est pas un filtre. Elle S'AJOUTE aux deux règles ci-dessus
+      // (AI Act, drapeau rouge) sans jamais les desserrer, et ne concerne que
+      // la clé INTERNE : une clé personnelle relève de son titulaire, pas de la
+      // séance (on est déjà dans la branche « aucune clé personnelle »).
+      // Placée AVANT le porte-monnaie et les quotas : un refus doit dire sa
+      // vraie raison, pas renvoyer la classe vers un crédit qui n'y est pour rien.
+      if (!seanceAutoriseFournisseur(seance, provider)) {
+        return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_IN_SESSION' } });
       }
       usedServerKey = true;
       // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC).

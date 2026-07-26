@@ -3,6 +3,8 @@ import { DeveloperKeys } from '../../utils/env';
 import { getClientIp, mayUseServerKeys } from '../../server/access';
 import { mayUseAdultProviders } from '../../server/adult';
 import { requireAuth } from '../../server/token';
+import { resolveEtablissementByIp } from '../../server/etablissements';
+import { seanceActive, seanceAutoriseFournisseur } from '../../server/seance';
 import { ERR, PROVIDER_IDS, providerDefaults } from '../../shared/providers';
 
 // Quels fournisseurs le SERVEUR peut servir lui-même (clé interne d'école ou
@@ -16,14 +18,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader('Allow', ['GET']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
   }
+  // Dépend de l'IP de l'appelant (une salle de classe déverrouillée ou non, une
+  // séance en cours ou non) : surtout pas de cache partagé.
+  const ip = getClientIp(req);
+  // SÉANCE EN COURS : l'enseignant a peut-être restreint les fournisseurs de sa
+  // classe. Ceux qu'il a écartés sortent de « served » — l'élève les voit alors
+  // marqués « clé personnelle », ce qui est exactement la vérité : la clé de
+  // l'école ne les paiera pas tant que dure la séance. La règle elle-même vit
+  // dans /api/completion ; ici on ne fait que cesser de promettre.
+  const seance = seanceActive(resolveEtablissementByIp(ip)?.id ?? null);
   // Un fournisseur à drapeau rouge n'est JAMAIS servi par la clé interne
   // (travaux d'élèves hors UE) : il exige la clé de son utilisateur, quoi
   // qu'il arrive.
   const served = PROVIDER_IDS.filter(id =>
-    !providerDefaults[id].wrng && !!String(DeveloperKeys[id] || '').trim());
-  // Dépend de l'IP de l'appelant (une salle de classe déverrouillée, ou non) :
-  // surtout pas de cache partagé.
-  const ip = getClientIp(req);
+    !providerDefaults[id].wrng && !!String(DeveloperKeys[id] || '').trim()
+    && seanceAutoriseFournisseur(seance, id));
   const internalKey = await mayUseServerKeys(ip);
   // Les fournisseurs écartés au titre de l'AI Act ne sont proposés que hors
   // réseau scolaire ET à un compte dont la majorité a été vérifiée.

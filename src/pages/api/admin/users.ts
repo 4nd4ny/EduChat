@@ -82,6 +82,27 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     // lieu, mais l'interface annonçait un échec.
     let touche = false;
     if ('adultVerifiedBy' in (req.body ?? {})) {
+      // PERSONNE NE SE CERTIFIE SOI-MÊME MAJEUR.
+      //
+      // Un garant répond de QUELQU'UN D'AUTRE (voir src/server/adult.ts :
+      // « l'administration après un entretien vidéo, ou un enseignant qui
+      // répond de ses élèves majeurs ») — se porter garant de soi ne vérifie
+      // rien du tout. Tant que le rang d'administrateur d'école se recevait
+      // du site, l'anomalie restait théorique. Depuis l'INSCRIPTION EN
+      // LIBRE-SERVICE (src/pages/api/etablissement/inscription.ts), n'importe
+      // qui obtient ce rang en trois champs : sans cette garde, il lui
+      // suffirait de cocher sa propre case pour ouvrir les fournisseurs
+      // écartés au titre de l'AI Act (Gemini, Grok, DeepSeek… hors réseau
+      // scolaire, avec sa clé personnelle). Le contournement ne s'arrête pas
+      // à un complice : rattacher un second compte à son école est réservé
+      // au site, et deux inscrits en libre-service atterrissent dans DEUX
+      // écoles, donc hors de la portée l'un de l'autre.
+      //
+      // Le site, lui, garde la main : un super-administrateur tient son rang
+      // de SECRET_ADMIN_EMAILS, pas d'un formulaire.
+      if (admin.niveau === 'ecole' && email === admin.auth.email.toLowerCase()) {
+        return res.status(403).json({ error: { code: 'ERR_SELF_CERT_FORBIDDEN' } });
+      }
       setAdultVerified(email, String(req.body.adultVerifiedBy ?? ''));
       touche = true;
     }

@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
 import { useT } from "../i18n/useT";
 import { getAccount } from "../utils/account";
+import { providerDefaults, SCHOOL_PROVIDER_IDS, type ProviderId } from "../shared/providers";
 import { MdLockOpen, MdLockOutline, MdSchool, MdWifiTethering } from "react-icons/md";
 
 // Console de SESSION DE CLASSE (enseignant).
@@ -25,7 +26,16 @@ type Status = {
   lockExpiresAt: number | null;
   withinSchedule: boolean;
   maxUnlockMinutes: number;
-  settings: { promptName: string | null; webSearch: boolean; expiresAt: number } | null;
+  /** Fournisseurs que la clé de l'école peut réellement servir : l'univers des cases. */
+  schoolProviders: ProviderId[];
+  settings: {
+    promptName: string | null; webSearch: boolean;
+    /** Fournisseurs cochés, quand une restriction est posée. */
+    providers: ProviderId[];
+    /** Une restriction EST posée. Liste vide + restriction = plus aucun. */
+    providersRestricted: boolean;
+    expiresAt: number;
+  } | null;
 };
 
 type PromptOption = { name: string; description: string };
@@ -45,6 +55,13 @@ export default function SessionPage() {
   const [minutes, setMinutes] = useState(60);
   const [promptName, setPromptName] = useState("");
   const [webSearch, setWebSearch] = useState(false);
+  // Fournisseurs COCHÉS. À l'écran, la liste est TOUJOURS explicite : sans
+  // restriction en base, on coche tout plutôt que rien. Une case vide veut donc
+  // dire ici ce qu'elle a l'air de dire — « celui-là, non » —, y compris quand
+  // elles sont toutes vides : la séance ne laissera alors plus rien passer sur
+  // la clé de l'école. C'est la lecture de l'enseignant, et le serveur
+  // l'enregistre telle quelle (voir SEANCE_SANS_FOURNISSEUR).
+  const [fournisseurs, setFournisseurs] = useState<ProviderId[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -74,8 +91,12 @@ export default function SessionPage() {
         ip: "203.0.113.10",
         etablissement: { name: t("session.demo.school"), hasOwnHours: true },
         open: false, lockExpiresAt: null, withinSchedule: true, maxUnlockMinutes: 240,
+        // Salle fictive : on montre TOUTE la liste scolaire, sans regarder
+        // quelles clés la plateforme détient réellement.
+        schoolProviders: [...SCHOOL_PROVIDER_IDS],
         settings: null,
       });
+      setFournisseurs([...SCHOOL_PROVIDER_IDS]);
       // Les NOMS des tuteurs fictifs restent tels quels : ce sont aussi les
       // valeurs des <option> et ce qui partirait au serveur. Seules leurs
       // descriptions, purement affichées, sont traduites.
@@ -89,6 +110,15 @@ export default function SessionPage() {
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then((data: Status) => {
         setStatus(data);
+        // Aucune séance en cours, ou séance sans restriction : tout est coché.
+        // Les cases partent donc de l'état réel de la classe, jamais d'un
+        // réglage par défaut qui ne serait celui de personne. On se fie au
+        // DRAPEAU, pas à la longueur de la liste : une séance qui n'autorise
+        // plus rien recocherait sinon tout au premier rechargement, et le
+        // moindre enregistrement suivant rouvrirait ce que l'enseignant venait
+        // de fermer.
+        const univers = data.schoolProviders ?? [];
+        setFournisseurs(data.settings?.providersRestricted ? (data.settings.providers ?? []) : univers);
         if (data.settings) {
           setPromptName(data.settings.promptName ?? "");
           setWebSearch(data.settings.webSearch);
@@ -153,9 +183,18 @@ export default function SessionPage() {
   const deployTutor = async () => {
     setBusy(true); setError(""); setMessage("");
     try {
+      // On n'envoie `providers` QUE si les cases ont été proposées : sans
+      // aucune clé interne, le bloc n'est pas affiché, et envoyer la liste vide
+      // que porte alors l'état ferait enregistrer au serveur une restriction
+      // « aucun fournisseur » que personne n'a demandée. Omettre le champ
+      // reconduit la séance en cours — c'est le contrat de /api/session-settings.
+      const proposeFournisseurs = (status?.schoolProviders?.length ?? 0) > 0;
       const response = await fetch("/api/session-settings", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptName, webSearch }),
+        body: JSON.stringify({
+          promptName, webSearch,
+          ...(proposeFournisseurs ? { providers: fournisseurs } : {}),
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -256,6 +295,23 @@ export default function SessionPage() {
               <span className="opacity-60">{" "}{t("session.state.until", { time: clock(status.settings.expiresAt) })}</span>
             </li>
           )}
+          {/* Fournisseurs de la séance : ligne à part, car c'est la seule
+              restriction que les élèves rencontreront sans explication — mieux
+              vaut que l'enseignant la relise noir sur blanc. TROIS états, et
+              non deux : aucune restriction (tous), une liste, et la liste vide
+              d'une séance restreinte — qui ne laisse plus rien passer sur la
+              clé de l'école. Confondre les deux derniers afficherait « tous »
+              au moment précis où plus rien n'est autorisé. */}
+          {status.settings && (
+            <li>
+              {t("session.state.providers")}{" "}
+              <b>{!status.settings.providersRestricted
+                ? t("session.state.providersAll")
+                : status.settings.providers?.length
+                  ? status.settings.providers.map(id => providerDefaults[id]?.label ?? id).join(", ")
+                  : t("session.state.providersNone")}</b>
+            </li>
+          )}
         </ul>
       </section>
 
@@ -315,6 +371,34 @@ export default function SessionPage() {
           <input data-tour="session-web" disabled={fige} type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
           {t("session.deploy.web")}
         </label>
+
+        {/* FOURNISSEURS DE LA SÉANCE. L'univers des cases vient du serveur
+            (schoolProviders) : ce que la clé de l'école peut réellement servir,
+            et rien d'autre — proposer une case qui produirait une erreur ne
+            rend service à personne. Tout cocher revient à ne rien restreindre.
+            Le filtre ne vaut QUE pour la clé de l'école : un élève qui apporte
+            sa propre clé ne dépend pas de la séance, et le dire évite à
+            l'enseignant de croire à un verrou plus large qu'il n'est.
+            TOUT DÉCOCHER est un état légitime, et il ferme : la clé de l'école
+            ne sert plus rien pendant la séance. Le texte d'aide le dit, parce
+            que c'est la seule case dont l'effet ne se devine pas. */}
+        {(status.schoolProviders?.length ?? 0) > 0 && (
+          <fieldset className="mt-4">
+            <legend className="text-sm">{t("session.deploy.providers")}</legend>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+              {status.schoolProviders.map(id => (
+                <label key={id} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" disabled={fige} checked={fournisseurs.includes(id)}
+                    onChange={e => setFournisseurs(prev =>
+                      e.target.checked ? [...prev, id] : prev.filter(other => other !== id))} />
+                  {providerDefaults[id].label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs opacity-70">{t("session.deploy.providersHint")}</p>
+          </fieldset>
+        )}
+
         <button data-tour="session-deployer" onClick={deployTutor} disabled={fige || !status.etablissement}
           className="mt-3 rounded border border-[#DC6521]/60 bg-[#DC6521]/10 px-4 py-2 text-sm font-semibold hover:bg-[#DC6521]/20 disabled:opacity-40">
           {t("session.deploy.cta")}

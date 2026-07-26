@@ -15,7 +15,8 @@
 
 import { getDb } from './db';
 import { monthStartUtc } from './admin';
-import { BillingCurrency, BillingSurchargePct } from '../utils/env';
+import { BillingCurrency } from '../utils/env';
+import { contributionDe, coutDe } from './porteMonnaie';
 
 export type LigneFournisseur = { provider: string; tokens: number; prixMtok: number; montant: number };
 
@@ -76,13 +77,15 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
   // établissement : le repli gratuit public n'a pas de client.
   const brut = db.prepare(`
     SELECT u.etablissement_id AS id, e.name AS nom, COALESCE(e.respire, 0) AS respire,
-           u.provider AS provider, SUM(u.tokens) AS tokens
+           u.provider AS provider, SUM(u.tokens) AS tokens,
+           SUM(u.tokens_in) AS tokensIn, SUM(u.tokens_out) AS tokensOut
     FROM usage_log u JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1
       AND (? IS NULL OR u.etablissement_id = ?)
     GROUP BY u.etablissement_id, u.provider
   `).all(debut, fin, etablissementId, etablissementId) as
-    { id: number; nom: string; respire: number; provider: string; tokens: number }[];
+    { id: number; nom: string; respire: number; provider: string;
+      tokens: number; tokensIn: number; tokensOut: number }[];
 
   // Une école sans consommation doit tout de même apparaître : « rien à payer »
   // est une information, l'absence de ligne est un doute.
@@ -95,11 +98,17 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     { etablissement_id: number; total: number; emise_at: number; payee_at: number | null }[];
 
   return ecoles.map(ecole => {
+    // UNE SEULE FORMULE, celle du porte-monnaie (coutDe, avec un taux de 0 pour
+    // obtenir la consommation nue). La facture recalculait naguère à partir du
+    // prix UNIQUE tandis que le porte-monnaie décomptait aux prix ENTRÉE et
+    // SORTIE : le relevé affichait 0.00 pendant que le solde baissait
+    // réellement. Deux formules pour un même chiffre finissent toujours par
+    // diverger — celle-ci n'existe plus qu'à un seul endroit.
     const lignes = brut.filter(b => b.id === ecole.id).map(b => ({
       provider: b.provider,
       tokens: b.tokens,
       prixMtok: prix[b.provider] ?? 0,
-      montant: centimes((b.tokens / 1_000_000) * (prix[b.provider] ?? 0)),
+      montant: coutDe(b.provider, b.tokensIn, b.tokensOut, 0),
     })).sort((a, b) => b.tokens - a.tokens);
 
     const jetons = lignes.reduce((n, l) => n + l.tokens, 0);
@@ -111,13 +120,16 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     // Deux calculs parallèles finissent toujours par diverger d'un centime,
     // et c'est l'écart inexpliqué qui ruine la confiance.
     const consommation = respire ? 0 : Math.ceil(lignes.reduce((n, l) => n + l.montant, 0) * 100 - 1e-9) / 100;
-    const participation = respire ? 0 : Math.ceil(consommation * BillingSurchargePct - 1e-7) / 100;
+    // Le taux est celui que CETTE école a choisi — la facture ne peut pas
+    // annoncer un pourcentage différent de celui qui a été décompté.
+    const pct = contributionDe(ecole.id);
+    const participation = respire ? 0 : Math.ceil(consommation * pct - 1e-7) / 100;
     const emise = emises.find(f => f.etablissement_id === ecole.id);
 
     return {
       etablissementId: ecole.id, etablissement: ecole.nom, respire, periode,
       lignes, jetons, consommation, participation,
-      participationPct: BillingSurchargePct,
+      participationPct: pct,
       total: centimes(consommation + participation),
       devise: BillingCurrency,
       emiseAt: emise?.emise_at ?? null,
@@ -204,9 +216,14 @@ export function bilanParticipation(year: number, month: number) {
   const cout = (l: typeof offerts) => centimes(l.reduce(
     (n, o) => n + (o.tokens / 1_000_000) * (prix[o.provider] ?? 0), 0));
 
+  // Les écoles ne contribuent plus toutes au même taux : le bilan de la
+  // plateforme n'affiche donc plus « le » pourcentage, mais celui qui ressort
+  // réellement de ce qui a été encaissé. Un chiffre unique serait faux.
+  const facturees = facturesDuMois(year, month, null).filter(f => !f.respire && f.consommation > 0);
+  const base = facturees.reduce((n, f) => n + f.consommation, 0);
   return {
     devise: BillingCurrency,
-    pct: BillingSurchargePct,
+    pct: base > 0 ? Math.round((collectee / base) * 1000) / 10 : 0,
     collectee: centimes(collectee),
     demo: cout(offerts.filter(o => o.origine === 'demo')),
     respire: cout(offerts.filter(o => o.origine === 'respire')),

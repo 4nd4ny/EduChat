@@ -235,3 +235,74 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
 
   return { creditee: false, raison: `Événement ignoré (${type}).` };
 }
+
+// ------------------------------------------------------------ rembourser
+
+/** Frais PayPal, non récupérables : ils ont été prélevés à l'encaissement. */
+export const FRAIS_PAYPAL_PCT = 3.5;
+
+/**
+ * Rembourse le crédit restant d'une école, moins les frais PayPal.
+ *
+ * DEUX PROPRIÉTÉS DE SÛRETÉ, et elles ne sont pas décoratives. D'abord un
+ * remboursement PayPal repart TOUJOURS vers le payeur d'origine : même un
+ * compte d'école compromis ne peut pas détourner l'argent ailleurs. Ensuite le
+ * porte-monnaie est vidé AVANT le premier appel à PayPal — si le
+ * remboursement échoue à mi-parcours, l'école a perdu du crédit qu'on lui doit
+ * encore, ce qui se répare ; l'ordre inverse aurait laissé un solde
+ * consommable après un virement déjà parti, ce qui ne se répare pas.
+ *
+ * Les 3.5 % restent acquis : ce sont les frais que PayPal a prélevés à
+ * l'encaissement et qu'il ne rend pas.
+ */
+export async function rembourser(etablissementId: number, par: string):
+  Promise<{ rembourse: number; devise: string; detail: string }> {
+  const db = getDb();
+  const solde = (db.prepare('SELECT solde FROM etablissements WHERE id = ?')
+    .get(etablissementId) as { solde: number } | undefined)?.solde ?? 0;
+  if (solde <= 0) throw new Error('Aucun crédit à rembourser.');
+
+  const aRendre = Math.floor(solde * (1 - FRAIS_PAYPAL_PCT / 100) * 100) / 100;
+  if (aRendre <= 0) throw new Error('Montant trop faible après frais.');
+
+  // Le solde part d'abord. Voir plus haut : c'est le sens qui se répare.
+  bouger(etablissementId, 'ajustement', -solde,
+    `Remboursement demandé — ${aRendre.toFixed(2)} rendus, ${(solde - aRendre).toFixed(2)} de frais PayPal`, par);
+
+  // On rembourse capture par capture, de la plus récente à la plus ancienne :
+  // PayPal ne sait rembourser qu'une capture, pas « un solde ».
+  const captures = db.prepare(`
+    SELECT capture_id AS id, montant FROM recharges
+    WHERE etablissement_id = ? AND etat = 'creditee' AND capture_id IS NOT NULL
+    ORDER BY credite_at DESC
+  `).all(etablissementId) as { id: string; montant: number }[];
+
+  let reste = aRendre;
+  const faits: string[] = [];
+  for (const c of captures) {
+    if (reste <= 0) break;
+    const part = Math.min(reste, c.montant);
+    try {
+      await appel(`/v2/payments/captures/${encodeURIComponent(c.id)}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: { value: part.toFixed(2), currency_code: BillingCurrency } }),
+      });
+      reste = Math.round((reste - part) * 100) / 100;
+      faits.push(`${c.id}:${part.toFixed(2)}`);
+    } catch (erreur) {
+      console.error('PayPal — remboursement partiel impossible :', c.id, erreur);
+    }
+  }
+
+  // Ce qui n'a pas pu être rendu revient au porte-monnaie : on ne garde pas
+  // l'argent d'une école au motif que PayPal a refusé.
+  if (reste > 0) {
+    bouger(etablissementId, 'ajustement', reste,
+      `Remboursement partiel : ${reste.toFixed(2)} n'ont pas pu être rendus par PayPal`, par);
+  }
+  return {
+    rembourse: Math.round((aRendre - reste) * 100) / 100,
+    devise: BillingCurrency,
+    detail: faits.join(' · ') || 'aucune capture remboursable',
+  };
+}

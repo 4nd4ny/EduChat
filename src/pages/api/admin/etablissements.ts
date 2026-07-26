@@ -1,22 +1,54 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { requireSuperAdmin } from '../../../server/admin';
+import { requireAdmin } from '../../../server/admin';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR, SCHOOL_PROVIDER_IDS } from '../../../shared/providers';
 
-// Gestion des établissements (« clients ») — réservée aux administrateurs.
+// Gestion des établissements (« clients »).
 // L'établissement porte : ses IP, son statut RESPIRE (gratuit), son quota
 // mensuel de tokens sur la clé interne, son fournisseur actif, son contact
-// de facturation.
+// de facturation — tout cela reste la main du SITE.
+//
+// UNE SEULE EXCEPTION, et elle est étroite : l'ouverture du catalogue
+// (catalogue_ouvert) appartient à l'école, puisqu'il s'agit de ce que SES
+// élèves voient. Elle passe donc par une action à part (« catalogue »),
+// qui n'écrit que cette colonne et que sur la ligne de l'administrateur qui
+// la demande. Ouvrir la grande écriture aux écoles reviendrait à leur laisser
+// cocher RESPIRE et se donner la gratuité — la portée n'est pas un détail
+// d'affichage, elle décide de ce qui est écrit.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!requireSuperAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  const scope = requireAdmin(req);
+  if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   const db = getDb();
 
   if (req.method === 'GET') {
+    // Une école ne lit QUE sa ligne : la liste des clients du site (leurs IP,
+    // leur email de facturation) n'a pas à circuler d'une école à l'autre.
+    if (scope.niveau === 'ecole') {
+      return res.status(200).json({
+        etablissements: db.prepare('SELECT * FROM etablissements WHERE id = ?')
+          .all(scope.etablissementId),
+      });
+    }
     return res.status(200).json({
       etablissements: db.prepare('SELECT * FROM etablissements ORDER BY name COLLATE NOCASE').all(),
     });
   }
+
+  // ---- action « catalogue » : le SEUL réglage qu'une école règle elle-même.
+  // L'identifiant vient de la PORTÉE, jamais du corps de la requête : c'est ce
+  // qui empêche l'administrateur d'une école d'ouvrir le catalogue d'une autre.
+  if (req.method === 'POST' && req.body?.action === 'catalogue') {
+    const cible = scope.niveau === 'super' ? Number(req.body?.id) || 0 : scope.etablissementId;
+    if (!cible) return res.status(400).json({ error: { code: 'ERR_ETAB_UNKNOWN' } });
+    db.prepare('UPDATE etablissements SET catalogue_ouvert = ? WHERE id = ?')
+      .run(req.body?.catalogueOuvert ? 1 : 0, cible);
+    return res.status(200).json({ ok: true, id: cible });
+  }
+
+  // Tout le reste — créer, renommer, régler les IP, les quotas, RESPIRE, la
+  // facturation — relève du site et de lui seul.
+  if (scope.niveau !== 'super') return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
 
   if (req.method === 'POST') {
     const id = Number(req.body?.id) || 0;
