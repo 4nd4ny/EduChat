@@ -45,7 +45,10 @@ export default function SessionPage() {
   // Console d'enseignant : tant que personne n'est identifié, on affiche l'état
   // de la salle et rien d'autre. Le formulaire d'ouverture et le déploiement
   // d'un tuteur ne concernent pas un visiteur de passage.
-  const [identifie, setIdentifie] = useState(false);
+  // null = on ne sait pas encore (premier rendu, identique côté serveur et
+  // côté navigateur) ; sans cet état intermédiaire, la page afficherait un
+  // instant « réservée aux enseignants » à un enseignant identifié.
+  const [identifie, setIdentifie] = useState<boolean | null>(null);
   useEffect(() => { setIdentifie(!!getAccount()); }, []);
 
   const refresh = useCallback(() => {
@@ -137,7 +140,35 @@ export default function SessionPage() {
     }
   };
 
-  if (!status) {
+  // Page entièrement VERROUILLÉE tant que l'enseignant n'est pas identifié —
+  // comme /duel et /etablissement. Montrer l'état de la salle à un visiteur de
+  // passage n'apportait rien et laissait croire à une page à moitié ouverte.
+  // Même garde d'accès que les trois autres : icône orange, titre, explication,
+  // et les deux boutons.
+  if (identifie === false) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
+        <Head><title>Session de classe — EduChat</title></Head>
+        <MdSchool className="mx-auto mb-4 text-5xl text-[#DC6521]" />
+        <h1 className="text-2xl font-bold">La console de classe est réservée aux enseignants</h1>
+        <p className="mt-3 opacity-80">
+          C&apos;est d&apos;ici que l&apos;on ouvre l&apos;accès à la clé de l&apos;école pour les élèves de la salle,
+          et que l&apos;on déploie un tuteur sur la classe. Identifiez-vous d&apos;abord : un code reçu
+          par email, sans mot de passe.
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+            Vérifier mon email
+          </Link>
+          <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+            Retour au catalogue
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (identifie === null || !status) {
     return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
   }
 
@@ -192,24 +223,6 @@ export default function SessionPage() {
         </ul>
       </section>
 
-      {!identifie && (
-        <div className="mt-6 text-center">
-          <p className="text-sm opacity-80">
-            Identifiez-vous pour ouvrir l'accès de la salle et déployer un tuteur sur la classe :
-            un code reçu par email, sans mot de passe.
-          </p>
-          <div className="mt-4 flex justify-center gap-3">
-            <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-              Vérifier mon email
-            </Link>
-            <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-              Retour au catalogue
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {identifie && (<>
       {/* --- Ouvrir / fermer --- */}
       <section className="mt-5 rounded-lg border border-white/15 bg-secondary p-4">
         <h2 className="font-bold">Ouvrir l'accès pour la salle</h2>
@@ -274,7 +287,6 @@ export default function SessionPage() {
         </button>
       </section>
 
-      </>)}
 
       {message && <p className="mt-4 rounded bg-green-950/40 p-3 text-sm text-green-200">{message}</p>}
       {error && <p role="alert" className="mt-4 rounded bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
