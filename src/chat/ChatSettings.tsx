@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
-import { PROVIDER_IDS, PUBLIC_PROVIDER_IDS } from "../shared/providers";
+import { useFournisseurs } from "./useFournisseurs";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -47,28 +47,10 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [hasAccount, setHasAccount] = useState(false);
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
-  // Fournisseurs que le serveur peut servir sans clé personnelle. Les autres
-  // sont signalés dans la liste : mieux vaut le dire avant le clic qu'après
-  // une erreur incompréhensible.
-  const [served, setServed] = useState<string[] | null>(null);
-  const [adulteAutorise, setAdulteAutorise] = useState(false);
-  useEffect(() => {
-    // AVEC le jeton : sans lui, le serveur ne peut pas savoir que ce compte
-    // est certifié adulte, et renvoie toujours adultAllowed = false. C'est ce
-    // qui masquait les fournisseurs à un compte pourtant autorisé.
-    //
-    // Et à CHAQUE changement de compte : la liste demandée une seule fois au
-    // montage resterait celle du visiteur anonyme après une identification.
-    const relire = () => {
-      fetch("/api/providers", { headers: authHeaders() }).then(r => r.json()).then(d => {
-        setServed(d.served ?? []);
-        setAdulteAutorise(!!d.adultAllowed);
-      }).catch(() => {});
-    };
-    relire();
-    window.addEventListener("accountChanged", relire);
-    return () => window.removeEventListener("accountChanged", relire);
-  }, []);
+  // Fournisseurs que le serveur peut servir sans clé personnelle, et lesquels
+  // ce visiteur a le droit de voir. La règle vit dans useFournisseurs — la même
+  // que celle appliquée sur la page « duel », et une seule fois écrite.
+  const { served, visibles } = useFournisseurs();
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
@@ -168,7 +150,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             {/* AI Act : les fournisseurs réservés aux adultes ne figurent pas
                 dans la liste. Le code les connaît toujours — ils reviendront
                 avec le compte adulte vérifié. */}
-            {(adulteAutorise ? PROVIDER_IDS : PUBLIC_PROVIDER_IDS).map(id => {
+            {visibles.map(id => {
               const item = providerDefaults[id];
               const cleRequise = served !== null && !served.includes(id);
               return (

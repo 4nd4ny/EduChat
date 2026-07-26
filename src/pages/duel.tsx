@@ -3,7 +3,8 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MdCompareArrows, MdSend } from "react-icons/md";
 import AssistantMessageContent from "../chat/AssistantMessageContent";
-import { providerDefaults, PROVIDER_IDS, type ProviderId, type ReasoningLevel } from "../shared/providers";
+import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
+import { useFournisseurs } from "../chat/useFournisseurs";
 import { requestCompletion } from "../utils/streamCompletion";
 import { getClientId } from "../utils/clientId";
 import { getAccount, getToken } from "../utils/account";
@@ -108,6 +109,34 @@ export default function DuelPage() {
       })
       .catch(() => {});
   }, []);
+
+  // AI ACT — MÊME RÈGLE QUE LE CHAT, ET LE MÊME CODE.
+  //
+  // Cette page offrait la liste COMPLÈTE des fournisseurs à tout le monde :
+  // Grok, Gemini et les cinq chinois y étaient sélectionnables par un élève,
+  // depuis le réseau d'une école. La route de complétion les refusait bien —
+  // mais après coup, par une erreur, là où il ne fallait tout simplement pas
+  // proposer le choix. Le serveur décide (réseau d'établissement d'abord,
+  // certification adulte ensuite) ; cette page ne fait que le refléter.
+  const { served, visibles } = useFournisseurs();
+
+  // Une colonne peut pointer un fournisseur qui vient de sortir de la liste —
+  // au changement de compte, ou parce que la réponse du serveur arrive après
+  // le premier rendu. Sans ce rattrapage, le <select> afficherait un choix
+  // vide et le premier envoi partirait sur un fournisseur refusé.
+  useEffect(() => {
+    setConfig(previous => {
+      const next = [...previous] as [ColumnConfig, ColumnConfig];
+      let change = false;
+      for (const index of [0, 1] as const) {
+        if (visibles.includes(next[index].provider)) continue;
+        const repli = visibles[0];
+        next[index] = { ...next[index], provider: repli, model: providerDefaults[repli].model };
+        change = true;
+      }
+      return change ? next : previous;
+    });
+  }, [visibles]);
 
   const updateConfig = (index: 0 | 1, patch: Partial<ColumnConfig>) => {
     setConfig(previous => {
@@ -245,7 +274,14 @@ export default function DuelPage() {
             <label className="flex flex-col gap-1">{t("duel.field.providerShared")}
               <select disabled={demo} className="rounded bg-tertiary p-2" value={config[0].provider}
                 onChange={e => updateConfig(0, { provider: e.target.value as ProviderId })}>
-                {PROVIDER_IDS.map(id => <option key={id} value={id}>{providerDefaults[id].label}</option>)}
+                {visibles.map(id => (
+                  <option key={id} value={id}>
+                    {providerDefaults[id].label}
+                    {providerDefaults[id].gdpr ? ` · ${t("chat.input.gdpr.tag")}`
+                      : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
+                    {served !== null && !served.includes(id) ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="flex flex-col gap-1">{t("duel.field.modelShared")}
@@ -274,7 +310,14 @@ export default function DuelPage() {
                 <label className="flex flex-col gap-1">{t("chat.input.provider")}
                   <select disabled={demo} className="rounded bg-tertiary p-2" value={config[index].provider}
                     onChange={e => updateConfig(index, { provider: e.target.value as ProviderId })}>
-                    {PROVIDER_IDS.map(id => <option key={id} value={id}>{providerDefaults[id].label}</option>)}
+                    {visibles.map(id => (
+                  <option key={id} value={id}>
+                    {providerDefaults[id].label}
+                    {providerDefaults[id].gdpr ? ` · ${t("chat.input.gdpr.tag")}`
+                      : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
+                    {served !== null && !served.includes(id) ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                  </option>
+                ))}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">{t("chat.input.model")}

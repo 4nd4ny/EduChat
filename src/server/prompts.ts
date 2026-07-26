@@ -24,7 +24,15 @@ export function toCard(row: PromptRow, locale?: string): PromptCard {
   return {
     name: row.name,
     title: tr?.name || row.name,
-    authorName: row.author_email ? row.author_name : (row.author_name || 'Anonyme'),
+    // Le nom tel qu'il est, ou RIEN — jamais le mot « Anonyme ». Le serveur ne
+    // connaît pas la langue du lecteur, et ce mot français servi comme une
+    // donnée se lisait « di Anonyme » sur la fiche italienne : c'est à
+    // l'interface de nommer l'absence, dans la langue de la page.
+    //
+    // Le test portait autrefois sur author_email, ce qui aurait effacé le nom
+    // des tuteurs fondateurs — signés « EduChat », sans adresse. Un nom sans
+    // compte reste un nom : seule son ABSENCE est anonyme.
+    authorName: row.author_name,
     language: row.language,
     description: tr?.description || row.description,
     translated: !!tr,

@@ -4,19 +4,27 @@ import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
 import { MdContentCopy, MdPlayArrow, MdSend } from "react-icons/md";
 import { authHeaders } from "../../../utils/account";
+import { useT } from "../../../i18n/useT";
+import type { TranslationKey } from "../../../i18n/dictionaries";
 
 type Draft = {
-  name: string; authorName: string; language: string; description: string;
+  // « name » est l'IDENTITÉ du tuteur (adresse /p/nom, clé des favoris, jointure
+  // de facturation) : il ne se traduit jamais et part tel quel au serveur.
+  // « title », servi à côté par l'API, est le nom traduit — affichage seulement.
+  name: string; title: string; authorName: string; language: string; description: string;
   body: string; status: string;
 };
 
-const errorLabels: Record<string, string> = {
-  ERR_FORBIDDEN: "Vous n'avez pas les droits pour cette action (dépublier/republier demande le jeton d'auteur : identifiez-vous sur /verifier).",
-  ERR_STATUS: "Ce prompt n'est plus dans un état permettant cette action.",
-  ERR_ARCHIVED: "Ce prompt a été archivé par l'administration : il est figé.",
-  ERR_BODY_TOO_SHORT: "Le prompt est trop court.",
-  ERR_BODY_TOO_LARGE: "Le prompt dépasse 256 Ko.",
-  ERR_QUOTA_USER: "Quota de 1 Mo atteint.",
+// Codes d'erreur du serveur → clés du dictionnaire. Les codes, eux, restent
+// techniques : ils font partie du contrat de l'API et ne se traduisent pas.
+// ERR_ARCHIVED existe déjà au dictionnaire commun des erreurs : on le réutilise.
+const errorKeys: Record<string, TranslationKey> = {
+  ERR_FORBIDDEN: "essai.err.forbidden",
+  ERR_STATUS: "essai.err.status",
+  ERR_ARCHIVED: "err.ERR_ARCHIVED",
+  ERR_BODY_TOO_SHORT: "essai.err.bodyTooShort",
+  ERR_BODY_TOO_LARGE: "essai.err.bodyTooLarge",
+  ERR_QUOTA_USER: "essai.err.quotaUser",
 };
 
 // Atelier d'un prompt « en construction », accessible par URL secrète — non
@@ -25,6 +33,7 @@ const errorLabels: Record<string, string> = {
 // (jeton d'auteur ou share_token transmis avec la requête).
 export default function EssaiPage() {
   const router = useRouter();
+  const t = useT();
   const token = typeof router.query.token === "string" ? router.query.token : "";
 
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -58,7 +67,8 @@ export default function EssaiPage() {
     const data = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) {
-      setError(errorLabels[data?.error?.code] || "L'action a échoué.");
+      const key = errorKeys[data?.error?.code];
+      setError(key ? t(key) : t("essai.err.generic"));
       return null;
     }
     return data;
@@ -66,14 +76,14 @@ export default function EssaiPage() {
 
   const save = async () => {
     const result = await patch({ action: "edit", body, description });
-    if (result) setMessage("Brouillon enregistré.");
+    if (result) setMessage(t("essai.msg.saved"));
   };
 
   const submit = async () => {
     const result = await patch({ action: "submit" });
     if (result) {
       setDraft({ ...draft!, status: "pending" });
-      setMessage("Soumis ! Le tuteur paraîtra au catalogue après validation.");
+      setMessage(t("essai.msg.submitted"));
     }
   };
 
@@ -84,14 +94,14 @@ export default function EssaiPage() {
     const result = await patch({ action: "retire" });
     if (result) {
       setDraft({ ...draft!, status: "retired" });
-      setMessage("Dépublié — le tuteur n'apparaît plus au catalogue (republiable à tout moment).");
+      setMessage(t("essai.msg.retired"));
     }
   };
   const republish = async () => {
     const result = await patch({ action: "republish" });
     if (result) {
       setDraft({ ...draft!, status: "published" });
-      setMessage("Republié — le tuteur est de retour au catalogue.");
+      setMessage(t("essai.msg.republished"));
     }
   };
 
@@ -105,34 +115,36 @@ export default function EssaiPage() {
   if (notFound) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center text-primary">
-        <p>Ce lien d'essai n'existe pas (ou le prompt a été archivé par l'administration).</p>
-        <Link href="/" className="mt-4 inline-block underline">Retour au catalogue</Link>
+        <p>{t("essai.notFound")}</p>
+        <Link href="/" className="mt-4 inline-block underline">{t("admin.denied.backCatalogue")}</Link>
       </div>
     );
   }
-  if (!draft) return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
+  if (!draft) return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
 
   const editable = draft.status === "draft";
+  // Nom affiché : la traduction si l'API en sert une, l'identité sinon.
+  const affiche = draft.title || draft.name;
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
-      <Head><title>{`Essai : ${draft.name} — EduChat`}</title></Head>
+      <Head><title>{`${t("essai.headTitle", { name: affiche })} — EduChat`}</title></Head>
 
+      {/* Le mot en gras est un état du tuteur : il vient du vocabulaire commun
+          des statuts, le reste de la phrase est propre à l'atelier. */}
       <div className="rounded border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm">
-        {draft.status === "draft" && <>Prompt <b>en construction</b> — invisible au catalogue. Ce lien secret permet de le lire et de le tester : partagez-le à vos testeurs.</>}
-        {draft.status === "pending" && <>Prompt <b>soumis</b>, en attente de validation.</>}
-        {draft.status === "published" && <>Ce prompt est désormais <b>publié</b> : <Link className="underline" href={`/p/${encodeURIComponent(draft.name)}`}>voir sa fiche publique</Link>.</>}
-        {draft.status === "retired" && <>Ce prompt a été <b>dépublié</b> — rien n'est supprimé, son auteur peut le republier ci-dessous.</>}
+        {draft.status === "draft" && <>{t("essai.banner.draft.pre")} <b>{t("compte.prompts.status.draft")}</b> {t("essai.banner.draft.rest")}</>}
+        {draft.status === "pending" && <>{t("essai.banner.pending.pre")} <b>{t("essai.banner.pending.strong")}</b>{t("essai.banner.pending.rest")}</>}
+        {draft.status === "published" && <>{t("essai.banner.published.pre")} <b>{t("compte.prompts.status.published")}</b>{t("essai.banner.published.sep")} <Link className="underline" href={`/p/${encodeURIComponent(draft.name)}`}>{t("essai.banner.published.link")}</Link>.</>}
+        {draft.status === "retired" && <>{t("essai.banner.retired.pre")} <b>{t("compte.prompts.status.retired")}</b> {t("essai.banner.retired.rest")}</>}
       </div>
 
-      <h1 className="mt-4 text-3xl font-bold">{draft.name}</h1>
-      <p className="text-sm opacity-70">par {draft.authorName || "Anonyme"} · {draft.language.toUpperCase()}</p>
+      <h1 className="mt-4 text-3xl font-bold">{affiche}</h1>
+      <p className="text-sm opacity-70">{t("home.by")} {draft.authorName || t("admin.anonymous")} · {draft.language.toUpperCase()}</p>
 
       {editable && (
         <p className="mt-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          Soumettre est le point de non-retour : une fois validé, ce tuteur appartient au
-          <b> domaine public d'EduChat</b> et ne sera jamais supprimé. Il restera dépubliable
-          (retrait du catalogue, réversible) ; ses compteurs de consommation, eux, sont conservés.
+          {t("essai.publishWarning.pre")} <b>{t("essai.publishWarning.strong")}</b> {t("essai.publishWarning.rest")}
         </p>
       )}
 
@@ -140,48 +152,48 @@ export default function EssaiPage() {
         <button
           onClick={() => router.push(`/chat?essai=${encodeURIComponent(token)}`)}
           className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-          <MdPlayArrow /> Tester dans le chat
+          <MdPlayArrow /> {t("essai.action.test")}
         </button>
         <button onClick={share}
           className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
-          <MdContentCopy /> {copied ? "Lien copié !" : "Copier le lien d'invitation"}
+          <MdContentCopy /> {copied ? t("essai.action.copied") : t("essai.action.copyLink")}
         </button>
         {editable && (
           <button onClick={submit} disabled={busy}
-            title="Après validation, le tuteur appartient au domaine public d'EduChat : il ne sera jamais supprimé, seulement dépubliable."
+            title={t("essai.action.submitTitle")}
             className="flex items-center gap-1 rounded border border-green-500/50 px-4 py-2 text-sm hover:bg-green-500/10 disabled:opacity-50">
-            <MdSend /> Soumettre pour publication
+            <MdSend /> {t("essai.action.submit")}
           </button>
         )}
         {draft.status === "published" && (
           <button onClick={retire} disabled={busy}
-            title="Retirer du catalogue — réversible, rien n'est supprimé (jeton d'auteur requis)"
+            title={t("essai.action.retireTitle")}
             className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary disabled:opacity-50">
-            Dépublier
+            {t("compte.prompts.retire")}
           </button>
         )}
         {draft.status === "retired" && (
           <button onClick={republish} disabled={busy}
-            title="Remettre au catalogue (jeton d'auteur requis)"
+            title={t("essai.action.republishTitle")}
             className="flex items-center gap-1 rounded border border-green-500/50 px-4 py-2 text-sm hover:bg-green-500/10 disabled:opacity-50">
-            Republier
+            {t("compte.prompts.republish")}
           </button>
         )}
       </div>
 
       {editable ? (
         <div className="mt-6 flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">Description
+          <label className="flex flex-col gap-1 text-sm">{t("essai.form.description")}
             <input value={description} onChange={e => setDescription(e.target.value)} maxLength={500}
               className="rounded bg-tertiary p-2" />
           </label>
-          <label className="flex flex-col gap-1 text-sm">Prompt système
+          <label className="flex flex-col gap-1 text-sm">{t("essai.form.body")}
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={16}
               className="rounded bg-tertiary p-3 font-mono text-sm leading-relaxed" />
           </label>
           <button onClick={save} disabled={busy}
             className="w-fit rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary disabled:opacity-50">
-            Enregistrer les modifications
+            {t("essai.form.save")}
           </button>
         </div>
       ) : (

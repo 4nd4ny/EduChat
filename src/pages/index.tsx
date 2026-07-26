@@ -182,7 +182,7 @@ export default function Catalogue() {
               </div>
               <p className="flex-grow text-sm opacity-80">{card.description}</p>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs opacity-70">
-                <span>{t("home.by")} {card.authorName}</span>
+                <span>{t("home.by")} {card.authorName || t("admin.anonymous")}</span>
                 <span className="uppercase">{card.language}</span>
                 <span>v{card.version}</span>
                 <span>{card.usageCount} {t("home.uses")}</span>

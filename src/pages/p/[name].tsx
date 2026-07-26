@@ -7,6 +7,7 @@ import { useAnthropic } from "../../context/AnthropicProvider";
 import { getFavorites, toggleFavorite, getGivenRating, storeGivenRating } from "../../utils/favorites";
 import { authHeaders } from "../../utils/account";
 import { formatTokens } from "../../utils/formatTokens";
+import { useT } from "../../i18n/useT";
 
 type Detail = {
   // « name » est l'identité (URL, favoris, facturation) ; « title » est ce
@@ -24,6 +25,7 @@ type Comment = { id: number; body: string; createdAt: number; status?: "pending"
 // (décision client — esprit open source, l'école est gratuite).
 export default function PromptPage() {
   const router = useRouter();
+  const t = useT();
   const locale = router.locale ?? "fr";
   const { setPromptName } = useAnthropic();
   const name = typeof router.query.name === "string" ? router.query.name : "";
@@ -61,13 +63,15 @@ export default function PromptPage() {
     });
     if (response.ok) {
       setNewComment("");
-      setCommentMessage("Merci ! Votre commentaire sera visible après modération.");
+      setCommentMessage(t("prompt.comment.thanks"));
       loadComments();
     } else {
+      // Le code d'erreur reste technique (contrat serveur) ; seul le message
+      // montré au lecteur passe par le dictionnaire.
       const data = await response.json().catch(() => ({}));
       setCommentMessage(data?.error?.code === "ERR_RATE_LIMIT"
-        ? "Trop de commentaires d'affilée — patientez une minute."
-        : "Le commentaire n'a pas pu être envoyé.");
+        ? t("prompt.comment.rateLimit")
+        : t("prompt.comment.failed"));
     }
   };
 
@@ -77,7 +81,7 @@ export default function PromptPage() {
       method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ id, action }),
     });
-    if (!response.ok) setCommentMessage("La modération a échoué (session expirée ?).");
+    if (!response.ok) setCommentMessage(t("prompt.comment.moderationFailed"));
     loadComments();
   };
 
@@ -89,7 +93,11 @@ export default function PromptPage() {
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => { setDetail(data.prompt); setVersions(data.versions ?? []); })
       .catch(() => setNotFound(true));
-  }, [name]);
+    // « locale » fait partie des dépendances : le sélecteur de langue navigue
+    // côté client (router.push avec { locale }), sans remonter la page. Sans
+    // cette dépendance, le titre, la description et le texte du tuteur
+    // resteraient dans la langue du premier chargement.
+  }, [name, locale]);
 
   const rate = async (stars: number) => {
     if (!detail || givenRating !== null) return;
@@ -116,14 +124,23 @@ export default function PromptPage() {
   if (notFound) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center text-primary">
-        <p>Ce tuteur n'existe pas ou n'est plus publié.</p>
-        <Link href="/" className="mt-4 inline-block underline">Retour au catalogue</Link>
+        {/* Même phrase que le code d'erreur serveur : on réutilise sa clé.
+            Le lien de retour réutilise lui aussi une clé existante — c'est déjà
+            ce que fait la page d'essai voisine pour le même lien. */}
+        <p>{t("err.ERR_PROMPT_UNKNOWN")}</p>
+        <Link href="/" className="mt-4 inline-block underline">{t("admin.denied.backCatalogue")}</Link>
       </div>
     );
   }
-  if (!detail) return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
+  if (!detail) return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
 
   const isFavorite = favorites.includes(detail.name);
+  // L'auteur. Le serveur renvoie une chaîne vide quand le tuteur a été proposé
+  // sans compte, ou que le compte n'a pas renseigné de nom : c'est l'interface
+  // qui nomme l'absence, dans la langue de la page.
+  const auteur = detail.authorName
+    ? detail.authorName
+    : t("admin.anonymous");
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
@@ -134,7 +151,7 @@ export default function PromptPage() {
         <div className="flex items-start justify-between">
           <h1 className="text-3xl font-bold">{detail.title || detail.name}</h1>
           <button onClick={() => setFavorites(toggleFavorite(detail.name))}
-            aria-label={isFavorite ? "Retirer des favoris" : "Mettre en favori"}
+            aria-label={t(isFavorite ? "home.favRemove" : "home.favAdd")}
             className="text-3xl text-yellow-400">
             {isFavorite ? <MdStar /> : <MdStarBorder />}
           </button>
@@ -144,14 +161,14 @@ export default function PromptPage() {
         {(detail.inspiredBy || (detail.variants?.length ?? 0) > 0) && (
           <div className="flex flex-col gap-1 rounded border border-white/10 bg-secondary p-2 text-xs">
             {detail.inspiredBy && (
-              <span>🌱 Inspiré de{" "}
+              <span>🌱 {t("prompt.inspiredBy")}{" "}
                 <Link className="font-bold underline" href={`/p/${encodeURIComponent(detail.inspiredBy)}`}>
                   {detail.inspiredBy}
                 </Link>
               </span>
             )}
             {(detail.variants?.length ?? 0) > 0 && (
-              <span>🌿 A inspiré :{" "}
+              <span>🌿 {t("prompt.hasInspired")}{" "}
                 {detail.variants.map((v, i) => (
                   <React.Fragment key={v}>
                     {i > 0 && ", "}
@@ -163,48 +180,51 @@ export default function PromptPage() {
           </div>
         )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-70">
-          <span>par {detail.authorName}</span>
+          <span>{t("home.by")} {auteur}</span>
           <span className="uppercase">{detail.language}</span>
-          <span>version {detail.version}</span>
-          <span>{detail.usageCount} usage{detail.usageCount > 1 ? "s" : ""}</span>
-          <span>{formatTokens(detail.tokensTotal)} générés</span>
+          <span>{t("prompt.version", { n: detail.version })}</span>
+          {/* Pas de machinerie de pluriel dans useT : deux clés, comme stats.prompt/prompts. */}
+          <span>{t(detail.usageCount > 1 ? "prompt.usages" : "prompt.usage", { n: detail.usageCount })}</span>
+          <span>{formatTokens(detail.tokensTotal)} {t("stats.tokens")}</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <button
             onClick={() => { setPromptName(detail.name); router.push(`/chat?tuteur=${encodeURIComponent(detail.name)}`); }}
             className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-            <MdPlayArrow /> Essayer ce tuteur
+            <MdPlayArrow /> {t("prompt.try")}
           </button>
           <button onClick={share}
             className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
-            <MdContentCopy /> {copied ? "Lien copié !" : "Recommander (copier le lien)"}
+            <MdContentCopy /> {copied ? t("prompt.linkCopied") : t("prompt.recommend")}
           </button>
           <Link href={`/publier?variante=${encodeURIComponent(detail.name)}`}
             className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
-            Proposer une variante
+            {t("prompt.variant")}
           </Link>
         </div>
 
         <div className="flex items-center gap-2 pt-2 text-sm">
           <span className="opacity-70">
-            {detail.ratingAvg !== null ? `Note : ${detail.ratingAvg}/5 (${detail.ratingCount} avis)` : "Pas encore noté —"}
+            {detail.ratingAvg !== null
+              ? t("prompt.rating", { avg: detail.ratingAvg, n: detail.ratingCount })
+              : t("prompt.notRated")}
           </span>
-          <span className="flex" role="group" aria-label="Noter ce tuteur">
+          <span className="flex" role="group" aria-label={t("prompt.rateAria")}>
             {[1, 2, 3, 4, 5].map(star => (
               <button key={star} onClick={() => rate(star)} disabled={givenRating !== null}
-                aria-label={`${star} étoile${star > 1 ? "s" : ""}`}
+                aria-label={t(star > 1 ? "prompt.stars" : "prompt.star", { n: star })}
                 className={`text-xl ${givenRating !== null && star <= givenRating ? "text-yellow-400" : "text-yellow-400/50 hover:text-yellow-400"} disabled:cursor-default`}>
                 {givenRating !== null && star <= givenRating ? <MdStar /> : <MdStarBorder />}
               </button>
             ))}
           </span>
-          {givenRating !== null && <span className="text-xs opacity-60">Merci pour votre avis !</span>}
+          {givenRating !== null && <span className="text-xs opacity-60">{t("prompt.rateThanks")}</span>}
         </div>
       </header>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-lg font-bold">Le prompt système, en intégralité</h2>
+        <h2 className="mb-2 text-lg font-bold">{t("prompt.bodyHeading")}</h2>
         <pre className="whitespace-pre-wrap rounded-lg border border-white/10 bg-secondary p-4 text-sm leading-relaxed">
           {detail.body}
         </pre>
@@ -212,14 +232,15 @@ export default function PromptPage() {
 
       {/* ---- Commentaires anonymes (modérés par l'auteur ou l'admin) ---- */}
       <section className="mt-8">
-        <h2 className="mb-2 text-lg font-bold">Commentaires</h2>
+        <h2 className="mb-2 text-lg font-bold">{t("prompt.comments")}</h2>
+        {/* Deux phrases entières plutôt qu'une concaténation : la ponctuation
+            finale ne se recolle pas de la même façon d'une langue à l'autre. */}
         <p className="text-xs opacity-60">
-          Les commentaires sont anonymes et publiés après modération
-          {isModerator ? " — vous modérez cette fiche." : "."}
+          {t(isModerator ? "prompt.comment.introModerator" : "prompt.comment.intro")}
         </p>
         <ul className="mt-3 flex flex-col gap-2">
           {comments.length === 0 && (
-            <li className="text-sm opacity-50">Aucun commentaire pour l'instant — le vôtre sera le premier.</li>
+            <li className="text-sm opacity-50">{t("prompt.comment.empty")}</li>
           )}
           {comments.map(c => (
             <li key={c.id}
@@ -230,11 +251,11 @@ export default function PromptPage() {
                 {isModerator && c.status && (
                   <span className="flex shrink-0 items-center gap-1">
                     {c.status !== "approved" && (
-                      <button onClick={() => moderate(c.id, "approve")} title="Approuver (visible de tous)"
+                      <button onClick={() => moderate(c.id, "approve")} title={t("prompt.comment.approveTitle")}
                         className="rounded bg-green-600/70 p-1 text-xs hover:bg-green-600"><MdCheck /></button>
                     )}
                     {c.status !== "hidden" && (
-                      <button onClick={() => moderate(c.id, "hide")} title="Masquer (jamais supprimé)"
+                      <button onClick={() => moderate(c.id, "hide")} title={t("prompt.comment.hideTitle")}
                         className="rounded bg-gray-600/70 p-1 text-xs hover:bg-gray-600"><MdVisibilityOff /></button>
                     )}
                   </span>
@@ -242,20 +263,29 @@ export default function PromptPage() {
               </div>
               <div className="mt-1 flex gap-2 text-xs opacity-50">
                 <span>{new Date(c.createdAt).toLocaleDateString("fr-CH")}</span>
-                {isModerator && c.status && <span className="uppercase">{c.status === "pending" ? "en attente" : c.status === "hidden" ? "masqué" : "approuvé"}</span>}
+                {/* « approuvé » et « masqué » existent déjà pour la table de
+                    modération de l'administration : mêmes mots, mêmes états, on
+                    ne recrée pas la paire. Seul « en attente » manquait. */}
+                {isModerator && c.status && (
+                  <span className="uppercase">
+                    {t(c.status === "pending" ? "prompt.comment.statusPending"
+                      : c.status === "hidden" ? "admin.comments.hidden"
+                        : "admin.comments.approved")}
+                  </span>
+                )}
               </div>
             </li>
           ))}
         </ul>
         <form onSubmit={postComment} className="mt-3 flex flex-col gap-2">
           <textarea value={newComment} onChange={e => setNewComment(e.target.value)} rows={3}
-            maxLength={2000} placeholder="Votre commentaire anonyme (retour d'usage, suggestion...)"
-            aria-label="Votre commentaire anonyme"
+            maxLength={2000} placeholder={t("prompt.comment.placeholder")}
+            aria-label={t("prompt.comment.aria")}
             className="rounded bg-tertiary p-3 text-sm outline-none" />
           <div className="flex items-center gap-3">
             <button type="submit" disabled={newComment.trim().length < 3}
               className="rounded bg-[#DC6521] px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
-              Envoyer (anonyme)
+              {t("prompt.comment.send")}
             </button>
             {commentMessage && <span className="text-xs opacity-70">{commentMessage}</span>}
           </div>
@@ -264,11 +294,17 @@ export default function PromptPage() {
 
       {versions.length > 1 && (
         <section className="mt-8">
-          <h2 className="mb-2 text-lg font-bold">Versions</h2>
+          <h2 className="mb-2 text-lg font-bold">{t("prompt.versions")}</h2>
           <ul className="text-sm opacity-80">
             {versions.map(v => (
               <li key={v.version} className="border-b border-white/5 py-1">
-                v{v.version} — {new Date(v.createdAt).toLocaleDateString("fr-CH")} — {(v.sizeBytes / 1024).toFixed(1)} Ko
+                {/* La date reste au format fr-CH, comme partout ailleurs sur le site ;
+                    seule l'unité de taille change de langue. */}
+                {t("prompt.versionLine", {
+                  v: v.version,
+                  date: new Date(v.createdAt).toLocaleDateString("fr-CH"),
+                  size: (v.sizeBytes / 1024).toFixed(1),
+                })}
               </li>
             ))}
           </ul>
