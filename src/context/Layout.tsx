@@ -77,7 +77,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <React.Fragment>
       <Head>
-        <title>{`EduChat${totalTokens ? ` ${totalTokens}` : ''}`}</title>
+        {/* TITRE : seulement là où la page n'en pose pas elle-même.
+            Ce <title> était rendu sur TOUTES les pages, et comme Layout se
+            redessine à chaque mise à jour du compteur de jetons, sa version
+            gagnait la course après l'hydratation : le serveur envoyait
+            « Leitfaden für Schulen — EduChat », le navigateur affichait
+            « EduChat » une fraction de seconde plus tard. Tous les titres de
+            page étaient ainsi perdus, sans que le code de ces pages soit en
+            cause. Les quatre pages de conversation sont les seules à ne pas
+            avoir de titre propre — et ce sont justement celles où le compteur
+            de jetons a un sens. */}
+        {hasChatSidebar && <title>{`EduChat${totalTokens ? ` ${totalTokens}` : ''}`}</title>}
         <meta name="description" content="EduChat — des tuteurs socratiques pour apprendre en réfléchissant." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         {/* Favicon « E » blanc sur fond orange (SVG, honoré par les navigateurs

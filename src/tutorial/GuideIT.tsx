@@ -26,39 +26,39 @@ const PROFILES: Profile[] = [
 const WALK: WalkStep[] = [
   {
     title: "Il catalogo, cuore del sito",
-    text: "La home elenca i tutor socratici pubblicati. Cerca, ordina (consigliati, più usati, migliori valutazioni...), aggiungi ai preferiti (la stella — i tuoi preferiti salgono in cima). Ogni tutor è un prompt di sistema che trasforma l'IA in un pedagogo che fa domande invece di dare risposte.",
-    href: "/it", hrefLabel: "Apri il catalogo",
+    text: "La home elenca i tutor socratici pubblicati. Cerchi, ordini (consigliati, più usati, migliori valutazioni...), aggiunga ai preferiti (la stella — i Suoi preferiti salgono in cima). Ogni tutor è un prompt di sistema che trasforma l'IA in un pedagogo che fa domande invece di dare risposte.",
+    href: "/it", hrefLabel: "Apra il catalogo",
   },
   {
     title: "La scheda di un tutor",
-    text: "Clicca su un nome per leggere la scheda: descrizione, statistiche, valutazioni, filiazione (« ispirato da »), e il testo INTEGRALE del prompt — tutto è pubblico, la scuola è gratuita. Qui si valuta (da 1 a 5 stelle), si copia il link per consigliare, e si propone una variante.",
-    href: "/it/p/Socrate", hrefLabel: "Vedi la scheda di Socrate",
+    text: "Clicchi su un nome per leggere la scheda: descrizione, statistiche, valutazioni, filiazione (« ispirato da »), e il testo INTEGRALE del prompt — tutto è pubblico, la scuola è gratuita. Qui si valuta (da 1 a 5 stelle), si copia il link per consigliare, e si propone una variante.",
+    href: "/it/p/Socrate", hrefLabel: "Veda la scheda di Socrate",
   },
   {
     title: "Provare un tutor",
-    text: "« Prova » apre la chat con quel tutor al comando (barra in alto). Sul sito pubblico, inserisci la tua chiave API personale (campo « Chiave personale »): resta nella pagina — memorizzata solo su tua richiesta — e sblocca allegati (immagini, PDF) e chat vocale. Le risposte arrivano in diretta, durante la generazione.",
-    href: "/it/chat?tuteur=Socrate", hrefLabel: "Prova Socrate",
+    text: "« Prova » apre la chat con quel tutor al comando (barra in alto). Sul sito pubblico, inserisca la Sua chiave API personale (campo « Chiave personale »): resta nella pagina — memorizzata solo su Sua richiesta — e sblocca allegati (immagini, PDF) e chat vocale. Le risposte arrivano in diretta, durante la generazione.",
+    href: "/it/chat?tuteur=Socrate", hrefLabel: "Provi Socrate",
   },
   {
     title: "Proporre il proprio tutor",
-    text: "Il modulo « Proponi un tutor » parte da un modello socratico: dai un nome proprio unico, una descrizione, adatta le regole. Puoi pubblicare a tuo nome (email verificata in 30 secondi, senza password) o in forma anonima.",
-    href: "/it/publier", hrefLabel: "Apri il modulo",
+    text: "Il modulo « Proponi un tutor » parte da un modello socratico: dia un nome proprio unico, una descrizione, adatti le regole. Può pubblicare a Suo nome (email verificata in 30 secondi, senza password) o in forma anonima.",
+    href: "/it/publier", hrefLabel: "Apra il modulo",
   },
   {
     title: "Testare prima di inviare",
-    text: "Il tuo prompt nasce « in costruzione »: un URL segreto permette di leggerlo, modificarlo e TESTARLO nella chat — condividi il link con i colleghi per un parere, non è bloccato. Quando è pronto: « Invia per la pubblicazione ».",
+    text: "Il Suo prompt nasce « in costruzione »: un URL segreto permette di leggerlo, modificarlo e TESTARLO nella chat — condivida il link con i colleghi per un parere, non è bloccato. Quando è pronto: « Inviare per la pubblicazione ».",
   },
   {
     title: "Confrontare in duello",
-    text: "La modalità Duello (riservata ai promptagoghi) invia la stessa domanda a due colonne: due tutor sullo stesso modello, o lo stesso tutor su due modelli. È l'officina di perfezionamento: osserva cosa cambia una formulazione, o la robustezza del tuo prompt da un LLM all'altro.",
-    href: "/it/duel", hrefLabel: "Apri il duello",
+    text: "La modalità Duello (riservata ai promptagoghi) invia la stessa domanda a due colonne: due tutor sullo stesso modello, o lo stesso tutor su due modelli. È l'officina di perfezionamento: osservi cosa cambia una formulazione, o la robustezza del Suo prompt da un LLM all'altro.",
+    href: "/it/duel", hrefLabel: "Apra il duello",
   },
   {
     title: "La validazione",
     text: "Un tutor inviato entra in coda. Un amministratore — o qualsiasi promptagogo verificato — lo rilegge e lo pubblica: appare allora nel catalogo. Questo filtro a priori protegge gli studenti; è dettagliato più in basso.",
   },
   {
-    title: "Rappresenti una scuola?",
+    title: "Rappresenta una scuola?",
     text: "Gli istituti hanno la loro guida: accesso senza account per gli studenti, distribuzione di un tutor alla classe, orari e budget self-service, fatturazione. Tutto è spiegato con schemi di percorso.",
     href: "/it/etablissements", hrefLabel: "Guida degli istituti",
   },
@@ -71,12 +71,12 @@ export default function GuideIT() {
       <p className="mt-2 opacity-80">
         EduChat è uno spazio per creare, confrontare e distribuire <b>tutor socratici</b> —
         prompt che trasformano un'IA in un pedagogo che interroga invece di rispondere.
-        Clicca sulla mappa per esplorare, o segui la visita guidata.
+        Clicchi sulla mappa per esplorare, o segua la visita guidata.
       </p>
 
       <div className="mt-6">
         <Mindmap profiles={PROFILES}
-          caption="Mappa interattiva — clicca una bolla, trascina per spostare, rotella per lo zoom."
+          caption="Mappa interattiva — clicchi una bolla, trascini per spostare, rotella per lo zoom."
           ariaLabel="Mappa delle funzionalità per profilo" />
       </div>
 
@@ -88,7 +88,7 @@ export default function GuideIT() {
           { label: "Insegnante", note: "aprire l'aula, distribuire un tutor", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
           { label: "Istituto", note: "orari, quote, consumo", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
           { label: "Promptagogo", note: "confrontare due tutor in duello", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
-          { label: "I miei dati", note: "ciò che il server conserva di te", href: "/compte?visite=1", color: "#4DB6AC", icon: <MdAccountCircle /> },
+          { label: "I miei dati", note: "ciò che il server conserva di Lei", href: "/compte?visite=1", color: "#4DB6AC", icon: <MdAccountCircle /> },
           { label: "Amministrazione", note: "validare, fatturare, gestire le scuole", href: "/admin-demo?visite=1", color: "#FFD54F", icon: <MdAdminPanelSettings /> },
         ]} />
 
@@ -102,30 +102,30 @@ export default function GuideIT() {
         className="mt-8 flex items-center gap-3 rounded-lg border border-[#BA68C8]/40 bg-[#BA68C8]/10 p-4 hover:bg-[#BA68C8]/15">
         <MdSchool className="text-2xl text-[#BA68C8]" />
         <span className="text-sm">
-          <b>Rappresenti una scuola, o sei un insegnante?</b> Accesso degli studenti, distribuzione
+          <b>Rappresenta una scuola, o è un insegnante?</b> Accesso degli studenti, distribuzione
           di un tutor alla classe, orari e budget, fatturazione, schemi di percorso:{" "}
-          <span className="underline">consulta la guida degli istituti →</span>
+          <span className="underline">consulti la guida degli istituti →</span>
         </span>
       </Link>
 
       <Section id="tuteurs" title="Gestire i tutor: cercare, ordinare, condividere">
         <p dangerouslySetInnerHTML={{ __html: `<b>Cercare</b>: il campo di ricerca della home interroga nome e descrizione di tutti i tutor pubblicati. Tre lettere di solito bastano.` }} />
-        <p dangerouslySetInnerHTML={{ __html: `<b>Ordinare</b>: « Consigliati » mescola popolarità, valutazioni e freschezza, perché un buon tutor recente non sia schiacciato da uno vecchio. Gli altri ordinamenti sono grezzi — più usati, meglio valutati, più recenti, maggiori consumatori di token, o alfabetico. I preferiti salgono sempre in cima e riguardano solo te: vivono nel tuo browser.` }} />
-        <p dangerouslySetInnerHTML={{ __html: `<b>Condividere con la comunità</b>: « Proponi un tutor » parte da un modello socratico. La bozza nasce con un URL segreto — condividilo con i colleghi per raccogliere pareri, provalo nella chat, poi invialo. Un amministratore o qualsiasi promptagogo verificato lo pubblica, e appare nel catalogo.` }} />
-        <p dangerouslySetInnerHTML={{ __html: `<b>Una volta pubblicato</b>, appartiene al dominio pubblico di EduChat: non viene mai eliminato. Puoi ritirarlo — esce dal catalogo e puoi rimetterlo. « Proponi una variante » da qualsiasi scheda copia il prompt esistente e registra la filiazione « ispirato da » su entrambe le schede: è il percorso normale della personalizzazione.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Ordinare</b>: « Consigliati » mescola popolarità, valutazioni e freschezza, perché un buon tutor recente non sia schiacciato da uno vecchio. Gli altri ordinamenti sono grezzi — più usati, meglio valutati, più recenti, maggiori consumatori di token, o alfabetico. I preferiti salgono sempre in cima e riguardano solo Lei: vivono nel Suo browser.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Condividere con la comunità</b>: « Proponi un tutor » parte da un modello socratico. La bozza nasce con un URL segreto — lo condivida con i colleghi per raccogliere pareri, lo provi nella chat, poi lo invii. Un amministratore o qualsiasi promptagogo verificato lo pubblica, e appare nel catalogo.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Una volta pubblicato</b>, appartiene al dominio pubblico di EduChat: non viene mai eliminato. Può ritirarlo — esce dal catalogo e può rimetterlo. « Proponi una variante » da qualsiasi scheda copia il prompt esistente e registra la filiazione « ispirato da » su entrambe le schede: è il percorso normale della personalizzazione.` }} />
       </Section>
 
       <Section id="eleves" title="Studenti e visitatori — imparare">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Scegliere un tutor</b> nel <Link className="underline" href="/">catalogo</Link>: ricerca, ordinamenti, scheda dettagliata con il prompt integrale.</li>
-          <li><b>Provare</b>: la chat si apre con il tutor al comando; sul sito pubblico, la tua <b>chiave API personale</b> (mai memorizzata, salvo tua richiesta) fa girare la conversazione, con fornitore e livello di ragionamento a tua scelta. Le risposte arrivano <b>in diretta</b>, durante la generazione.</li>
-          <li><b>Allegati</b> (chiave personale): allega un'<b>immagine o un PDF</b> alla tua domanda, secondo il fornitore scelto.</li>
-          <li><b>Chat vocale</b> (chiave personale, fornitori compatibili): detta la tua domanda al microfono, e la modalità vocale legge le risposte — comoda sullo smartphone.</li>
-          <li><b>Preferiti</b> (stella) e <b>valutazioni</b> (1-5): conservati nel tuo browser; i preferiti salgono in cima al catalogo.</li>
-          <li><b>Commenti anonimi</b> su ogni scheda: lascia un riscontro d'uso — appare dopo la moderazione dell'autore del tutor o dell'amministrazione.</li>
+          <li><b>Provare</b>: la chat si apre con il tutor al comando; sul sito pubblico, la Sua <b>chiave API personale</b> (mai memorizzata, salvo Sua richiesta) fa girare la conversazione, con fornitore e livello di ragionamento a Sua scelta. Le risposte arrivano <b>in diretta</b>, durante la generazione.</li>
+          <li><b>Allegati</b> (chiave personale): alleghi un'<b>immagine o un PDF</b> alla Sua domanda, secondo il fornitore scelto.</li>
+          <li><b>Chat vocale</b> (chiave personale, fornitori compatibili): detti la Sua domanda al microfono, e la modalità vocale legge le risposte — comoda sullo smartphone.</li>
+          <li><b>Preferiti</b> (stella) e <b>valutazioni</b> (1-5): conservati nel Suo browser; i preferiti salgono in cima al catalogo.</li>
+          <li><b>Commenti anonimi</b> su ogni scheda: lasci un riscontro d'uso — appare dopo la moderazione dell'autore del tutor o dell'amministrazione.</li>
           <li><b>Storico</b>: le conversazioni restano nel browser. Rinomina, cancellazione, esportazione di ogni discussione (.md + .json), ed <b>esportazione del profilo completo</b> (conversazioni + preferiti + valutazioni) reimportabile altrove con il trascinamento.</li>
           <li><b>Contatore di token</b>: il totale consumato appare sotto l'area di scrittura e nel titolo della scheda.</li>
-          <li><b>Tramite una scuola</b>: su <Link className="underline" href="/school">/school</Link>, nessun account né chiave — vedi la <Link className="underline" href="/etablissements">guida degli istituti</Link>.</li>
+          <li><b>Tramite una scuola</b>: su <Link className="underline" href="/school">/school</Link>, nessun account né chiave — veda la <Link className="underline" href="/etablissements">guida degli istituti</Link>.</li>
           <li><b>Privacy</b>: dettagliata sulla <Link className="underline" href="/rgpd">pagina Privacy</Link> — gli studenti non hanno mai un account.</li>
         </ul>
       </Section>
@@ -133,13 +133,13 @@ export default function GuideIT() {
       <Section id="promptagogues" title="Promptagoghi — creare un tutor">
         <p>Un <b>promptagogo</b> (prompt + pedagogo) è l'autore di un tutor. Chiunque può diventarlo:</p>
         <ol className="list-inside list-decimal space-y-2">
-          <li><b>Identificati</b> (facoltativo ma consigliato) su <Link className="underline" href="/verifier">/verifier</Link>: nome pubblico + email, confermata da un codice a sei cifre ricevuto via email. <b>Nessuna password, mai.</b> Senza account, la pubblicazione è anonima — testabile e inviabile tramite l'URL segreto, ma tutta la moderazione (validazione, ritiro, archiviazione) spetterà all'amministrazione.</li>
-          <li><b>Scrivi</b> su <Link className="underline" href="/publier">/publier</Link>: un <b>nome proprio unico</b> (Pitagora, Curie...), una descrizione per il catalogo, la lingua, e il prompt stesso — il modello fornito pone le regole socratiche di base (mai dare la risposta, avanzare per domande, incoraggiare). Limiti: 256 KB per prompt, 1 MB per autore. Solo testo.</li>
-          <li><b>Testa</b>: la bozza « in costruzione » ha un URL segreto — lettura, modifica, test nella chat, e inviti ai tester con la semplice condivisione del link.</li>
-          <li><b>Perfeziona in duello</b> su <Link className="underline" href="/duel">/duel</Link> (riservato ai promptagoghi): la stessa domanda a due tutor sullo stesso modello — o allo stesso tutor su due modelli — per misurare l'effetto di una formulazione.</li>
-          <li><b>Invia</b>, poi lascia che la validazione faccia il suo lavoro (sezione successiva).</li>
+          <li><b>Si identifichi</b> (facoltativo ma consigliato) su <Link className="underline" href="/verifier">/verifier</Link>: nome pubblico + email, confermata da un codice a sei cifre ricevuto via email. <b>Nessuna password, mai.</b> Senza account, la pubblicazione è anonima — testabile e inviabile tramite l'URL segreto, ma tutta la moderazione (validazione, ritiro, archiviazione) spetterà all'amministrazione.</li>
+          <li><b>Scriva</b> su <Link className="underline" href="/publier">/publier</Link>: un <b>nome proprio unico</b> (Pitagora, Curie...), una descrizione per il catalogo, la lingua, e il prompt stesso — il modello fornito pone le regole socratiche di base (mai dare la risposta, avanzare per domande, incoraggiare). Limiti: 256 KB per prompt, 1 MB per autore. Solo testo.</li>
+          <li><b>Lo testi</b>: la bozza « in costruzione » ha un URL segreto — lettura, modifica, test nella chat, e inviti ai tester con la semplice condivisione del link.</li>
+          <li><b>Perfezioni in duello</b> su <Link className="underline" href="/duel">/duel</Link> (riservato ai promptagoghi): la stessa domanda a due tutor sullo stesso modello — o allo stesso tutor su due modelli — per misurare l'effetto di una formulazione.</li>
+          <li><b>Invii</b>, poi lasci che la validazione faccia il suo lavoro (sezione successiva).</li>
         </ol>
-        <p><b>Dopo:</b> una modifica di un tutor pubblicato crea una <b>nuova versione</b> — le conversazioni in corso restano sulla loro e propongono il passaggio, senza mai imporlo. Puoi <b>ritirare i tuoi</b> tutor in ogni momento dalla tua officina (il link segreto) e ripubblicarli più tardi (niente viene mai cancellato: i contatori restano intatti). I <b>commenti anonimi</b> lasciati sulle tue schede ti aspettano: sei tu a moderarli (approvare o nascondere). « Proponi una variante » su qualsiasi scheda precompila il modulo con il prompt esistente e registra la <b>filiazione</b> (« ispirato da », mostrata su entrambe le schede): è la via della personalizzazione. L'opzione <b>sincronizzazione</b> (spuntata su /verifier) salva il tuo profilo sul server per ritrovare conversazioni e preferiti su un altro browser.</p>
+        <p><b>Dopo:</b> una modifica di un tutor pubblicato crea una <b>nuova versione</b> — le conversazioni in corso restano sulla loro e propongono il passaggio, senza mai imporlo. Può <b>ritirare i Suoi</b> tutor in ogni momento dalla Sua officina (il link segreto) e ripubblicarli più tardi (niente viene mai cancellato: i contatori restano intatti). I <b>commenti anonimi</b> lasciati sulle Sue schede La aspettano: è Lei a moderarli (approvare o nascondere). « Proponi una variante » su qualsiasi scheda precompila il modulo con il prompt esistente e registra la <b>filiazione</b> (« ispirato da », mostrata su entrambe le schede): è la via della personalizzazione. L'opzione <b>sincronizzazione</b> (spuntata su /verifier) salva il Suo profilo sul server per ritrovare conversazioni e preferiti su un altro browser.</p>
       </Section>
 
       <Section id="validation" title="Il processo di validazione">
@@ -167,7 +167,7 @@ export default function GuideIT() {
           <li><b>5 × media delle valutazioni</b> — la qualità percepita (stelle 1-5) pesa fino a 25 punti: un tutor eccellente ma recente può superare un tutor vecchio e mediamente apprezzato.</li>
           <li><b>50 / (1 + età)</b> — un bonus di freschezza, forte nei primi giorni e poi decrescente: i nuovi tutor hanno la loro occasione di essere visti, evitando che i primi pubblicati monopolizzino la testa (« effetto valanga »).</li>
         </ul>
-        <p>Gli altri ordinamenti sono colonne dirette del database: <b>più usati</b> (usi), <b>migliori valutazioni</b> (media, a parità decide il numero di giudizi), <b>più recenti</b> (data di creazione), <b>token generati</b> (volume prodotto), <b>nome</b> (alfabetico). E i tuoi <b>preferiti</b> — puramente locali — sono sempre fissati in cima, nell'ordine dell'ordinamento scelto.</p>
+        <p>Gli altri ordinamenti sono colonne dirette del database: <b>più usati</b> (usi), <b>migliori valutazioni</b> (media, a parità decide il numero di giudizi), <b>più recenti</b> (data di creazione), <b>token generati</b> (volume prodotto), <b>nome</b> (alfabetico). E i Suoi <b>preferiti</b> — puramente locali — sono sempre fissati in cima, nell'ordine dell'ordinamento scelto.</p>
       </Section>
 
       <Section id="donnees" title="Cosa viene memorizzato — e dove">
@@ -177,12 +177,12 @@ export default function GuideIT() {
               <tr><th className="py-1 pr-2">Dato</th><th className="pr-2">Dove</th><th>Dettaglio</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversazioni, chiave API personale, preferiti, valutazioni date, allegati</td><td className="pr-2"><b>Il tuo browser</b></td><td>Mai sul server (gli allegati sono solo inoltrati al fornitore). La chiave personale è conservata in QUESTO browser per non doverla ridigitare — vedi la <Link className="underline" href="/rgpd">pagina Privacy</Link>. Due eccezioni: il salvataggio del profilo per gli account e la chiave memorizzata sul server, su richiesta.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversazioni, chiave API personale, preferiti, valutazioni date, allegati</td><td className="pr-2"><b>Il Suo browser</b></td><td>Mai sul server (gli allegati sono solo inoltrati al fornitore). La chiave personale è conservata in QUESTO browser per non doverla ridigitare — veda la <Link className="underline" href="/rgpd">pagina Privacy</Link>. Due eccezioni: il salvataggio del profilo per gli account e la chiave memorizzata sul server, su richiesta.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Tutor socratici</td><td className="pr-2">Database</td><td>Testo integrale, versioni successive, filiazione (« ispirato da »), stato, contatori anonimi (usi, token generati, somma e numero delle valutazioni).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Account promptagogo / insegnante</td><td className="pr-2">Database</td><td>Nome pubblico, email (mai mostrata), ruoli, opzione di sincronizzazione. <b>Nessuna password esiste.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Istituti e consumi</td><td className="pr-2">Database</td><td>Dettagliato nella <Link className="underline" href="/etablissements#donnees">guida degli istituti</Link> (IP, orari, quote, registro dei consumi per IP — nessun dato nominativo di studenti).</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profilo sincronizzato (opzione)</td><td className="pr-2">Database</td><td>Copia del tuo profilo del browser, cancellabile in ogni momento da /verifier.</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Chiave API memorizzata (su richiesta, account)</td><td className="pr-2">Database</td><td>Solo se spunti « Memorizza la mia chiave » nella chat: la chiave è conservata <b>cifrata</b> (AES-256-GCM), non torna mai al browser e sparisce appena togli la spunta.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Profilo sincronizzato (opzione)</td><td className="pr-2">Database</td><td>Copia del Suo profilo del browser, cancellabile in ogni momento da /verifier.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Chiave API memorizzata (su richiesta, account)</td><td className="pr-2">Database</td><td>Solo se spunta « Memorizza la mia chiave » nella chat: la chiave è conservata <b>cifrata</b> (AES-256-GCM), non torna mai al browser e sparisce appena toglie la spunta.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Contatore « online » della home</td><td className="pr-2">Database</td><td>Un&apos;impronta tecnica non reversibile del browser (mai l&apos;IP in chiaro) e l&apos;ora dell&apos;ultima attività, cancellate dopo quindici minuti.</td></tr>
             </tbody>
           </table>
