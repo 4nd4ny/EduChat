@@ -127,8 +127,10 @@ type FactureRow = {
   participationPct: number; total: number; devise: string;
   emiseAt: number | null; payeeAt: number | null; tarifChange: boolean;
 };
-type Impayee = { etablissementId: number; etablissement: string; periode: string;
-  total: number; devise: string; emiseAt: number; billingEmail: string };
+type Compte = { etablissementId: number; etablissement: string; respire: boolean; solde: number;
+  devise: string; billingEmail: string; depense30: number; jours: number | null;
+  recharge: number; aSec: boolean };
+type MouvementRow = { id: number; ts: number; genre: string; montant: number; solde: number; detail: string; par: string };
 type Participation = { devise: string; pct: number; collectee: number; demo: number; respire: number; jetonsOfferts: number };
 type PropositionTarif = { modele: string; entreeMtok: number; sortieMtok: number;
   melangeMtok: number; devise: string; detail: string; at: number };
@@ -220,7 +222,8 @@ export default function AdminPage() {
     ],
   });
   const [factures, setFactures] = useState<FactureRow[]>([]);
-  const [impayees, setImpayees] = useState<Impayee[]>([]);
+  const [comptes, setComptes] = useState<Compte[]>([]);
+  const [mouvements, setMouvements] = useState<MouvementRow[]>([]);
   const [participation, setParticipation] = useState<Participation | null>(null);
   const [tarifsListe, setTarifsListe] = useState<TarifRow[]>([]);
   const [sondeEnCours, setSondeEnCours] = useState(false);
@@ -245,6 +248,9 @@ export default function AdminPage() {
       .then(r => r.json()).then(data => setCatalogue(data.catalogue ?? [])).catch(() => {});
     fetch("/api/admin/tarifs", { headers: authHeaders() })
       .then(r => r.json()).then(d => setTarifsListe(d.tarifs ?? [])).catch(() => {});
+    fetch("/api/admin/credits", { headers: authHeaders() })
+      .then(r => r.json()).then(d => { setComptes(d.comptes ?? []); setMouvements(d.mouvements ?? []); })
+      .catch(() => {});
     fetch("/api/admin/comments", { headers: authHeaders() })
       .then(r => r.json())
       .then(data => { setComments(data.comments ?? []); setModeratedTotal(data.moderatedTotal ?? 0); })
@@ -427,7 +433,7 @@ export default function AdminPage() {
     if (!y || !m) return;
     fetch(`/api/admin/factures?year=${y}&month=${Number(m)}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(d => { setFactures(d.factures ?? []); setImpayees(d.impayees ?? []); setParticipation(d.participation ?? null); })
+      .then(d => { setFactures(d.factures ?? []); setParticipation(d.participation ?? null); })
       .catch(() => {});
   }, [period, isSuper]);
 
@@ -440,7 +446,18 @@ export default function AdminPage() {
     if (!r.ok) { setMessage(t("admin.facture.failed")); return; }
     const [yy, mm] = period.split("-");
     fetch(`/api/admin/factures?year=${yy}&month=${Number(mm)}`, { headers: authHeaders() })
-      .then(x => x.json()).then(d => { setFactures(d.factures ?? []); setImpayees(d.impayees ?? []); })
+      .then(x => x.json()).then(d => setFactures(d.factures ?? []))
+      .catch(() => {});
+  };
+
+  const recharger = async (etablissementId: number, montant: number) => {
+    const r = await fetch("/api/admin/credits", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ etablissementId, montant, genre: "recharge" }),
+    });
+    if (!r.ok) { setMessage(t("admin.credit.failed")); return; }
+    fetch("/api/admin/credits", { headers: authHeaders() })
+      .then(x => x.json()).then(d => { setComptes(d.comptes ?? []); setMouvements(d.mouvements ?? []); })
       .catch(() => {});
   };
 
@@ -940,8 +957,6 @@ export default function AdminPage() {
                   <b>{f.etablissement}</b>
                   <span className="opacity-60">{f.periode}</span>
                   {f.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.facture.respire")}</span>}
-                  {f.payeeAt && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.facture.paid")}</span>}
-                  {!f.payeeAt && f.emiseAt && <span className="rounded bg-amber-500/30 px-1.5 text-xs">{t("admin.facture.unpaid")}</span>}
                   {f.tarifChange && <span className="rounded bg-amber-500/30 px-1.5 text-xs" title={t("admin.facture.driftTitle")}>{t("admin.facture.drift")}</span>}
                   <span className="flex-grow" />
                   {isSuper && !f.respire && (
@@ -949,11 +964,6 @@ export default function AdminPage() {
                       <button onClick={() => actionFacture(f.etablissementId, "emettre")} className={BTN}>
                         {f.emiseAt ? t("admin.facture.reissue") : t("admin.facture.issue")}
                       </button>
-                      {f.emiseAt && (
-                        <button onClick={() => actionFacture(f.etablissementId, f.payeeAt ? "impayee" : "payee", f.periode)} className={BTN}>
-                          {f.payeeAt ? t("admin.facture.markUnpaid") : t("admin.facture.markPaid")}
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -1051,30 +1061,57 @@ export default function AdminPage() {
           </p>
         )}
 
-        {isSuper && impayees.length > 0 && (
+        {comptes.length > 0 && (
           <>
-            <h3 className="mt-6 font-bold">{t("admin.impayees.heading", { n: impayees.length })}</h3>
+            <h3 className="mt-6 font-bold">{t("admin.credit.heading")}</h3>
+            <p className="mt-1 text-xs opacity-60">{t("admin.credit.help")}</p>
             <table className="mt-2 w-full text-left text-sm">
               <thead className="text-xs uppercase opacity-60">
-                <tr><th className="py-1">{t("admin.col.school")}</th><th>{t("admin.impayees.period")}</th>
-                  <th>{t("admin.impayees.billingEmail")}</th><th className="text-right">{t("admin.facture.total")}</th><th /></tr>
+                <tr><th className="py-1">{t("admin.col.school")}</th>
+                  <th className="text-right">{t("admin.credit.balance")}</th>
+                  <th className="text-right">{t("admin.credit.spent30")}</th>
+                  <th className="text-right">{t("admin.credit.days")}</th>
+                  <th className="text-right" title={t("admin.credit.suggestTitle")}>{t("admin.credit.suggest")}</th>
+                  <th /></tr>
               </thead>
               <tbody>
-                {impayees.map(f => (
-                  <tr key={`${f.etablissementId}-${f.periode}`} className="border-b border-white/5">
-                    <td className="py-1">{f.etablissement}</td>
-                    <td>{f.periode}</td>
-                    <td className="text-xs opacity-70">{f.billingEmail || "—"}</td>
-                    <td className="text-right font-mono">{f.total.toFixed(2)} {f.devise}</td>
+                {comptes.map(c => (
+                  <tr key={c.etablissementId} className="border-b border-white/5">
+                    <td className="py-1">{c.etablissement}
+                      {c.respire && <span className="ml-1 rounded bg-green-600/30 px-1 text-xs">{t("admin.credit.free")}</span>}
+                      {c.aSec && <span className="ml-1 rounded bg-red-600/40 px-1 text-xs">{t("admin.credit.dry")}</span>}
+                    </td>
+                    <td className={`text-right font-mono ${c.aSec ? "text-red-300" : ""}`}>{c.solde.toFixed(2)} {c.devise}</td>
+                    <td className="text-right font-mono text-xs opacity-70">{c.depense30.toFixed(2)}</td>
+                    <td className="text-right text-xs">{c.jours === null ? t("admin.credit.unknown") : t("admin.credit.daysValue", { n: c.jours })}</td>
+                    <td className="text-right font-mono text-xs">{c.respire ? "—" : `${c.recharge.toFixed(0)} ${c.devise}`}</td>
                     <td className="text-right">
-                      <button onClick={() => actionFacture(f.etablissementId, "payee", f.periode)} className={BTN}>
-                        {t("admin.facture.markPaid")}
-                      </button>
+                      {isSuper && !c.respire && (
+                        <button onClick={() => { const v = Number(window.prompt(t("admin.credit.topUp"), String(c.recharge || 100)));
+                          if (Number.isFinite(v) && v > 0) void recharger(c.etablissementId, v); }} className={BTN}>
+                          {t("admin.credit.topUp")}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {mouvements.length > 0 && (
+              <>
+                <h4 className="mt-4 text-xs font-bold uppercase opacity-60">{t("admin.credit.movements")}</h4>
+                <ul className="mt-1 flex flex-col gap-0.5 text-xs">
+                  {mouvements.slice(0, 12).map(m => (
+                    <li key={m.id} className="flex gap-3 opacity-70">
+                      <span className="w-24 shrink-0">{new Date(m.ts).toLocaleDateString("fr-CH")}</span>
+                      <span className={`w-20 shrink-0 text-right font-mono ${m.montant < 0 ? "" : "text-green-300"}`}>{m.montant.toFixed(2)}</span>
+                      <span className="w-20 shrink-0 text-right font-mono opacity-60">{m.solde.toFixed(2)}</span>
+                      <span className="truncate">{m.detail || m.genre}{m.par ? ` · ${m.par}` : ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </>
         )}
       </section>

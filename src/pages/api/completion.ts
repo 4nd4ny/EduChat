@@ -10,6 +10,7 @@ import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
 import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
+import { aDuCredit, decompter } from "../../server/porteMonnaie";
 import { notifyAdmin } from "../../server/mail";
 import { touchPresence } from "../../server/stats";
 import { AlertIpDailyTokens, DeveloperKeys, FreeProvider, FreeModel, FreeModels } from "../../utils/env";
@@ -313,6 +314,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       usedServerKey = true;
       // Plafond MENSUEL de l'établissement (0 = illimité, mois UTC).
+      // PORTE-MONNAIE À SEC : on refuse AVANT d'appeler le fournisseur, sinon
+      // l'école paie l'appel qu'on s'apprête à lui refuser. Ici et pas plus
+      // haut : hors salle déverrouillée, le visiteur relève du repli gratuit
+      // public, qu'un porte-monnaie vide n'a aucune raison de fermer.
+      // Code DISTINCT du quota : une classe qui bute sur un mur doit lire
+      // « l'école n'a plus de crédit » — « quota dépassé » l'enverrait
+      // attendre demain un déblocage qui ne viendra pas tout seul.
+      if (etablissementId && !aDuCredit(etablissementId)) {
+        return res.status(402).json({ error: { code: 'ERR_SCHOOL_NO_CREDIT' } });
+      }
+
       if (etab && etab.token_quota_monthly > 0) {
         const now = new Date();
         const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
@@ -386,6 +398,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
           `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, effProvider, effModel,
                  tokenUsage, detail.entree, detail.sortie, studentBucket);
+          // Décompte du porte-monnaie DANS LA MÊME TRANSACTION que la ligne de
+          // journal : séparés, le registre et le solde finiraient par diverger,
+          // et plus rien ne se réconcilierait. L'exonération RESPIRE est
+          // vérifiée dans decompter, pas ici : une règle de gratuité ne se
+          // répète pas à chaque point d'appel.
+          if (etablissementId) {
+            decompter(etablissementId, effProvider, detail.entree, detail.sortie, effModel);
+          }
         } else if (usedFreeKey) {
           // Clé gratuite publique : journalisée SANS IP ni établissement (suivi
           // du budget gratuit uniquement, aucune donnée personnelle).

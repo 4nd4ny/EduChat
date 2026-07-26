@@ -33,6 +33,30 @@
 import { getDb } from './db';
 import { getLadder } from './ladder';
 import { SCHOOL_PROVIDER_IDS, type ProviderId } from '../shared/providers';
+import { BillingCurrency } from '../utils/env';
+
+/**
+ * Taux USD → monnaie de facturation, lu chez Frankfurter (données BCE, sans
+ * clé). Approximatif et assumé : ces prix servent à PROVISIONNER un
+ * porte-monnaie, pas à établir une créance. Une seconde source publique
+ * (open.er-api) donnait 0.817769 quand celle-ci donnait 0.81761 — l'écart, deux
+ * dix-millièmes, dit assez que la précision n'est pas le sujet.
+ *
+ * Injoignable, on rend null : la sonde propose alors en dollars, en le disant,
+ * plutôt que d'inventer un taux.
+ */
+async function tauxDeChange(): Promise<number | null> {
+  if (BillingCurrency.toUpperCase() === 'USD') return 1;
+  try {
+    const r = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${encodeURIComponent(BillingCurrency)}`,
+      { signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) return null;
+    const taux = (await r.json())?.rates?.[BillingCurrency.toUpperCase()];
+    return typeof taux === 'number' && taux > 0 ? taux : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Rapport entrée/sortie retenu pour le mélange, faute de le mesurer. */
 export const RATIO_ENTREE = 0.75;
@@ -99,6 +123,8 @@ export async function sonderTarifs(): Promise<Proposition[]> {
     panne = String(erreur instanceof Error ? erreur.message : erreur).slice(0, 200);
   }
 
+  const taux = await tauxDeChange();
+
   const db = getDb();
   const ecrire = db.prepare(`
     INSERT INTO tarifs (provider, prix_mtok, updated_at, propose_entree, propose_sortie, propose_melange, propose_modele, propose_detail, propose_at)
@@ -116,8 +142,12 @@ export async function sonderTarifs(): Promise<Proposition[]> {
     const echelle = getLadder(provider);
     const barreau = echelle[Math.min(1, echelle.length - 1)] ?? '';
     const trouve = panne || !barreau ? undefined : correspond(barreau, catalogue);
-    const entree = trouve?.pricing?.prompt ? parseFloat(trouve.pricing.prompt) * 1e6 : 0;
-    const sortie = trouve?.pricing?.completion ? parseFloat(trouve.pricing.completion) * 1e6 : 0;
+    // Converti dans la monnaie de facturation quand le taux a pu être lu :
+    // une proposition en dollars oblige l'administration à sortir une
+    // calculette, ce qui est précisément le geste qu'on veut lui épargner.
+    const k = taux ?? 1;
+    const entree = (trouve?.pricing?.prompt ? parseFloat(trouve.pricing.prompt) * 1e6 : 0) * k;
+    const sortie = (trouve?.pricing?.completion ? parseFloat(trouve.pricing.completion) * 1e6 : 0) * k;
 
     // « Non trouvé » doit SE VOIR. Un zéro muet arrêterait la facturation d'un
     // fournisseur sans que personne s'en aperçoive.
@@ -130,7 +160,7 @@ export async function sonderTarifs(): Promise<Proposition[]> {
       provider, modele: trouve?.id ?? '',
       entreeMtok: centimes(entree), sortieMtok: centimes(sortie),
       melangeMtok: centimes(entree * RATIO_ENTREE + sortie * (1 - RATIO_ENTREE)),
-      devise: 'USD', detail, at,
+      devise: taux ? BillingCurrency : 'USD', detail, at,
     };
     try {
       ecrire.run({
@@ -153,5 +183,5 @@ export function propositions(): Record<string, Omit<Proposition, 'provider'>> {
            propose_detail AS detail, propose_at AS at
     FROM tarifs WHERE propose_at > 0
   `).all() as Array<Omit<Proposition, 'devise'> & { provider: string }>;
-  return Object.fromEntries(rows.map(({ provider, ...reste }) => [provider, { ...reste, devise: 'USD' }]));
+  return Object.fromEntries(rows.map(({ provider, ...reste }) => [provider, { ...reste, devise: BillingCurrency }]));
 }

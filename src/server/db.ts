@@ -112,6 +112,22 @@ CREATE TABLE IF NOT EXISTS factures (
   PRIMARY KEY (etablissement_id, periode)
 );
 
+-- REGISTRE DU PORTE-MONNAIE d'un établissement. Une recharge est un
+-- événement dont on demandera des comptes ; un solde seul ne sait pas d'où il
+-- vient. Le solde vit sur etablissements.solde et se met à jour dans la MÊME
+-- transaction que le mouvement — sinon les deux divergent sans retour.
+CREATE TABLE IF NOT EXISTS credit_mouvements (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  etablissement_id INTEGER NOT NULL,
+  ts               INTEGER NOT NULL,
+  genre            TEXT NOT NULL,          -- recharge · consommation · ajustement
+  montant          REAL NOT NULL,          -- signé : + une recharge, − une consommation
+  solde            REAL NOT NULL,          -- solde APRÈS le mouvement, pour relire l'historique
+  detail           TEXT NOT NULL DEFAULT '',
+  par              TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_credit_etab ON credit_mouvements(etablissement_id, ts);
+
 CREATE TABLE IF NOT EXISTS email_codes (
   email        TEXT PRIMARY KEY,
   name         TEXT NOT NULL DEFAULT '',
@@ -382,6 +398,14 @@ export function getDb(): Database.Database {
     // une répartition rétroactive serait inventer des chiffres.
     "ALTER TABLE usage_log ADD COLUMN tokens_in INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE usage_log ADD COLUMN tokens_out INTEGER NOT NULL DEFAULT 0",
+    // Solde du porte-monnaie, dans la monnaie de facturation. Il peut passer
+    // sous zéro : le contrôle a lieu AVANT l'appel, et une réponse déjà
+    // produite se paie. Le dépassement est borné par une réponse.
+    "ALTER TABLE etablissements ADD COLUMN solde REAL NOT NULL DEFAULT 0",
+    // Prix du million de jetons, séparés : un jeton de sortie en vaut cinq.
+    // prix_mtok reste le repli tant que le détail n'est pas réglé.
+    "ALTER TABLE tarifs ADD COLUMN prix_entree_mtok REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE tarifs ADD COLUMN prix_sortie_mtok REAL NOT NULL DEFAULT 0",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec
