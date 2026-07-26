@@ -288,7 +288,7 @@ export default function ComptePage() {
   if (state === "anonymous" || !data) {
     return (
       <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
-        <Head><title>{t("compte.title")} — EduChat</title></Head>
+        <Head><title>{`${t("compte.title")} — EduChat`}</title></Head>
         <h1 className="text-2xl font-bold">{t("compte.title")}</h1>
         <p className="mt-3 opacity-80">{t("compte.anonymous")}</p>
         <Link href="/verifier" className="mt-4 inline-block rounded bg-[#DC6521] px-4 py-2 font-bold text-[#111827] hover:opacity-90">
@@ -302,7 +302,7 @@ export default function ComptePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
-      <Head><title>{t("compte.title")} — EduChat</title></Head>
+      <Head><title>{`${t("compte.title")} — EduChat`}</title></Head>
 
       {!seule && (<>
       {demo && (

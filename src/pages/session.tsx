@@ -183,7 +183,7 @@ export default function SessionPage() {
   if (identifie === false && !demo) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>{t("session.title")} — EduChat</title></Head>
+        <Head><title>{`${t("session.title")} — EduChat`}</title></Head>
         <MdSchool className="mx-auto mb-4 text-5xl text-[#DC6521]" />
         <h1 className="text-2xl font-bold">{t("session.locked.title")}</h1>
         <p className="mt-3 opacity-80">{t("session.locked.text")}</p>
@@ -205,7 +205,7 @@ export default function SessionPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
-      <Head><title>{t("session.title")} — EduChat</title></Head>
+      <Head><title>{`${t("session.title")} — EduChat`}</title></Head>
 
       {demo && (
         <p className="mt-5 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">

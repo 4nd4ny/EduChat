@@ -67,7 +67,7 @@ export default function AdminDemoPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
-      <Head><title>{t("admindemo.headTitle")} — EduChat</title></Head>
+      <Head><title>{`${t("admindemo.headTitle")} — EduChat`}</title></Head>
       {tour && <InterfaceTour parcours="admin" onClose={() => setTour(false)} />}
 
       <p className="rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">

@@ -408,7 +408,7 @@ export default function AdminPage() {
     // qui refusent l'entrée doivent le faire de la même façon.
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>{t("admin.title")} — EduChat</title></Head>
+        <Head><title>{`${t("admin.title")} — EduChat`}</title></Head>
         <MdAdminPanelSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
         <h1 className="text-2xl font-bold">{t("admin.denied.title")}</h1>
         <p className="mt-3 opacity-80">
@@ -451,7 +451,7 @@ export default function AdminPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-6 pb-16 text-primary">
-      <Head><title>{t("admin.title")} — EduChat</title></Head>
+      <Head><title>{`${t("admin.title")} — EduChat`}</title></Head>
       <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
       {message && <p className="mt-2 text-sm text-red-400">{message}</p>}
 

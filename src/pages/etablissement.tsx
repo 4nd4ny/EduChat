@@ -115,7 +115,7 @@ export default function EtablissementPage() {
   if (state === "auth" || state === "none") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>{t("etab.title")} — EduChat</title></Head>
+        <Head><title>{`${t("etab.title")} — EduChat`}</title></Head>
         {/* Même allure que la garde d'accès de /duel, et l'engrenage de la
             tuile « Établissement » de l'accueil : une même porte doit se
             reconnaître d'une page à l'autre. */}
@@ -145,7 +145,7 @@ export default function EtablissementPage() {
   const etab = data!.etablissement;
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-20 text-primary">
-      <Head><title>{t("etab.title")} — EduChat</title></Head>
+      <Head><title>{`${t("etab.title")} — EduChat`}</title></Head>
 
       {demo && (
         <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">

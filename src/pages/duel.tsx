@@ -181,7 +181,7 @@ export default function DuelPage() {
   if ((me === "anonymous" || (me && !me.isPromptagogue)) && !demo) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>{t("duel.title")} — EduChat</title></Head>
+        <Head><title>{`${t("duel.title")} — EduChat`}</title></Head>
         <MdCompareArrows className="mx-auto mb-4 text-5xl text-[#DC6521]" />
         <h1 className="text-2xl font-bold">{t("duel.locked.title")}</h1>
         <p className="mt-3 opacity-80">{t("duel.locked.subtitle")}</p>
@@ -200,7 +200,7 @@ export default function DuelPage() {
   // ---- L'atelier -----------------------------------------------------------
   return (
     <div className="mx-auto max-w-6xl px-4 pt-6 pb-24 text-primary">
-      <Head><title>{t("duel.title")} — EduChat</title></Head>
+      <Head><title>{`${t("duel.title")} — EduChat`}</title></Head>
 
       {demo && (
         <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
