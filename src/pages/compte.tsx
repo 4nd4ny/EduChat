@@ -6,7 +6,37 @@ import { authHeaders, getAccount, storeToken } from "../utils/account";
 import { buildProfile } from "../utils/profile";
 import { deleteServerConversations, deleteServerProfile } from "../utils/profileSync";
 import { providerDefaults } from "../shared/providers";
+import { useRouter } from "next/router";
+import InterfaceTour from "../chat/InterfaceTour";
 import type { AccountData } from "../server/accountData";
+
+// Dossier FICTIF de la visite guidée : de quoi montrer chaque section — dont
+// celles réservées à un enseignant ou à un promptagogue — sans emprunter les
+// données de personne.
+const DOSSIER_DEMO: AccountData = {
+  identite: {
+    email: "claire.martin@example.org", name: "claire.martin",
+    createdAt: Date.parse("2026-02-14T09:00:00Z"), verifiedAt: Date.parse("2026-07-20T08:30:00Z"),
+    isPromptagogue: true, isTeacher: true, isAdmin: false, syncOptin: true, keysOptin: true,
+  },
+  consommation: {
+    declaredTokens: 128400, profileUpdatedAt: Date.parse("2026-07-25T17:10:00Z"),
+    quota: { usedBytes: 8420, maxBytes: 1048576 },
+    teacherPilotedTokens: 96300,
+    etablissement: { id: 1, name: "Collège de la Démonstration", monthTokens: 412350 },
+  },
+  keys: [{ provider: "mistral", updatedAt: Date.parse("2026-07-22T14:05:00Z"), readable: true }],
+  moderations: 3,
+  conversations: [
+    { id: "d1", name: "Théorème de Pythagore", createdAt: 1784100000000, lastMessage: 1784900000000, messageCount: 14, promptName: "Socrate", promptVersion: 3, bytes: 8210 },
+    { id: "d2", name: "Révolution française", createdAt: 1784200000000, lastMessage: 1784800000000, messageCount: 6, promptName: "Montaigne", promptVersion: 1, bytes: 3140 },
+  ],
+  deletedConversations: 1,
+  prompts: [
+    { id: 7, name: "Ératosthène", description: "Mesurer la Terre par le questionnement.", status: "published", archived: false, version: 2, usageCount: 143, tokensTotal: 51200, ratingCount: 9, sizeBytes: 4210, createdAt: 1783000000000, updatedAt: 1784500000000 },
+  ],
+  anonymousPromptsWarning: true,
+};
 
 // « Mes données » — ce que le serveur conserve d'un compte, et de quoi le
 // reprendre en main : tout exporter, effacer ce qui peut l'être.
@@ -32,9 +62,11 @@ function octets(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(2)} Mo`;
 }
 
-function Section({ numero, titre, children }: { numero: number; titre: string; children: React.ReactNode }) {
+function Section({ numero, titre, ancre, children }: {
+  numero: number; titre: string; ancre?: string; children: React.ReactNode;
+}) {
   return (
-    <section className="mt-6">
+    <section data-tour={ancre} className="mt-6">
       <h2 className="mb-2 flex items-baseline gap-2 text-lg font-bold">
         <span className="text-sm opacity-50">{numero}.</span>{titre}
       </h2>
@@ -61,6 +93,13 @@ export default function ComptePage() {
   const [codeEmail, setCodeEmail] = useState("");
   const [attenteCode, setAttenteCode] = useState(false);
 
+  // DÉMONSTRATION (?visite=1) : la page s'ouvre sans compte, avec un dossier
+  // FICTIF, pour montrer ce que chaque profil y trouve. Aucun appel serveur.
+  const router = useRouter();
+  const demo = router.isReady && router.query.visite === "1";
+  const [tour, setTour] = useState(false);
+  useEffect(() => { if (demo) setTour(true); }, [demo]);
+
   const charger = useCallback(async () => {
     // Le jeton local ne prouve rien (il n'est pas vérifié côté navigateur) :
     // c'est la réponse du serveur qui décide de l'état de la page.
@@ -85,6 +124,13 @@ export default function ComptePage() {
   }, []);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    if (demo) {
+      setData(DOSSIER_DEMO);
+      setNom(DOSSIER_DEMO.identite.name);
+      setState("ready");
+      return;
+    }
     // Un effacement recharge la page (voir rafraichirTout) : le compte rendu
     // doit lui survivre, sans quoi l'utilisateur ne saurait pas que c'est
     // fait.
@@ -92,7 +138,7 @@ export default function ComptePage() {
     if (garde) { setMessage(garde); sessionStorage.removeItem("educhat-compte-message"); }
     if (!getAccount()) { setState("anonymous"); return; }
     void charger();
-  }, [charger]);
+  }, [charger, router.isReady, demo]);
 
   /**
    * Rechargement complet après un effacement. Le contexte du chat garde en
@@ -245,7 +291,17 @@ export default function ComptePage() {
     <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
       <Head><title>{t("compte.title")} — EduChat</title></Head>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      {demo && (
+        <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
+          <b>Démonstration.</b> Voici « Mes données » telle que la voit une enseignante qui
+          publie aussi des tuteurs — avec un dossier fictif. Chaque section montre ce qu&apos;un
+          profil y trouve : un apprenant n&apos;aura ni tuteurs ni séances de classe, un
+          promptagogue n&apos;aura pas d&apos;établissement.
+        </p>
+      )}
+      {tour && <InterfaceTour parcours="compte" onClose={() => setTour(false)} />}
+
+      <div data-tour="compte-export" className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">{t("compte.title")}</h1>
           <p className="mt-1 text-sm opacity-70">{identite.name} · {identite.email}</p>
@@ -280,7 +336,7 @@ export default function ComptePage() {
       )}
 
       {/* 1 — Consommation ------------------------------------------------ */}
-      <Section numero={1} titre={t("compte.usage.title")}>
+      <Section ancre="compte-conso" numero={1} titre={t("compte.usage.title")}>
         <p className="text-sm opacity-80">{t("compte.usage.notMeasured")}</p>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
@@ -322,7 +378,7 @@ export default function ComptePage() {
       </Section>
 
       {/* 2 — Clés API ------------------------------------------------------ */}
-      <Section numero={2} titre={t("compte.keys.title")}>
+      <Section ancre="compte-cles" numero={2} titre={t("compte.keys.title")}>
         <p className="text-sm opacity-80">{t("compte.keys.intro")}</p>
         {keys.length === 0
           ? <p className="mt-3 text-sm opacity-60">{t("compte.keys.none")}</p>
@@ -353,7 +409,7 @@ export default function ComptePage() {
       </Section>
 
       {/* 3 — Conversations -------------------------------------------------- */}
-      <Section numero={3} titre={t("compte.conv.title")}>
+      <Section ancre="compte-conversations" numero={3} titre={t("compte.conv.title")}>
         <p className="text-sm opacity-80">{t("compte.conv.intro")}</p>
 
         <label className="mt-3 flex items-center gap-2 text-xs">
@@ -428,7 +484,7 @@ export default function ComptePage() {
       </Section>
 
       {/* 4 — Le reste -------------------------------------------------------- */}
-      <Section numero={4} titre={t("compte.other.title")}>
+      <Section ancre="compte-tuteurs" numero={4} titre={t("compte.other.title")}>
         <h3 className="text-sm font-bold">{t("compte.prompts.title")}</h3>
         <p className="mt-1 text-xs opacity-70">{t("compte.prompts.publicDomain")}</p>
         {prompts.length === 0
@@ -463,7 +519,7 @@ export default function ComptePage() {
           <p className="mt-2 text-xs opacity-60">{t("compte.prompts.anonymous")}</p>
         )}
 
-        <h3 className="mt-5 text-sm font-bold">{t("compte.identity.title")}</h3>
+        <h3 data-tour="compte-identite" className="mt-5 text-sm font-bold">{t("compte.identity.title")}</h3>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs">
             {t("compte.identity.name")}

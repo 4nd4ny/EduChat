@@ -245,7 +245,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // à drapeau rouge : ce serait envoyer des travaux d'élèves hors UE
       // sans cadre de transfert. Ces fournisseurs restent accessibles en
       // clé personnelle, sous la responsabilité de leur titulaire.
-      if (providerDefaults[provider].wrng) {
+      // AI Act : ni les fournisseurs à drapeau rouge, ni ceux réservés aux
+      // adultes ne passent par la clé d'un établissement — c'est un public
+      // scolaire, donc mineur par défaut.
+      if (providerDefaults[provider].wrng || providerDefaults[provider].adultOnly) {
         return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
       }
       usedServerKey = true;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
+import { PUBLIC_PROVIDER_IDS } from "../shared/providers";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -149,7 +150,11 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             aria-label={t("chat.input.provider")}
             className={`${FIELD} w-full ${bar && drapeau ? "rounded-l-none" : ""}`}
           >
-            {Object.entries(providerDefaults).map(([id, item]) => {
+            {/* AI Act : les fournisseurs réservés aux adultes ne figurent pas
+                dans la liste. Le code les connaît toujours — ils reviendront
+                avec le compte adulte vérifié. */}
+            {PUBLIC_PROVIDER_IDS.map(id => {
+              const item = providerDefaults[id];
               const cleRequise = served !== null && !served.includes(id);
               return (
                 <option key={id} value={id}>

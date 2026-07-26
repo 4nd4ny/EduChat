@@ -49,4 +49,24 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'duel-question', shape: 'rect', textKey: 'tour.duel.question' },
     { target: 'duel-envoyer', shape: 'rect', textKey: 'tour.duel.send' },
   ],
+
+  // « Mes données » — ce que chaque profil y trouve.
+  compte: [
+    { target: 'compte-conso', shape: 'rect', textKey: 'tour.compte.usage' },
+    { target: 'compte-cles', shape: 'rect', textKey: 'tour.compte.keys' },
+    { target: 'compte-conversations', shape: 'rect', textKey: 'tour.compte.conversations' },
+    { target: 'compte-tuteurs', shape: 'rect', textKey: 'tour.compte.prompts' },
+    { target: 'compte-identite', shape: 'rect', textKey: 'tour.compte.identity' },
+    { target: 'compte-export', shape: 'rect', textKey: 'tour.compte.export' },
+  ],
+
+  // La vitrine de l'administration (page /admin-demo, données fictives).
+  admin: [
+    { target: 'admin-validation', shape: 'rect', textKey: 'tour.admin.validation' },
+    { target: 'admin-prompts', shape: 'rect', textKey: 'tour.admin.prompts' },
+    { target: 'admin-comptes', shape: 'rect', textKey: 'tour.admin.accounts' },
+    { target: 'admin-etablissements', shape: 'rect', textKey: 'tour.admin.schools' },
+    { target: 'admin-echelle', shape: 'rect', textKey: 'tour.admin.ladder' },
+    { target: 'admin-facturation', shape: 'rect', textKey: 'tour.admin.billing' },
+  ],
 };

@@ -41,23 +41,31 @@ export type ReasoningLevel = "low" | "medium" | "high";
 export const providerDefaults: Record<ProviderId, {
   label: string; model: string; gdpr?: boolean; wrng?: boolean;
   images?: boolean; pdf?: boolean; voice?: boolean;
+  /**
+   * `adultOnly` : fournisseur RETIRÉ de l'interface publique au titre du
+   * règlement européen sur l'IA (AI Act), qui interdit d'exposer des mineurs
+   * à certains systèmes. Le code reste entier — ces fournisseurs
+   * reviendront derrière le futur « compte adulte vérifié ». D'ici là ils
+   * n'apparaissent nulle part, et la clé d'une école ne les finance jamais.
+   */
+  adultOnly?: boolean;
 }> = {
   mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true, images: true, voice: true },
   anthropic: { label: "Claude", model: "claude-sonnet-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
-  gemini: { label: "Gemini", model: "gemini-3.5-flash" },
-  grok: { label: "Grok", model: "grok-4.5", images: true },
+  gemini: { label: "Gemini", model: "gemini-3.5-flash", adultOnly: true },
+  grok: { label: "Grok", model: "grok-4.5", adultOnly: true, images: true },
   openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
   // Modèles chinois : API compatibles OpenAI, clé PERSONNELLE uniquement,
   // TEXTE seulement dans EduChat. Des variantes « vision » existent chez
   // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :
   // annoncer le trombone avec le modèle par défaut ne ferait que produire
   // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
-  deepseek: { label: "DeepSeek", model: "deepseek-v4-flash", wrng: true },
-  qwen: { label: "Qwen", model: "qwen-plus", wrng: true },
-  kimi: { label: "Kimi", model: "kimi-k2.5", wrng: true },
-  glm: { label: "GLM", model: "glm-4.6", wrng: true },
-  minimax: { label: "MiniMax", model: "MiniMax-M2.5", wrng: true },
+  deepseek: { label: "DeepSeek", model: "deepseek-v4-flash", adultOnly: true, wrng: true },
+  qwen: { label: "Qwen", model: "qwen-plus", adultOnly: true, wrng: true },
+  kimi: { label: "Kimi", model: "kimi-k2.5", adultOnly: true, wrng: true },
+  glm: { label: "GLM", model: "glm-4.6", adultOnly: true, wrng: true },
+  minimax: { label: "MiniMax", model: "MiniMax-M2.5", adultOnly: true, wrng: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.
@@ -111,3 +119,11 @@ export const ERR = {
 } as const;
 
 export type ErrorCode = (typeof ERR)[keyof typeof ERR];
+
+/**
+ * Fournisseurs proposés dans l'interface publique — ceux qu'un mineur peut
+ * légitimement rencontrer. Les autres ne sont pas supprimés : ils attendent
+ * le mode « compte adulte vérifié ».
+ */
+export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
+  id => !providerDefaults[id].adultOnly);
