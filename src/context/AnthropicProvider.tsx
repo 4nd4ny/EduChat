@@ -3,7 +3,7 @@ import React, { PropsWithChildren, useCallback, useEffect, useMemo, useState } f
 import { useRouter } from "next/router";
 import { Conversation, getHistory, clearHistory, storeConversation, History, deleteConversationFromHistory, updateConversation } from "./History";
 
-import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
+import { PROVIDER_IDS, providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
 import type { Rung } from "../shared/ladder";
 import { translate } from "../i18n/useT";
 import { getClientId } from "../utils/clientId";
@@ -74,6 +74,7 @@ type Context = {
   provider: ProviderId; setProvider: (value: ProviderId) => void; model: string; setModel: (value: string) => void;
   apiKey: string; setApiKey: (value: string) => void; reasoning: ReasoningLevel; setReasoning: (value: ReasoningLevel) => void;
   rung: Rung; canEscalate: boolean; modelPinned: boolean; pinModel: (value: string) => void; regenerate: () => void;
+  rememberKeyLocally: (value: string) => void; forgetKeyLocally: () => void;
   promptName: string; setPromptName: (value: string) => void;
   promptVersion: number; switchPromptVersion: (version: number) => void;
   shareToken: string; setShareToken: (value: string) => void;
@@ -90,6 +91,7 @@ const ChatContext = React.createContext<Context>({
   provider: "anthropic", setProvider: noop as any, model: providerDefaults.anthropic.model, setModel: noop as any,
   apiKey: "", setApiKey: noop as any, reasoning: "medium", setReasoning: noop as any,
   rung: 1, canEscalate: true, modelPinned: false, pinModel: noop as any, regenerate: noop as any,
+  rememberKeyLocally: noop as any, forgetKeyLocally: noop as any,
   promptName: "", setPromptName: noop as any,
   promptVersion: 0, switchPromptVersion: noop as any,
   shareToken: "", setShareToken: noop as any,
@@ -207,17 +209,36 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
   const cleStockee = (id: ProviderId) => {
     try { return localStorage.getItem(`educhat-key-${id}`) ?? ""; } catch { return ""; }
   };
-  const setApiKey = useCallback((value: string) => {
-    setApiKeyState(value);
-    try {
-      if (value.trim()) localStorage.setItem(`educhat-key-${provider}`, value.trim());
-      else localStorage.removeItem(`educhat-key-${provider}`);
-    } catch { /* stockage refusé (navigation privée) : la clé reste en mémoire */ }
+
+  // Taper une clé ne la mémorise PAS. Un secret ne s'enregistre que sur un
+  // geste explicite (la case « Mémoriser ma clé »), dans le navigateur pour un
+  // visiteur, sur le serveur — chiffré — pour un compte.
+  const setApiKey = useCallback((value: string) => setApiKeyState(value), []);
+
+  /** Consentement donné : la clé du champ est gardée dans CE navigateur. */
+  const rememberKeyLocally = useCallback((value: string) => {
+    try { localStorage.setItem(`educhat-key-${provider}`, value.trim()); } catch { /* stockage refusé */ }
+  }, [provider]);
+
+  /** Retrait du consentement : la clé quitte ce navigateur. */
+  const forgetKeyLocally = useCallback(() => {
+    try { localStorage.removeItem(`educhat-key-${provider}`); } catch { /* stockage refusé */ }
   }, [provider]);
 
   // Au démarrage et à chaque changement de fournisseur, on retrouve la clé de
   // CE fournisseur : elles ne sont pas interchangeables.
-  useEffect(() => { setApiKeyState(cleStockee(provider)); }, [provider]);
+  //
+  // Purge au passage les clés déposées par la version précédente, qui les
+  // enregistrait AUTOMATIQUEMENT : sans cela, la page de confidentialité
+  // promettrait un consentement que ces navigateurs-là n'ont jamais donné.
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("educhat-key-consent")) {
+        for (const id of PROVIDER_IDS) localStorage.removeItem(`educhat-key-${id}`);
+      }
+    } catch { /* stockage refusé */ }
+    setApiKeyState(cleStockee(provider));
+  }, [provider]);
 
   const setProvider = useCallback((next: ProviderId) => {
     setProviderState(next);
@@ -364,7 +385,7 @@ export default function AnthropicProvider({ children }: PropsWithChildren) {
     }
   }, [loadConversation, router]);
 
-  const value = useMemo(() => ({ savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, rung, canEscalate, modelPinned, pinModel, regenerate, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, addMessage, provider, setProvider, model, modelPinned, pinModel, regenerate, apiKey, reasoning, rung, canEscalate, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
+  const value = useMemo(() => ({ savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, setMessages, addMessage, provider, setProvider, model, setModel, apiKey, setApiKey, reasoning, setReasoning, rung, canEscalate, modelPinned, pinModel, regenerate, rememberKeyLocally, forgetKeyLocally, promptName, setPromptName, promptVersion, switchPromptVersion, shareToken, setShareToken, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error }), [savedKeyProviders, keysOptin, refreshSavedKeys, hasUsableKey, loading, messages, addMessage, provider, setProvider, model, modelPinned, pinModel, regenerate, apiKey, reasoning, rung, canEscalate, rememberKeyLocally, forgetKeyLocally, conversationId, conversationName, updateConversationName, generateTitle, loadConversation, importConversation, resetConversation, deleteConversation, deleteMessagesFromIndex, clearConversation, conversations, clearConversations, error]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 

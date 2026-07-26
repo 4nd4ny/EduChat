@@ -9,6 +9,19 @@ import React from "react";
 // JAMAIS de compte élève. Contenu disponible dans les quatre langues du site.
 
 type Section = { title: string; body: string[] };
+
+/**
+ * Les paragraphes sont du texte simple — jamais du HTML, pour qu'aucune
+ * balise ne puisse s'y glisser. Les adresses web y sont donc écrites en
+ * clair, et rendues cliquables ici.
+ */
+function avecLiens(texte: string): React.ReactNode {
+  const morceaux = texte.split(/(https?:\/\/[^\s,)]+)/g);
+  return morceaux.map((morceau, i) =>
+    /^https?:\/\//.test(morceau)
+      ? <a key={i} href={morceau} target="_blank" rel="noreferrer" className="underline">{morceau}</a>
+      : <React.Fragment key={i}>{morceau}</React.Fragment>);
+}
 type Content = { title: string; intro: string; sections: Section[] };
 
 const CONTENT: Record<string, Content> = {
@@ -26,7 +39,10 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Les clés API personnelles",
         body: [
-          "La clé API que vous saisissez est CONSERVÉE DANS CE NAVIGATEUR (stockage local, une entrée par fournisseur) pour ne pas avoir à la retaper à chaque visite. Elle ne part sur aucun serveur d'EduChat pour y être stockée : elle transite chiffrée (HTTPS) à chaque requête, le serveur la relaie au fournisseur d'IA sans la garder. Contrepartie à connaître : conservée dans le navigateur, elle est lisible par tout script s'exécutant sur cet appareil — comme un mot de passe enregistré. Effacez le champ pour la retirer, ou videz les données du site.",
+          "Votre clé API n'est JAMAIS mémorisée sans votre accord — ni dans le navigateur, ni sur le serveur. La taper ne la garde nulle part : elle transite chiffrée (HTTPS) le temps d'une requête, le serveur la relaie au fournisseur d'IA sans la conserver, et tout disparaît en fermant l'onglet. Ce choix est délibéré : une clé API est un moyen de paiement, elle ne se garde pas par commodité.",
+          "Si vous cochez « Mémoriser ma clé » — le seul geste qui l'enregistre — sa destination dépend de votre situation. Sans compte : dans CE navigateur uniquement, et il faut le savoir, elle y est alors lisible par tout script s'exécutant sur cet appareil, comme un mot de passe enregistré. Avec un compte : sur le serveur, CHIFFRÉE (AES-256-GCM), ce qui vous la restitue d'un appareil à l'autre — elle ne redescend jamais vers le navigateur, le serveur la déchiffre le temps d'appeler le fournisseur.",
+          "Deux moyens de l'effacer, au choix. Depuis le chat : videz le champ de la clé, quittez-le, et cochez « Oublier ma clé » — le navigateur et le serveur sont nettoyés d'un même geste. Depuis la page Mes données : « Oublier cette clé » retire celle d'un fournisseur, « Retirer mon accord et tout effacer » supprime le consentement et toutes les clés d'un coup.",
+          "Élèves passant par leur école : aucune clé personnelle n'est requise, ni même utile. C'est la clé de l'établissement qui répond, ouverte par l'enseignant pour la salle et pour une durée limitée ; la consommation est facturée à l'école, et rien n'est demandé à l'élève — ni compte, ni clé.",
           "SEULE EXCEPTION, à votre demande : si vous avez un compte et que vous cochez « Mémoriser ma clé » dans le chat, elle est conservée CHIFFRÉE (AES-256-GCM) sur le serveur, pour vous éviter de la retaper. Elle ne redescend jamais vers le navigateur : le serveur la déchiffre uniquement le temps d'appeler le fournisseur. Décocher la case l'efface immédiatement. Les élèves, qui n'ont pas de compte, ne sont jamais concernés.",
         ],
       },
@@ -60,7 +76,7 @@ const CONTENT: Record<string, Content> = {
           "Accès et portabilité : la page Mes données (icône de compte, en haut à gauche) montre tout ce que le serveur conserve à votre sujet et l'exporte en un fichier. Effacement libre-service : vos conversations sauvegardées, une par une ou toutes, et vos clés API mémorisées.",
           "Vos tuteurs publiés, eux, ne sont JAMAIS supprimés : une fois parus au catalogue ils appartiennent au domaine public d'EduChat, et leurs compteurs servent au calcul des factures des établissements. Vous les DÉPUBLIEZ — ils quittent le catalogue, et vous pouvez les republier. L'archivage définitif se demande à l'administration.",
           "Suppression du compte lui-même : par simple demande à l'administrateur, blanvillain@harmonia.education (vos tuteurs publiés restent au catalogue, sous un auteur anonymisé).",
-          "Le code du site est public et auditable. Aucun cookie n'est utilisé, aucune donnée n'est cédée à des tiers — les messages envoyés aux fournisseurs d'IA sont soumis à leurs politiques respectives.",
+          "Le code du site est public et auditable : https://github.com/4nd4ny/EduChat — vous pouvez y vérifier chacune des affirmations de cette page. Aucun cookie n'est utilisé, aucune donnée n'est cédée à des tiers ; les messages envoyés aux fournisseurs d'IA sont soumis à leurs politiques respectives.",
         ],
       },
     ],
@@ -79,7 +95,10 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Personal API keys",
         body: [
-          "The API key you type is KEPT IN THIS BROWSER (local storage, one entry per provider) so you do not have to retype it at every visit. It is not stored on any EduChat server: it travels encrypted (HTTPS) with each request, and the server relays it to the AI provider without keeping it. The trade-off to know: kept in the browser, it is readable by any script running on this device — like a saved password. Clear the field to remove it, or clear the site data.",
+          "Your API key is NEVER remembered without your consent — neither in the browser nor on the server. Typing it stores it nowhere: it travels encrypted (HTTPS) for the length of one request, the server relays it to the AI provider without keeping it, and everything disappears when you close the tab. This is deliberate: an API key is a means of payment, not something to keep out of convenience.",
+          "If you tick « Remember my key » — the only gesture that stores it — where it goes depends on your situation. Without an account: in THIS browser only, and you should know it is then readable by any script running on this device, like a saved password. With an account: on the server, ENCRYPTED (AES-256-GCM), which gives it back to you on any device — it never travels back to the browser, the server decrypts it only to call the provider.",
+          "Two ways to erase it. From the chat: clear the key field, leave it, and tick « Forget my key » — browser and server are cleaned in one gesture. From the My data page: « Forget this key » removes one provider's, « Withdraw my consent and erase everything » removes the consent and every key at once.",
+          "Pupils going through their school: no personal key is required, nor even useful. The school's key answers, opened by the teacher for the room and for a limited time; usage is billed to the school, and nothing is asked of the pupil — no account, no key.",
           "THE ONLY EXCEPTION, at your request: if you have an account and tick « Remember my key » in the chat, it is kept ENCRYPTED (AES-256-GCM) on the server so you do not have to retype it. It never travels back to the browser: the server decrypts it only to call the provider. Unticking the box erases it immediately. Students, who have no account, are never concerned.",
         ],
       },
@@ -113,7 +132,7 @@ const CONTENT: Record<string, Content> = {
           "Access and portability: the My data page (account icon, top left) shows everything the server keeps about you and exports it as a single file. Self-service erasure: your saved conversations, one by one or all of them, and your remembered API keys.",
           "Your published tutors are NEVER deleted: once in the catalogue they belong to the EduChat public domain, and their counters feed the schools' invoices. You UNPUBLISH them — they leave the catalogue, and you may republish them. Permanent archiving is requested from the administration.",
           "Deleting the account itself: on request to the administrator, blanvillain@harmonia.education (your published tutors stay in the catalogue, under an anonymised author).",
-          "The site's code is public and auditable. No cookies are used, no data is sold or shared — messages sent to AI providers are subject to their respective policies.",
+          "The site's code is public and auditable: https://github.com/4nd4ny/EduChat — you can check every claim on this page against it. No cookies are used, no data is sold or shared; messages sent to AI providers are subject to their respective policies.",
         ],
       },
     ],
@@ -132,7 +151,10 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Le chiavi API personali",
         body: [
-          "La chiave API che digiti è CONSERVATA IN QUESTO BROWSER (storage locale, una voce per fornitore) per non doverla ridigitare a ogni visita. Non viene memorizzata su alcun server di EduChat: viaggia cifrata (HTTPS) a ogni richiesta e il server la inoltra al fornitore di IA senza conservarla. Il rovescio della medaglia: conservata nel browser, è leggibile da qualsiasi script in esecuzione su questo dispositivo — come una password salvata. Svuota il campo per rimuoverla, oppure cancella i dati del sito.",
+          "La tua chiave API non viene MAI memorizzata senza il tuo consenso — né nel browser, né sul server. Digitarla non la conserva da nessuna parte: viaggia cifrata (HTTPS) per il tempo di una richiesta, il server la inoltra al fornitore di IA senza conservarla, e tutto sparisce chiudendo la scheda. È una scelta deliberata: una chiave API è un mezzo di pagamento, non si conserva per comodità.",
+          "Se spunti « Memorizza la mia chiave » — l'unico gesto che la registra — la destinazione dipende dalla tua situazione. Senza account: solo in QUESTO browser, e va saputo che lì è leggibile da qualsiasi script in esecuzione sul dispositivo, come una password salvata. Con un account: sul server, CIFRATA (AES-256-GCM), il che te la restituisce da un dispositivo all'altro — non torna mai al browser, il server la decifra solo per chiamare il fornitore.",
+          "Due modi per cancellarla. Dalla chat: svuota il campo della chiave, esci dal campo e spunta « Dimentica la mia chiave » — browser e server vengono puliti con lo stesso gesto. Dalla pagina I miei dati: « Dimentica questa chiave » rimuove quella di un fornitore, « Ritira il consenso e cancella tutto » elimina il consenso e tutte le chiavi in una volta.",
+          "Allievi che passano dalla loro scuola: nessuna chiave personale è richiesta, né utile. Risponde la chiave dell'istituto, aperta dall'insegnante per l'aula e per una durata limitata; il consumo è fatturato alla scuola e all'allievo non si chiede nulla — né account, né chiave.",
           "UNICA ECCEZIONE, su tua richiesta: se hai un account e spunti « Memorizza la mia chiave » nella chat, viene conservata CIFRATA (AES-256-GCM) sul server per non doverla riscrivere. Non torna mai al browser: il server la decifra solo per chiamare il fornitore. Togliendo la spunta viene cancellata subito. Gli studenti, che non hanno account, non sono mai coinvolti.",
         ],
       },
@@ -166,7 +188,7 @@ const CONTENT: Record<string, Content> = {
           "Accesso e portabilità: la pagina I miei dati (icona dell'account, in alto a sinistra) mostra tutto ciò che il server conserva su di te e lo esporta in un unico file. Cancellazione in autonomia: le conversazioni salvate, una per una o tutte, e le chiavi API memorizzate.",
           "I tuoi tutor pubblicati non vengono MAI eliminati: una volta nel catalogo appartengono al dominio pubblico di EduChat e i loro contatori servono alle fatture degli istituti. Li DEPUBBLICHI — escono dal catalogo e puoi ripubblicarli. L'archiviazione definitiva si chiede all'amministrazione.",
           "Cancellazione dell'account: su semplice richiesta all'amministratore, blanvillain@harmonia.education (i tuoi tutor pubblicati restano nel catalogo, con autore reso anonimo).",
-          "Il codice del sito è pubblico e verificabile. Nessun cookie, nessuna cessione di dati a terzi — i messaggi inviati ai fornitori di IA sono soggetti alle loro rispettive politiche.",
+          "Il codice del sito è pubblico e verificabile: https://github.com/4nd4ny/EduChat — puoi controllarvi ogni affermazione di questa pagina. Nessun cookie, nessuna cessione di dati a terzi; i messaggi inviati ai fornitori di IA sono soggetti alle loro rispettive politiche.",
         ],
       },
     ],
@@ -185,7 +207,10 @@ const CONTENT: Record<string, Content> = {
       {
         title: "Persönliche API-Schlüssel",
         body: [
-          "Der eingegebene API-Schlüssel wird IN DIESEM BROWSER GESPEICHERT (lokaler Speicher, ein Eintrag pro Anbieter), damit Sie ihn nicht bei jedem Besuch neu eintippen müssen. Auf keinem EduChat-Server wird er abgelegt: Er wird bei jeder Anfrage verschlüsselt (HTTPS) übertragen, und der Server reicht ihn ohne Speicherung an den KI-Anbieter weiter. Die Kehrseite: Im Browser gespeichert, ist er für jedes Skript auf diesem Gerät lesbar — wie ein gespeichertes Passwort. Leeren Sie das Feld, um ihn zu entfernen, oder löschen Sie die Website-Daten.",
+          "Ihr API-Schlüssel wird NIE ohne Ihre Zustimmung gespeichert — weder im Browser noch auf dem Server. Ihn einzutippen bewahrt ihn nirgends auf: Er wird für die Dauer einer Anfrage verschlüsselt (HTTPS) übertragen, der Server reicht ihn ohne Speicherung an den KI-Anbieter weiter, und alles verschwindet mit dem Schließen des Tabs. Das ist Absicht: Ein API-Schlüssel ist ein Zahlungsmittel und wird nicht aus Bequemlichkeit aufbewahrt.",
+          "Wenn Sie „Meinen Schlüssel merken“ ankreuzen — die einzige Handlung, die ihn speichert — hängt das Ziel von Ihrer Lage ab. Ohne Konto: nur in DIESEM Browser, und man sollte wissen, dass er dort für jedes Skript auf diesem Gerät lesbar ist, wie ein gespeichertes Passwort. Mit Konto: auf dem Server, VERSCHLÜSSELT (AES-256-GCM), wodurch Sie ihn auf jedem Gerät wiederfinden — er gelangt nie zurück in den Browser, der Server entschlüsselt ihn nur, um den Anbieter aufzurufen.",
+          "Zwei Wege, ihn zu löschen. Aus dem Chat: Feld leeren, es verlassen und „Meinen Schlüssel vergessen“ ankreuzen — Browser und Server werden mit derselben Handlung bereinigt. Über die Seite Meine Daten: „Diesen Schlüssel vergessen“ entfernt den eines Anbieters, „Zustimmung zurückziehen und alles löschen“ hebt die Zustimmung auf und löscht alle Schlüssel auf einmal.",
+          "Schülerinnen und Schüler über ihre Schule: Ein persönlicher Schlüssel ist weder nötig noch nützlich. Es antwortet der Schulschlüssel, von der Lehrperson für den Raum und für begrenzte Zeit geöffnet; der Verbrauch wird der Schule berechnet, und von den Lernenden wird nichts verlangt — kein Konto, kein Schlüssel.",
           "EINZIGE AUSNAHME, auf Ihren Wunsch: Mit einem Konto und dem Häkchen „Schlüssel merken“ im Chat wird er VERSCHLÜSSELT (AES-256-GCM) auf dem Server aufbewahrt, damit Sie ihn nicht erneut eintippen müssen. Er gelangt nie zurück in den Browser: Der Server entschlüsselt ihn nur, um den Anbieter aufzurufen. Abwählen löscht ihn sofort. Schülerinnen und Schüler ohne Konto sind nie betroffen.",
         ],
       },
@@ -219,7 +244,7 @@ const CONTENT: Record<string, Content> = {
           "Auskunft und Übertragbarkeit: Die Seite Meine Daten (Kontosymbol, oben links) zeigt alles, was der Server über Sie aufbewahrt, und exportiert es in eine einzige Datei. Löschen in Eigenregie: Ihre gesicherten Gespräche, einzeln oder alle, und Ihre gespeicherten API-Schlüssel.",
           "Ihre veröffentlichten Tutoren werden NIE gelöscht: Einmal im Katalog gehören sie zur Allmende von EduChat, und ihre Zähler dienen den Rechnungen der Schulen. Sie ZIEHEN sie ZURÜCK — sie verlassen den Katalog, und Sie können sie wieder veröffentlichen. Die endgültige Archivierung wird bei der Verwaltung beantragt.",
           "Löschung des Kontos selbst: auf einfache Anfrage an den Administrator, blanvillain@harmonia.education (Ihre veröffentlichten Tutoren bleiben im Katalog, mit anonymisierter Autorschaft).",
-          "Der Code der Website ist öffentlich und überprüfbar. Es werden keine Cookies verwendet, keine Daten an Dritte weitergegeben — an KI-Anbieter gesendete Nachrichten unterliegen deren jeweiligen Richtlinien.",
+          "Der Code der Website ist öffentlich und überprüfbar: https://github.com/4nd4ny/EduChat — dort lässt sich jede Aussage dieser Seite nachprüfen. Es werden keine Cookies verwendet, keine Daten an Dritte weitergegeben; an KI-Anbieter gesendete Nachrichten unterliegen deren jeweiligen Richtlinien.",
         ],
       },
     ],
@@ -239,7 +264,7 @@ export default function RgpdPage() {
         <section key={section.title} className="mt-8">
           <h2 className="text-xl font-bold">{section.title}</h2>
           {section.body.map((paragraph, i) => (
-            <p key={i} className="mt-2 text-sm leading-relaxed opacity-90">{paragraph}</p>
+            <p key={i} className="mt-2 text-sm leading-relaxed opacity-90">{avecLiens(paragraph)}</p>
           ))}
         </section>
       ))}

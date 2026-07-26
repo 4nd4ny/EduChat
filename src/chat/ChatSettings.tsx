@@ -34,7 +34,7 @@ function Wrap({ bar, label, width, children }: {
 
 export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const {
-    provider, setProvider, apiKey, setApiKey,
+    provider, setProvider, apiKey, setApiKey, rememberKeyLocally, forgetKeyLocally,
     savedKeyProviders, refreshSavedKeys,
   } = useAnthropic();
   const t = useT();
@@ -75,12 +75,26 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
     refreshSavedKeys();
   };
 
-  // Cocher = enregistrer la clé du champ ; champ vide = effacer celle que le
-  // serveur détient pour ce fournisseur (« mémoriser l'absence de clé »).
+  /**
+   * Cocher est le SEUL geste qui mémorise une clé — ni la frappe, ni l'envoi
+   * d'un message ne l'enregistrent. Où elle va dépend de qui vous êtes :
+   *   sans compte → dans CE navigateur, et nulle part ailleurs ;
+   *   avec compte → sur le serveur, chiffrée, donc retrouvée d'un appareil à
+   *                 l'autre (elle n'en redescend jamais).
+   * Champ vidé → le même geste efface, des deux côtés à la fois.
+   */
   const memoriser = async () => {
     setSaisieFinie(false);
-    if (apiKey.trim()) { await putKeys({ optin: true, provider, apiKey }); return; }
     setKeyError("");
+    if (apiKey.trim()) {
+      if (hasAccount) await putKeys({ optin: true, provider, apiKey });
+      else rememberKeyLocally(apiKey);
+      try { localStorage.setItem("educhat-key-consent", "1"); } catch { /* stockage refusé */ }
+      return;
+    }
+    // Oublier : le navigateur d'abord (immédiat et sûr), le serveur ensuite.
+    forgetKeyLocally();
+    if (!hasAccount) return;
     const response = await fetch(`/api/keys?provider=${encodeURIComponent(provider)}`,
       { method: "DELETE", headers: authHeaders() });
     if (response.ok) refreshSavedKeys(); else setKeyError(t("err.fallback"));
@@ -95,8 +109,13 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   //   champ vidé mais clé mémorisée → proposer d'oublier celle du serveur.
   const [saisieFinie, setSaisieFinie] = useState(false);
   useEffect(() => { setSaisieFinie(false); }, [provider]);
-  const aProposer = saisieFinie && (apiKey.trim() ? true : keySaved);
-  const oublier = !apiKey.trim() && keySaved;
+  // Une clé est-elle déjà gardée pour ce fournisseur, ici ou sur le serveur ?
+  const cleLocale = (() => {
+    try { return !!localStorage.getItem(`educhat-key-${provider}`); } catch { return false; }
+  })();
+  const dejaGardee = keySaved || cleLocale;
+  const aProposer = saisieFinie && (apiKey.trim() ? true : dejaGardee);
+  const oublier = !apiKey.trim() && dejaGardee;
   const drapeau = !!(providerDefaults[provider]?.gdpr || providerDefaults[provider]?.wrng);
 
   return (
@@ -171,7 +190,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
           pour ce fournisseur et le serveur ne l'a pas encore. Le reste du
           temps elle n'avait rien à proposer, et occupait la barre pour rien.
           Cocher vaut consentement ET enregistrement, en un geste. */}
-      {hasAccount && keysAvailable && aProposer && (
+      {aProposer && (hasAccount ? keysAvailable : true) && (
         <label className={`flex items-center gap-1.5 text-[10px] leading-tight text-primary ${bar ? "max-w-[7rem]" : ""}`}
           title={oublier ? t("chat.input.forgetKeyTitle") : t("chat.input.rememberKeyTitle")}>
           <input type="checkbox" checked={false} onChange={() => void memoriser()} />
