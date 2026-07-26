@@ -15,23 +15,7 @@ import { useT } from "../i18n/useT";
 // Les cibles sont les attributs data-tour posés dans les composants du chat ;
 // une étape dont l'élément est absent (ex. trombone sans clé) est sautée.
 
-type TourStep = { target: string; shape: "rect" | "circle"; textKey: string };
-
-const STEPS: TourStep[] = [
-  { target: "tutor", shape: "rect", textKey: "tour.tutor" },
-  { target: "messages", shape: "rect", textKey: "tour.messages" },
-  { target: "history", shape: "rect", textKey: "tour.history" },
-  // Ni « model » ni « reasoning » : le choix du modèle a quitté le chat (il
-  // suit l'échelle réglée dans /admin) et l'effort suit le barreau. Une étape
-  // sans cible laisserait la visite chercher pendant cinq secondes.
-  { target: "provider", shape: "rect", textKey: "tour.provider" },
-  { target: "apikey", shape: "rect", textKey: "tour.apikey" },
-  { target: "composer", shape: "rect", textKey: "tour.composer" },
-  { target: "attach", shape: "circle", textKey: "tour.attach" },
-  { target: "voice", shape: "circle", textKey: "tour.voice" },
-  { target: "send", shape: "circle", textKey: "tour.send" },
-  { target: "tokens", shape: "rect", textKey: "tour.tokens" },
-];
+import { TOURS, type TourStep } from "./tourSteps";
 
 const STEP_MS = 3200; // ~3 s par élément (exigence : 2-3 s de focus)
 
@@ -51,7 +35,11 @@ function measure(target: string): Box | null {
   };
 }
 
-export default function InterfaceTour({ onClose }: { onClose: () => void }) {
+/**
+ * @param parcours  Nom du jeu d'étapes (voir tourSteps.ts). Par défaut celui
+ *                  du chat, qui était le seul à l'origine.
+ */
+export default function InterfaceTour({ onClose, parcours = "chat" }: { onClose: () => void; parcours?: string }) {
   const t = useT();
   const router = useRouter();
   // Étapes réellement disponibles sur CET écran (éléments présents).
@@ -69,7 +57,7 @@ export default function InterfaceTour({ onClose }: { onClose: () => void }) {
     // visite silencieusement vide).
     let attempts = 0;
     const collect = () => {
-      const available = STEPS.filter(step => measure(step.target) !== null);
+      const available = (TOURS[parcours] ?? TOURS.chat).filter(step => measure(step.target) !== null);
       if (available.length) { setSteps(available); return true; }
       return false;
     };
@@ -79,7 +67,7 @@ export default function InterfaceTour({ onClose }: { onClose: () => void }) {
       if (collect() || attempts >= 25) clearInterval(timer);
     }, 200);
     return () => clearInterval(timer);
-  }, []);
+  }, [parcours]);
 
   const current = steps[index] ?? null;
 

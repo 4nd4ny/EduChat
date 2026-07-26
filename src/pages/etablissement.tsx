@@ -2,6 +2,8 @@ import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 import { MdAdd, MdDelete, MdSchool, MdSettings } from "react-icons/md";
+import { useRouter } from "next/router";
+import InterfaceTour from "../chat/InterfaceTour";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 
@@ -30,7 +32,34 @@ export default function EtablissementPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // DÉMONSTRATION (?visite=1) : l'espace s'ouvre avec un établissement
+  // FICTIF et tous les réglages inertes. Aucun appel au serveur : on montre
+  // l'interface d'un responsable sans emprunter les données d'un vrai.
+  const router = useRouter();
+  const demo = router.query.visite === "1";
+  const [tour, setTour] = useState(false);
+  useEffect(() => { if (demo) setTour(true); }, [demo]);
+  const fige = demo || busy;
+
   useEffect(() => {
+    if (!router.isReady) return;   // ?visite=1 n'est lisible qu'ensuite
+    if (demo) {
+      setData({
+        etablissement: {
+          name: "Collège de la Démonstration", ips: "203.0.113.0/24", respire: true,
+          hours: [{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }],
+          quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000,
+        },
+        usage: { monthTokens: 412350, byProvider: [
+          { provider: "mistral", requests: 1240, tokens: 318900 },
+          { provider: "anthropic", requests: 210, tokens: 93450 },
+        ] },
+      });
+      setHours([{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }]);
+      setPerStudent("20000"); setMonthly("3000000");
+      setState("ready");
+      return;
+    }
     fetch("/api/etablissement", { headers: authHeaders() })
       .then(r => {
         if (r.status === 401) { setState("auth"); return null; }
@@ -46,7 +75,7 @@ export default function EtablissementPage() {
         setState("ready");
       })
       .catch(() => setState("auth"));
-  }, []);
+  }, [demo, router.isReady]);
 
   const addSlot = () => setHours([...hours, { day: 1, start: "08:00", end: "17:00" }]);
   const updateSlot = (i: number, patch: Partial<HourSlot>) =>
@@ -115,7 +144,16 @@ export default function EtablissementPage() {
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-20 text-primary">
       <Head><title>Mon établissement — EduChat</title></Head>
 
-      <h1 className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {etab.name}</h1>
+      {demo && (
+        <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
+          <b>Démonstration.</b> Voici l&apos;espace tel que le voit le responsable d&apos;un
+          établissement — avec une école fictive, et tous les réglages désactivés : rien de ce
+          qui est montré ici ne peut être modifié.
+        </p>
+      )}
+      {tour && <InterfaceTour parcours="etablissement" onClose={() => setTour(false)} />}
+
+      <h1 data-tour="etab-identite" className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {etab.name}</h1>
       <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">Guide des établissements</Link> — accès élèves, quotas, facturation, parcours.</p>
       <p className="mt-1 text-sm opacity-70">
         Vous êtes responsable de cet établissement. Vos élèves accèdent gratuitement à EduChat
@@ -124,7 +162,7 @@ export default function EtablissementPage() {
       </p>
 
       {/* --- Horaires d'accès libre --- */}
-      <section className="mt-8">
+      <section data-tour="etab-horaires" className="mt-8">
         <h2 className="text-lg font-bold">Quand vos élèves peuvent-ils utiliser EduChat ?</h2>
         <p className="mt-1 text-sm opacity-70">
           En dehors de ces créneaux, l'accès gratuit par le réseau de l'école est fermé
@@ -135,21 +173,21 @@ export default function EtablissementPage() {
           {hours.length === 0 && <p className="text-sm opacity-50">Aucun créneau défini.</p>}
           {hours.map((slot, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
-              <select value={slot.day} onChange={e => updateSlot(i, { day: Number(e.target.value) })}
+              <select disabled={fige} value={slot.day} onChange={e => updateSlot(i, { day: Number(e.target.value) })}
                 className="rounded bg-tertiary p-2">
                 {DAYS.map((d, di) => <option key={di} value={di}>{d}</option>)}
               </select>
               <span className="opacity-60">de</span>
-              <input type="time" value={slot.start} onChange={e => updateSlot(i, { start: e.target.value })}
+              <input disabled={fige} type="time" value={slot.start} onChange={e => updateSlot(i, { start: e.target.value })}
                 className="rounded bg-tertiary p-2" />
               <span className="opacity-60">à</span>
-              <input type="time" value={slot.end} onChange={e => updateSlot(i, { end: e.target.value })}
+              <input disabled={fige} type="time" value={slot.end} onChange={e => updateSlot(i, { end: e.target.value })}
                 className="rounded bg-tertiary p-2" />
-              <button onClick={() => removeSlot(i)} aria-label="Supprimer ce créneau"
+              <button disabled={fige} onClick={() => removeSlot(i)} aria-label="Supprimer ce créneau"
                 className="rounded p-2 text-red-400 hover:bg-red-500/10"><MdDelete /></button>
             </div>
           ))}
-          <button onClick={addSlot}
+          <button disabled={fige} onClick={addSlot}
             className="flex w-fit items-center gap-1 rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">
             <MdAdd /> Ajouter un créneau
           </button>
@@ -157,7 +195,7 @@ export default function EtablissementPage() {
       </section>
 
       {/* --- Limites de dépense --- */}
-      <section className="mt-8">
+      <section data-tour="etab-quotas" className="mt-8">
         <h2 className="text-lg font-bold">Limites de consommation</h2>
         <p className="mt-1 text-sm opacity-70">
           Les échanges consomment des « tokens » (l'unité de facturation de l'IA). Ces plafonds
@@ -167,13 +205,13 @@ export default function EtablissementPage() {
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
             Par élève et par jour
-            <input value={perStudent} onChange={e => setPerStudent(e.target.value.replace(/\D/g, ""))}
+            <input disabled={fige} value={perStudent} onChange={e => setPerStudent(e.target.value.replace(/\D/g, ""))}
               inputMode="numeric" placeholder="ex. 50000 (≈ 30 questions)" className="rounded bg-tertiary p-2" />
             <span className="text-xs opacity-50">Remis à zéro chaque jour. Empêche qu'un élève monopolise le budget.</span>
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Total de l'établissement par mois
-            <input value={monthly} onChange={e => setMonthly(e.target.value.replace(/\D/g, ""))}
+            <input disabled={fige} value={monthly} onChange={e => setMonthly(e.target.value.replace(/\D/g, ""))}
               inputMode="numeric" placeholder="ex. 5000000" className="rounded bg-tertiary p-2" />
             <span className="text-xs opacity-50">Plafond global mensuel, remis à zéro le 1er du mois.</span>
           </label>
@@ -181,7 +219,7 @@ export default function EtablissementPage() {
       </section>
 
       <div className="mt-6 flex items-center gap-3">
-        <button onClick={save} disabled={busy}
+        <button onClick={save} disabled={fige}
           className="rounded bg-[#DC6521] px-5 py-2 font-bold hover:opacity-90 disabled:opacity-50">
           {busy ? "…" : "Enregistrer mes réglages"}
         </button>
@@ -189,7 +227,7 @@ export default function EtablissementPage() {
       </div>
 
       {/* --- Consommation du mois (lecture seule) --- */}
-      <section className="mt-10">
+      <section data-tour="etab-conso" className="mt-10">
         <h2 className="text-lg font-bold">Consommation du mois</h2>
         <p className="mt-1 text-sm opacity-80">
           Total : <b>{formatTokens(data!.usage.monthTokens)}</b> tokens sur la clé de la plateforme.

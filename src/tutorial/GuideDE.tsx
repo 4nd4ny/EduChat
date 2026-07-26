@@ -1,7 +1,7 @@
 import Link from "next/link";
 import React from "react";
-import { MdSchool, MdTour } from "react-icons/md";
-import { GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
+import { MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
+import { DemoButtons, GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
 
 // EduChat-Leitfaden — DEUTSCHE Version. Folgt exakt der Struktur von GuideFR.
 
@@ -80,14 +80,15 @@ export default function GuideDE() {
           ariaLabel="Funktionskarte nach Profil" />
       </div>
 
-      <Link href="/chat?tuteur=Socrate&visite=1"
-        className="mt-6 flex items-center gap-3 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-4 hover:bg-[#DC6521]/20">
-        <MdTour className="text-2xl text-[#DC6521]" />
-        <span className="text-sm">
-          <b>Interaktive Tour durch die Oberfläche</b> — der Chat-Bildschirm öffnet sich und jedes
-          Element (Tutor, Anbieter, Schlüssel, Mikrofon…) wird der Reihe nach vorgestellt, in 40 Sekunden.
-        </span>
-      </Link>
+      <DemoButtons
+        titre="Die vier Führungen"
+        chapeau="Jede Schaltfläche öffnet die ECHTE Seite, so wie die betreffende Person sie sieht, und erklärt sie Element für Element. Geschützte Oberflächen erscheinen entsperrt, aber reglos: Dort lässt sich nichts auslösen."
+        boutons={[
+          { label: "Lernende", note: "der Chat, von der Frage zur Antwort", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },
+          { label: "Lehrperson", note: "den Raum öffnen, einen Tutor bereitstellen", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
+          { label: "Schule", note: "Zeiten, Kontingente, Verbrauch", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
+          { label: "Promptagoge", note: "zwei Tutoren im Duell vergleichen", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
+        ]} />
 
       <div id="visite" className="mt-8 scroll-mt-6">
         <GuidedWalk steps={WALK}
@@ -103,6 +104,13 @@ export default function GuideDE() {
           <span className="underline">zum Schul-Leitfaden →</span>
         </span>
       </Link>
+
+      <Section id="tuteurs" title="Tutoren verwalten: suchen, sortieren, teilen">
+        <p dangerouslySetInnerHTML={{ __html: `<b>Suchen</b>: Das Suchfeld der Startseite durchsucht Name und Beschreibung aller veröffentlichten Tutoren. Drei Buchstaben genügen meist.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Sortieren</b>: „Empfohlen“ mischt Beliebtheit, Bewertungen und Aktualität, damit ein guter neuer Tutor nicht von einem alten verdrängt wird. Die übrigen Sortierungen sind roh — meistgenutzt, bestbewertet, neueste, grösster Tokenverbrauch oder alphabetisch. Ihre Favoriten stehen immer oben und gehen nur Sie etwas an: Sie leben in Ihrem Browser.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Mit der Gemeinschaft teilen</b>: „Einen Tutor vorschlagen“ startet von einer sokratischen Vorlage. Der Entwurf entsteht mit einer geheimen URL — teilen Sie sie mit Kolleginnen für Rückmeldungen, testen Sie ihn im Chat, dann reichen Sie ihn ein. Eine Administration oder jede bestätigte Promptagogin veröffentlicht ihn, und er erscheint im Katalog.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Einmal veröffentlicht</b>, gehört er zur Allmende von EduChat: Er wird nie gelöscht. Sie können ihn zurückziehen — er verlässt den Katalog und Sie können ihn zurückholen. „Eine Variante vorschlagen“ kopiert von jeder Seite aus den bestehenden Prompt und vermerkt die Abstammung „inspiriert von“ auf beiden Seiten: der normale Weg der Personalisierung.` }} />
+      </Section>
 
       <Section id="eleves" title="Schüler und Besucher — lernen">
         <ul className="list-inside list-disc space-y-1">

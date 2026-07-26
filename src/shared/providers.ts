@@ -46,8 +46,8 @@ export const providerDefaults: Record<ProviderId, {
   anthropic: { label: "Claude", model: "claude-sonnet-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash" },
-  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
   grok: { label: "Grok", model: "grok-4.5", images: true },
+  openrouter: { label: "OpenRouter", model: "openai/gpt-5.1", images: true, pdf: true },
   // Modèles chinois : API compatibles OpenAI, clé PERSONNELLE uniquement,
   // TEXTE seulement dans EduChat. Des variantes « vision » existent chez
   // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :

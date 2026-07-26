@@ -1,7 +1,7 @@
 import Link from "next/link";
 import React from "react";
-import { MdSchool, MdTour } from "react-icons/md";
-import { GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
+import { MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
+import { DemoButtons, GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
 
 // EduChat guide — ENGLISH version. Mirrors GuideFR structure exactly.
 
@@ -80,14 +80,15 @@ export default function GuideEN() {
           ariaLabel="Feature map by profile" />
       </div>
 
-      <Link href="/chat?tuteur=Socrate&visite=1"
-        className="mt-6 flex items-center gap-3 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-4 hover:bg-[#DC6521]/20">
-        <MdTour className="text-2xl text-[#DC6521]" />
-        <span className="text-sm">
-          <b>Interactive interface tour</b> — the chat screen opens and each element
-          (tutor, provider, key, microphone…) is presented in turn, in 40 seconds.
-        </span>
-      </Link>
+      <DemoButtons
+        titre="The four guided walkthroughs"
+        chapeau="Each button opens the REAL page as the person concerned sees it, and comments on it element by element. Restricted interfaces appear unlocked but inert: nothing can be triggered there."
+        boutons={[
+          { label: "Learner", note: "the chat, from question to answer", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },
+          { label: "Teacher", note: "open the room, deploy a tutor", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
+          { label: "School", note: "hours, quotas, usage", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
+          { label: "Promptagogue", note: "compare two tutors in a duel", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
+        ]} />
 
       <div id="visite" className="mt-8 scroll-mt-6">
         <GuidedWalk steps={WALK}
@@ -103,6 +104,13 @@ export default function GuideEN() {
           <span className="underline">see the schools guide →</span>
         </span>
       </Link>
+
+      <Section id="tuteurs" title="Managing tutors: search, sort, share">
+        <p dangerouslySetInnerHTML={{ __html: `<b>Search</b>: the home search box queries the name and description of every published tutor. Three letters usually suffice.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Sort</b>: “Recommended” blends popularity, ratings and freshness, so that a good recent tutor is not buried by an old one. The other sorts are raw — most used, best rated, newest, largest token consumers, or alphabetical. Your favourites always rise to the top, and concern only you: they live in your browser.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Share with the community</b>: “Propose a tutor” starts from a Socratic template. The draft is born with a secret URL — share it with colleagues for feedback, test it in the chat, then submit it. An administrator or any verified promptagogue publishes it, and it appears in the catalogue.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Once published</b>, it belongs to the EduChat public domain: it is never deleted. You may unpublish it — it leaves the catalogue and you can put it back. “Propose a variant” from any page copies the existing prompt and records the “inspired by” lineage on both pages: that is the normal path of personalisation.` }} />
+      </Section>
 
       <Section id="eleves" title="Students and visitors — learning">
         <ul className="list-inside list-disc space-y-1">

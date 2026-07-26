@@ -18,13 +18,14 @@ import type { ProviderId } from "../shared/providers";
 
 const LIBRE = "__saisie_libre__";
 
-export default function ModelField({ provider, apiKey, model, onChange, className, dataTour }: {
+export default function ModelField({ provider, apiKey, model, onChange, className, dataTour, disabled }: {
   provider: ProviderId;
   apiKey: string;
   model: string;
   onChange: (model: string) => void;
   className: string;
   dataTour?: string;
+  disabled?: boolean;
 }) {
   const t = useT();
   const { models, listId } = useModelList(provider, apiKey);
@@ -46,6 +47,7 @@ export default function ModelField({ provider, apiKey, model, onChange, classNam
         <input
           data-tour={dataTour}
           list={listId}
+          disabled={disabled}
           value={model}
           onChange={event => onChange(event.target.value)}
           title={infobulle}
@@ -62,6 +64,7 @@ export default function ModelField({ provider, apiKey, model, onChange, classNam
   return (
     <select
       data-tour={dataTour}
+      disabled={disabled}
       value={model}
       onChange={event => {
         if (event.target.value === LIBRE) setSaisieLibre(true);

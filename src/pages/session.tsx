@@ -1,6 +1,8 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import InterfaceTour from "../chat/InterfaceTour";
 import { getAccount } from "../utils/account";
 import { MdLockOpen, MdLockOutline, MdSchool, MdWifiTethering } from "react-icons/md";
 
@@ -51,7 +53,31 @@ export default function SessionPage() {
   const [identifie, setIdentifie] = useState<boolean | null>(null);
   useEffect(() => { setIdentifie(!!getAccount()); }, []);
 
+  // DÉMONSTRATION (?visite=1, lancée depuis l'aide) : la console s'ouvre à
+  // qui n'y a pas droit, mais avec des données FICTIVES et tous les contrôles
+  // inertes. Rien n'est chargé depuis le serveur, rien ne peut être déclenché
+  // — on montre l'interface, on n'y touche pas.
+  const router = useRouter();
+  const demo = router.query.visite === "1";
+  const [tour, setTour] = useState(false);
+  useEffect(() => { if (demo) setTour(true); }, [demo]);
+  const fige = demo || busy;
+
   const refresh = useCallback(() => {
+    if (demo) {
+      // Salle fictive : de quoi montrer chaque élément sans rien révéler.
+      setStatus({
+        ip: "203.0.113.10",
+        etablissement: { name: "Collège de la Démonstration", hasOwnHours: true },
+        open: false, lockExpiresAt: null, withinSchedule: true, maxUnlockMinutes: 240,
+        settings: null,
+      });
+      setPrompts([
+        { name: "Socrate", description: "Tuteur socratique généraliste." },
+        { name: "Hypatie", description: "Mathématiques et géométrie." },
+      ]);
+      return;
+    }
     fetch("/api/session-status")
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then((data: Status) => {
@@ -62,15 +88,17 @@ export default function SessionPage() {
         }
       })
       .catch(() => setError("État de la session indisponible."));
-  }, []);
+  }, [demo]);
 
   useEffect(() => {
+    if (!router.isReady) return;   // ?visite=1 n'est lisible qu'ensuite
     refresh();
+    if (demo) return;              // en démonstration, rien ne vient du serveur
     fetch("/api/prompts?sort=uses")
       .then(r => r.json())
       .then(data => setPrompts((data.prompts ?? []).map((p: any) => ({ name: p.name, description: p.description }))))
       .catch(() => {});
-  }, [refresh]);
+  }, [refresh, router.isReady, demo]);
 
   // Ouvrir : le mot de passe porte la durée en suffixe (convention de
   // /api/auth, plafonnée côté serveur par SECRET_MAX_UNLOCK_MINUTES).
@@ -145,7 +173,7 @@ export default function SessionPage() {
   // passage n'apportait rien et laissait croire à une page à moitié ouverte.
   // Même garde d'accès que les trois autres : icône orange, titre, explication,
   // et les deux boutons.
-  if (identifie === false) {
+  if (identifie === false && !demo) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
         <Head><title>Session de classe — EduChat</title></Head>
@@ -168,13 +196,22 @@ export default function SessionPage() {
     );
   }
 
-  if (identifie === null || !status) {
+  if ((identifie === null && !demo) || !status) {
     return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
   }
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
       <Head><title>Session de classe — EduChat</title></Head>
+
+      {demo && (
+        <p className="mt-5 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
+          <b>Démonstration.</b> Voici la console telle que la voit un enseignant identifié —
+          avec un établissement fictif, et tous les boutons désactivés : rien ne peut être
+          ouvert ni déployé depuis cette page.
+        </p>
+      )}
+      {tour && <InterfaceTour parcours="session" onClose={() => setTour(false)} />}
 
       <h1 className="flex items-center gap-2 pt-6 text-2xl font-bold">
         <MdSchool /> Session de classe
@@ -186,7 +223,7 @@ export default function SessionPage() {
       </p>
 
       {/* --- État courant --- */}
-      <section className={`mt-5 rounded-lg border p-4 ${status.open
+      <section data-tour="session-etat" className={`mt-5 rounded-lg border p-4 ${status.open
         ? "border-green-500/40 bg-green-500/10" : "border-white/15 bg-secondary"}`}>
         <h2 className="flex items-center gap-2 font-bold">
           {status.open ? <MdLockOpen className="text-green-400" /> : <MdLockOutline />}
@@ -229,14 +266,14 @@ export default function SessionPage() {
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             Mot de passe de salle
-            <input type="password" autoComplete="off" value={password}
+            <input data-tour="session-motdepasse" disabled={fige} type="password" autoComplete="off" value={password}
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") void openAccess(); }}
               className="rounded bg-tertiary p-2" placeholder="Le mot de passe fourni par l'établissement" />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Durée
-            <select value={minutes} onChange={e => setMinutes(Number(e.target.value))}
+            <select data-tour="session-duree" disabled={fige} value={minutes} onChange={e => setMinutes(Number(e.target.value))}
               className="rounded bg-tertiary p-2">
               {DURATIONS.filter(d => d <= status.maxUnlockMinutes).map(d => (
                 <option key={d} value={d}>{d < 60 ? `${d} minutes` : `${d / 60} h`}</option>
@@ -245,12 +282,12 @@ export default function SessionPage() {
           </label>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={openAccess} disabled={busy || !password.trim()}
+          <button data-tour="session-ouvrir" onClick={openAccess} disabled={fige || !password.trim()}
             className="rounded bg-[#DC6521] px-4 py-2 font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
             Ouvrir l'accès
           </button>
           {status.lockExpiresAt && (
-            <button onClick={closeAccess} disabled={busy}
+            <button onClick={closeAccess} disabled={fige}
               className="rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary disabled:opacity-50">
               Refermer maintenant
             </button>
@@ -270,7 +307,7 @@ export default function SessionPage() {
         </p>
         <label className="mt-3 flex flex-col gap-1 text-sm">
           Tuteur socratique
-          <select value={promptName} onChange={e => setPromptName(e.target.value)} className="rounded bg-tertiary p-2">
+          <select data-tour="session-tuteur" disabled={fige} value={promptName} onChange={e => setPromptName(e.target.value)} className="rounded bg-tertiary p-2">
             <option value="">(aucun — chat libre)</option>
             {prompts.map(p => (
               <option key={p.name} value={p.name}>{p.name} — {p.description.slice(0, 60)}</option>
@@ -278,10 +315,10 @@ export default function SessionPage() {
           </select>
         </label>
         <label className="mt-3 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
+          <input data-tour="session-web" disabled={fige} type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
           Autoriser la recherche web pendant la session (coûte des tokens)
         </label>
-        <button onClick={deployTutor} disabled={busy || !status.etablissement}
+        <button data-tour="session-deployer" onClick={deployTutor} disabled={fige || !status.etablissement}
           className="mt-3 rounded border border-[#DC6521]/60 bg-[#DC6521]/10 px-4 py-2 text-sm font-semibold hover:bg-[#DC6521]/20 disabled:opacity-40">
           Appliquer à ma classe
         </button>

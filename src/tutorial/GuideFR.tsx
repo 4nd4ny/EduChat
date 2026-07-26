@@ -1,7 +1,7 @@
 import Link from "next/link";
 import React from "react";
-import { MdSchool, MdTour } from "react-icons/md";
-import { GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
+import { MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
+import { DemoButtons, GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
 
 // Guide d'EduChat — VERSION FRANÇAISE (référence). Les trois autres langues
 // (GuideEN/IT/DE) suivent exactement la même structure : toute évolution du
@@ -82,15 +82,15 @@ export default function GuideFR() {
           ariaLabel="Carte des fonctionnalités par profil" />
       </div>
 
-      {/* Exerciseur : visite interactive de la VRAIE interface du chat. */}
-      <Link href="/chat?tuteur=Socrate&visite=1"
-        className="mt-6 flex items-center gap-3 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-4 hover:bg-[#DC6521]/20">
-        <MdTour className="text-2xl text-[#DC6521]" />
-        <span className="text-sm">
-          <b>Visite interactive de l'interface</b> — l'écran du chat s'ouvre et chaque élément
-          (tuteur, fournisseur, clé, micro…) est présenté à tour de rôle, en 40 secondes.
-        </span>
-      </Link>
+      <DemoButtons
+        titre="Les quatre visites guidées"
+        chapeau="Chaque bouton ouvre la VRAIE page, telle que la voit la personne concernée, et la commente élément par élément. Les interfaces réservées s'affichent déverrouillées mais inertes : rien ne peut y être déclenché."
+        boutons={[
+          { label: "Apprenant", note: "le chat, de la question à la réponse", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },
+          { label: "Enseignant", note: "ouvrir la salle, déployer un tuteur", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
+          { label: "Établissement", note: "horaires, quotas, consommation", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
+          { label: "Promptagogue", note: "comparer deux tuteurs en duel", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
+        ]} />
 
       <div id="visite" className="mt-8 scroll-mt-6">
         <GuidedWalk steps={WALK}
@@ -108,6 +108,13 @@ export default function GuideFR() {
       </Link>
 
       {/* ---------------- Index par profil (grand public) ---------------- */}
+
+      <Section id="tuteurs" title="Gérer les tuteurs : chercher, trier, partager">
+        <p dangerouslySetInnerHTML={{ __html: `<b>Chercher</b> : le champ de recherche de l'accueil interroge le nom et la description de tous les tuteurs publiés. Trois lettres suffisent le plus souvent.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Trier</b> : « Recommandés » mêle popularité, notes et fraîcheur, pour qu'un bon tuteur récent ne soit pas écrasé par un ancien. Les autres tris sont bruts — les plus utilisés, les mieux notés, les plus récents, les plus gros consommateurs de jetons, ou l'ordre alphabétique. Vos favoris remontent toujours en tête, et ne regardent que vous : ils vivent dans votre navigateur.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Partager à la communauté</b> : « Proposer un tuteur » part d'un modèle socratique. Le brouillon naît avec une URL secrète — partagez-la à des collègues pour recueillir leurs avis, testez-le dans le chat, puis soumettez-le. Un administrateur ou n'importe quel promptagogue vérifié le publie, et il paraît au catalogue.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Une fois publié</b>, il appartient au domaine public d'EduChat : il n'est jamais supprimé. Vous pouvez le dépublier — il quitte le catalogue et vous pouvez l'y remettre. « Proposer une variante » depuis n'importe quelle fiche recopie le prompt existant et inscrit la filiation « inspiré de » sur les deux fiches : c'est le chemin normal de la personnalisation.` }} />
+      </Section>
 
       <Section id="eleves" title="Élèves et visiteurs — apprendre">
         <ul className="list-inside list-disc space-y-1">

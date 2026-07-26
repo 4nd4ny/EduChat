@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useRef, useState } from "react";
 import { MdArrowBack, MdArrowForward, MdOpenInNew } from "react-icons/md";
@@ -146,3 +147,35 @@ export const Section = ({ id, title, children }: { id: string; title: string; ch
     <div className="mt-4 flex flex-col gap-3 text-sm leading-relaxed opacity-90">{children}</div>
   </section>
 );
+
+export type DemoButton = { label: string; note: string; href: string; color: string; icon: React.ReactNode };
+
+/**
+ * Les quatre portes de l'aide, calquées sur la ligne de profils de l'accueil.
+ *
+ * Chacune ouvre la vraie page dans son mode DÉMONSTRATION (?visite=1) : la
+ * visite guidée s'y lance, l'interface est celle d'un utilisateur autorisé,
+ * et tout est inerte. Montrer l'écran réel vaut mieux que le décrire — mais
+ * il ne fallait pas pour autant ouvrir des droits.
+ */
+export function DemoButtons({ titre, chapeau, boutons }: {
+  titre: string; chapeau: string; boutons: DemoButton[];
+}) {
+  return (
+    <section className="mt-6">
+      <h2 className="text-lg font-bold">{titre}</h2>
+      <p className="mt-1 text-sm opacity-70">{chapeau}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+        {boutons.map(b => (
+          <Link key={b.href} href={b.href}
+            className="flex flex-col items-center gap-1 rounded-lg border p-3 text-center transition hover:bg-tertiary"
+            style={{ borderColor: `${b.color}66` }}>
+            <span className="text-3xl" style={{ color: b.color }}>{b.icon}</span>
+            <span className="text-sm font-bold">{b.label}</span>
+            <span className="text-[11px] leading-tight opacity-60">{b.note}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
