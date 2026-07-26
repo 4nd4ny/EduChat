@@ -46,7 +46,12 @@ export const TrustedProxyIps: string[] = (process.env.TRUSTED_PROXY_IPS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
 // Administrateurs, définis en dur côté serveur (exigence n°9).
-export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS || 'blanvillain@harmonia.education')
+// SUPER-ADMINISTRATEURS. Cette liste est la SEULE source du rang : aucune
+// interface ne permet d'en ajouter un, et c'est délibéré — le pouvoir de se
+// donner des pouvoirs ne se délègue pas. Les administrateurs d'ÉCOLE, eux,
+// vivent en base et se nomment depuis /admin (voir src/server/admin.ts).
+export const AdminEmails: string[] = (process.env.SECRET_ADMIN_EMAILS
+  || 'blanvillain@harmonia.education,bernardini@harmonia.education')
   .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
 // Repli GRATUIT public : quand aucune clé personnelle n'est saisie et que la

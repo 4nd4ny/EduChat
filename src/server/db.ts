@@ -333,6 +333,11 @@ export function getDb(): Database.Database {
     // risque plus lourd que celui qu'on cherche à couvrir.
     "ALTER TABLE users ADD COLUMN adult_verified_at INTEGER",
     "ALTER TABLE users ADD COLUMN adult_verified_by TEXT",
+    // Administrateur d'ÉCOLE (voir src/server/admin.ts) : il administre SON
+    // établissement, jamais les autres. Le super-administrateur, lui, n'est
+    // pas en base — sa liste vit dans SECRET_ADMIN_EMAILS, et c'est ce qui
+    // empêche d'en fabriquer un depuis une interface.
+    "ALTER TABLE users ADD COLUMN is_school_admin INTEGER NOT NULL DEFAULT 0",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec

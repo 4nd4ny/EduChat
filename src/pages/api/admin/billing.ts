@@ -11,7 +11,8 @@ import { ERR } from '../../../shared/providers';
 // la mention « gratuit ». Les IP inconnues de la base sont facturables aussi :
 // chaque ligne du journal porte l'IP d'origine.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!requireAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  const admin = requireAdmin(req);
+  if (!admin) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
@@ -22,6 +23,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const month = Number(req.query.month) || now.getUTCMonth() + 1;
   const start = monthStartUtc(year, month);
   const end = monthStartUtc(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1);
+
+  // null = aucune restriction (site) ; sinon l'école dont répond l'administrateur.
+  // Le filtre vit dans le SQL, pas dans l'affichage : ce qui ne doit pas être
+  // lu ne doit pas sortir de la base — l'export CSV en hérite gratuitement.
+  const portee: number | null = admin.niveau === 'ecole' ? admin.etablissementId : null;
 
   const rows = getDb().prepare(`
     SELECT
@@ -41,9 +47,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     FROM usage_log u
     LEFT JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1
+      AND (? IS NULL OR u.etablissement_id = ?)
     GROUP BY u.etablissement_id, u.ip, u.provider
     ORDER BY etablissement, u.ip, u.provider
-  `).all(start, end) as Array<{
+  `).all(start, end, portee, portee) as Array<{
     etablissement: string; respire: number; etablissementId: number | null;
     ip: string; provider: string; requests: number; tokens: number;
   }>;
@@ -56,9 +63,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     FROM usage_log u
     LEFT JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1 AND u.teacher_email IS NOT NULL
+      AND (? IS NULL OR u.etablissement_id = ?)
     GROUP BY u.teacher_email, u.etablissement_id, u.provider
     ORDER BY u.teacher_email, u.provider
-  `).all(start, end) as Array<{ teacherEmail: string; etablissement: string; provider: string; requests: number; tokens: number }>;
+  `).all(start, end, portee, portee) as Array<{ teacherEmail: string; etablissement: string; provider: string; requests: number; tokens: number }>;
 
   if (req.query.format === 'csv' && req.query.by === 'teacher') {
     const header = 'periode;enseignant;etablissement;fournisseur;requetes;tokens';
@@ -78,5 +86,5 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(200).send([header, ...lines].join('\n'));
   }
 
-  res.status(200).json({ year, month, rows, teachers });
+  res.status(200).json({ year, month, rows, teachers, portee });
 }

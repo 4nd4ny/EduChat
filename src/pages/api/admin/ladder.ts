@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getLadders, setLadder } from '../../../server/ladder';
 import { getModels } from '../../../server/models';
-import { requireAdmin } from '../../../server/admin';
+import { requireSuperAdmin } from '../../../server/admin';
 import { ERR, isProviderId } from '../../../shared/providers';
 
 // Réglage de l'échelle de modèles, réservé à l'administration.
@@ -14,7 +14,7 @@ import { ERR, isProviderId } from '../../../shared/providers';
 //  PUT → { provider, rungs: string[] }. Trois barreaux vides = retour à la
 //        proposition du code.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!requireAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  if (!requireSuperAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
 
   if (req.method === 'GET') {
     const lignes = await Promise.all(getLadders().map(async ligne => {

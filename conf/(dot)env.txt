@@ -37,7 +37,10 @@ SECRET_MAX_UNLOCK_MINUTES=600
 DATA_DIR=
 
 # Comptes administrateurs (emails separes par des virgules).
-SECRET_ADMIN_EMAILS=blanvillain@harmonia.education
+# SUPER-administrateurs, séparés par des virgules. Seule source du rang :
+# aucune interface ne permet d'en créer un. Les administrateurs d'ÉCOLE se
+# nomment, eux, depuis /admin et vivent en base.
+SECRET_ADMIN_EMAILS=blanvillain@harmonia.education,bernardini@harmonia.education
 
 # Cle de signature des jetons de compte (HMAC). Mettre une valeur aleatoire longue.
 SECRET_TOKEN_KEY=

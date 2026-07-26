@@ -871,6 +871,10 @@ export const fr = {
   'etabGuide.admin.attach': '**Rattacher** un enseignant (qui a coché « je suis enseignant·e » sur /verifier) à son établissement — il en devient responsable.',
   'etabGuide.admin.billing': 'Exporter la **facturation** mensuelle en CSV, par établissement/IP et par enseignant.',
   'etabGuide.admin.ips': 'Les IP restent une décision administrative : le responsable ne peut pas les changer lui-même.',
+  'admin.accounts.super': 'super-administrateur',
+  'admin.accounts.superTitle': 'Rang défini sur le serveur (SECRET_ADMIN_EMAILS) : il ne se donne ni ne se reprend depuis cette interface.',
+  'admin.accounts.schoolAdmin': 'administre son école',
+  'admin.accounts.schoolAdminTitle': 'Administrateur de SON établissement : valide les prompts, modère les commentaires, gère les comptes de son école et lit sa facture. Il peut y nommer d\'autres administrateurs. Il ne voit jamais une autre école. Nécessite un rattachement.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -1714,6 +1718,10 @@ export const en: Record<TranslationKey, string> = {
   'etabGuide.admin.attach': '**Attach** a teacher (who ticked « I am a teacher » on /verifier) to their school — they become its manager.',
   'etabGuide.admin.billing': 'Export the monthly **billing** as CSV, by school/IP and by teacher.',
   'etabGuide.admin.ips': 'IPs remain an administrative decision: the manager cannot change them themselves.',
+  'admin.accounts.super': 'super administrator',
+  'admin.accounts.superTitle': 'Rank set on the server (SECRET_ADMIN_EMAILS): it can neither be granted nor withdrawn from this interface.',
+  'admin.accounts.schoolAdmin': 'administers their school',
+  'admin.accounts.schoolAdminTitle': 'Administrator of THEIR school: approves prompts, moderates comments, manages their school\'s accounts and reads its invoice. They may appoint further administrators there. They never see another school. Requires an attachment.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -2555,6 +2563,10 @@ export const it: Record<TranslationKey, string> = {
   'etabGuide.admin.attach': '**Collegare** un insegnante (che ha spuntato «sono un insegnante» su /verifier) al suo istituto — ne diventa il responsabile.',
   'etabGuide.admin.billing': 'Esportare la **fatturazione** mensile in CSV, per istituto/IP e per insegnante.',
   'etabGuide.admin.ips': 'Gli IP restano una decisione amministrativa: il responsabile non può cambiarli da sé.',
+  'admin.accounts.super': 'super amministratore',
+  'admin.accounts.superTitle': 'Rango definito sul server (SECRET_ADMIN_EMAILS): non può essere né concesso né revocato da questa interfaccia.',
+  'admin.accounts.schoolAdmin': 'amministra il suo istituto',
+  'admin.accounts.schoolAdminTitle': 'Amministratore del PROPRIO istituto: convalida i prompt, modera i commenti, gestisce gli account della sua scuola e ne legge la fattura. Vi può nominare altri amministratori. Non vede mai un altro istituto. Richiede un collegamento.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -3396,6 +3408,10 @@ export const de: Record<TranslationKey, string> = {
   'etabGuide.admin.attach': 'Eine Lehrperson (die auf /verifier «Ich bin Lehrperson» angekreuzt hat) ihrer Schule **zuordnen** — sie wird damit verantwortlich.',
   'etabGuide.admin.billing': 'Die monatliche **Abrechnung** als CSV exportieren, pro Schule/IP und pro Lehrperson.',
   'etabGuide.admin.ips': 'Die IP-Adressen bleiben eine Entscheidung der Administration: die verantwortliche Person kann sie nicht selbst ändern.',
+  'admin.accounts.super': 'Super-Administrator',
+  'admin.accounts.superTitle': 'Rang auf dem Server festgelegt (SECRET_ADMIN_EMAILS): er lässt sich über diese Oberfläche weder vergeben noch entziehen.',
+  'admin.accounts.schoolAdmin': 'verwaltet seine Schule',
+  'admin.accounts.schoolAdminTitle': 'Administrator der EIGENEN Schule: gibt Prompts frei, moderiert Kommentare, verwaltet die Konten seiner Schule und liest deren Rechnung. Er kann dort weitere Administratoren ernennen. Er sieht nie eine andere Schule. Erfordert eine Zuordnung.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;

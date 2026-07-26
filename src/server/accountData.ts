@@ -167,7 +167,11 @@ export function collectAccountData(email: string): AccountData {
       verifiedAt: user?.verifiedAt ?? null,
       isPromptagogue: !!user?.isPromptagogue,
       isTeacher: !!user?.isTeacher,
-      isAdmin: isAdminEmail(email),
+      // « Mes données » n'affiche qu'un bouton « Administrer » : les deux
+      // niveaux y ont droit, la page /admin fera le tri.
+      isAdmin: isAdminEmail(email) || !!(getDb()
+        .prepare('SELECT 1 FROM users WHERE email = ? AND is_school_admin = 1 AND etablissement_id IS NOT NULL')
+        .get(email)),
       syncOptin: !!user?.syncOptin,
       keysOptin: !!user?.keysOptin,
     },

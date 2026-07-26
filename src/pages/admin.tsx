@@ -37,6 +37,7 @@ type TeacherBillingRow = {
   requests: number; tokens: number;
 };
 type AdminUser = {
+  isSuper?: boolean; isSchoolAdmin?: boolean;
   email: string; name: string; isPromptagogue: number; isTeacher: number;
   etablissementId: number | null; etablissementName: string | null;
   syncOptin: number; createdAt: number; verifiedAt: number | null; promptCount: number;
@@ -155,6 +156,9 @@ export default function AdminPage() {
   // POURQUOI un renommage a échoué, alors qu'il écrase le message de act().
   const dernierCode = useRef("");
   const [denied, setDenied] = useState(false);
+  // SUPER-ADMINISTRATEUR ou administrateur d'ÉCOLE. Le serveur tranche — cet
+  // état ne fait que masquer ce qui serait de toute façon refusé en 403.
+  const [isSuper, setIsSuper] = useState(false);
   // Qui coche : sert de garant par défaut quand on atteste la majorité.
   const moi = account?.name || account?.email || "";
 
@@ -204,6 +208,10 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
 
   const reload = useCallback(() => {
+    fetch("/api/me", { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(data => setIsSuper(!!data.isSuper))
+      .catch(() => {});
     fetch("/api/admin/prompts", { headers: authHeaders() })
       .then(r => { if (r.status === 403) throw new Error("denied"); return r.json(); })
       .then(data => setPrompts(data.prompts ?? []))
@@ -700,6 +708,13 @@ export default function AdminPage() {
                       {!!u.syncOptin && <span className="ml-1 rounded bg-blue-600/30 px-1 text-xs" title={t("admin.accounts.syncTitle")}>{t("admin.accounts.sync")}</span>}
                     </td>
                     <td className="pr-2 whitespace-nowrap">
+                      {/* Un SUPER-administrateur ne se règle pas d'ici : son rang
+                          vient de SECRET_ADMIN_EMAILS, sur le serveur. Montrer
+                          des cases qui répondront 403 serait une fausse promesse. */}
+                      {u.isSuper ? (
+                        <span className="rounded bg-[#DC6521]/25 px-1.5 text-xs text-[#DC6521]"
+                          title={t("admin.accounts.superTitle")}>{t("admin.accounts.super")}</span>
+                      ) : (<>
                       {/* « promptagogue » ne disait rien : tout compte vérifié
                           l'est. La case utile est celle de la majorité, qui
                           ouvre les fournisseurs écartés au titre de l'AI Act —
@@ -720,16 +735,26 @@ export default function AdminPage() {
                         <input type="checkbox" checked={!!u.isTeacher}
                           onChange={e => updateUser(u.email, { isTeacher: e.target.checked })} /> {t("admin.accounts.teacher")}
                       </label>
+                      {/* Administrateur de SON école : valide les prompts, modère,
+                          gère les comptes de l'école et lit sa facture. Un
+                          administrateur d'école peut en nommer d'autres — chez
+                          lui seulement (décision du client). */}
+                      <label className="ml-2 text-xs" title={t("admin.accounts.schoolAdminTitle")}>
+                        <input type="checkbox" checked={!!u.isSchoolAdmin}
+                          disabled={!u.etablissementId}
+                          onChange={e => updateUser(u.email, { isSchoolAdmin: e.target.checked })} /> {t("admin.accounts.schoolAdmin")}
+                      </label>
+                      </>)}
                     </td>
                     <td className="pr-2">
-                      {u.isTeacher ? (
+                      {u.isTeacher && isSuper ? (
                         <select value={u.etablissementId ?? ""}
                           onChange={e => updateUser(u.email, { etablissementId: e.target.value || null })}
                           className="rounded bg-tertiary p-1 text-xs">
                           <option value="">{t("admin.accounts.noSchool")}</option>
                           {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
                         </select>
-                      ) : <span className="text-xs opacity-40">—</span>}
+                      ) : <span className="text-xs opacity-60">{u.etablissementName ?? "—"}</span>}
                     </td>
                     <td className="pr-2 text-xs">
                       {/* Certification de majorité : le NOM du garant suffit.
@@ -822,7 +847,7 @@ export default function AdminPage() {
       </section>
       )}
 
-      {(!seule || seule === "etablissements") && (
+      {isSuper && (!seule || seule === "etablissements") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">{t("admin.schools.heading")}{listeEtabs.barre}</h2>
         <p className="mt-1 text-xs opacity-60">{t("admin.schools.help")}</p>
@@ -865,13 +890,15 @@ export default function AdminPage() {
       </section>
       )}
 
-      {!seule && (<>
+      {isSuper && !seule && (<>
       {/* ─── Zone 3 : Modèles ─── */}
+      {/* Réservée au site : l'échelle et le catalogue valent pour TOUTES les
+          écoles, donc pour aucune en particulier. */}
       <h2 className="mt-12 border-b-2 border-[#DC6521]/50 pb-1 text-xl font-bold uppercase tracking-wide text-[#DC6521]">
         {t("admin.zone.models")}
       </h2>
       </>)}
-      {(!seule || seule === "echelle") && (
+      {isSuper && (!seule || seule === "echelle") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">{t("admin.ladder.heading")}</h2>
         <p className="mt-1 text-xs opacity-60">{t("admin.ladder.help1")}</p>
@@ -957,7 +984,7 @@ export default function AdminPage() {
       </section>
       )}
 
-      {(!seule || seule === "catalogue") && (
+      {isSuper && (!seule || seule === "catalogue") && (
       <section className="mt-10">
         <h2 className="text-lg font-bold">{t("admin.catalogue.heading")}</h2>
         <p className="mt-1 text-xs opacity-60">{t("admin.catalogue.help")}</p>

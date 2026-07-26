@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { catalogueStatus, refreshAllModels } from '../../../server/models';
-import { requireAdmin } from '../../../server/admin';
+import { requireSuperAdmin } from '../../../server/admin';
 import { ERR } from '../../../shared/providers';
 
 // Catalogue des modèles, côté administration.
@@ -14,7 +14,7 @@ import { ERR } from '../../../shared/providers';
 // educhat.env, la liste d'un fournisseur passe de « son modèle par défaut »
 // à son vrai catalogue — sans attendre 24 heures.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!requireAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  if (!requireSuperAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
 
   if (req.method === 'GET') {
     return res.status(200).json({ catalogue: catalogueStatus() });

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
 import { requireAuth, isAdminEmail } from '../../server/token';
+import { requireAdmin } from '../../server/admin';
 import { ERR } from '../../shared/providers';
 
 // Identité et rôles du compte porté par le jeton — relus EN BASE à chaque
@@ -51,6 +52,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     name: user?.name || auth.name,
     isPromptagogue: !!user?.is_promptagogue,
     isTeacher: !!user?.is_teacher,
-    isAdmin: isAdminEmail(auth.email),
+    // isAdmin ouvre la porte de /admin — les DEUX niveaux la franchissent.
+    // isSuper décide ensuite de ce qui s'y affiche. Sans cette distinction, un
+    // administrateur d'école n'aurait vu aucune entrée vers l'administration.
+    isAdmin: !!requireAdmin(req),
+    isSuper: isAdminEmail(auth.email),
   });
 }

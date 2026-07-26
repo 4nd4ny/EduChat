@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { requireAdmin } from '../../../server/admin';
+import { requireSuperAdmin } from '../../../server/admin';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR, PROVIDER_IDS } from '../../../shared/providers';
 
@@ -9,7 +9,7 @@ import { ERR, PROVIDER_IDS } from '../../../shared/providers';
 // mensuel de tokens sur la clé interne, son fournisseur actif, son contact
 // de facturation.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!requireAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  if (!requireSuperAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   const db = getDb();
 
   if (req.method === 'GET') {
