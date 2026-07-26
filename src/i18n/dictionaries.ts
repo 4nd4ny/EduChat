@@ -809,6 +809,9 @@ export const fr = {
   'essai.err.bodyTooLarge': 'Le prompt dépasse 256 Ko.',
   'essai.err.quotaUser': 'Quota de 1 Mo atteint.',
   'essai.err.generic': 'L\'action a échoué.',
+  'admin.tr.redo': 'Retraduire',
+  'admin.tr.redoTitle': 'Les trois langues sont à jour. Relancer la traduction les refait entièrement, sur la clé interne — utile pour vérifier la chaîne, ou après un changement de modèle.',
+  'admin.prompts.approveTitle': 'Valider et publier ce tuteur : il paraît au catalogue, et sa traduction dans les trois autres langues démarre aussitôt.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -1590,6 +1593,9 @@ export const en: Record<TranslationKey, string> = {
   'essai.err.bodyTooLarge': 'The prompt exceeds 256 KB.',
   'essai.err.quotaUser': '1 MB quota reached.',
   'essai.err.generic': 'The action failed.',
+  'admin.tr.redo': 'Retranslate',
+  'admin.tr.redoTitle': 'All three languages are up to date. Running the translation again redoes them from scratch, on the internal key — useful to check the pipeline, or after a change of model.',
+  'admin.prompts.approveTitle': 'Approve and publish this tutor: it appears in the catalogue, and its translation into the three other languages starts at once.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -2369,6 +2375,9 @@ export const it: Record<TranslationKey, string> = {
   'essai.err.bodyTooLarge': 'Il prompt supera i 256 KB.',
   'essai.err.quotaUser': 'Quota di 1 MB raggiunta.',
   'essai.err.generic': 'L\'azione non è riuscita.',
+  'admin.tr.redo': 'Ritraduci',
+  'admin.tr.redoTitle': 'Le tre lingue sono aggiornate. Rilanciare la traduzione le rifà interamente, sulla chiave interna — utile per verificare la catena, o dopo un cambio di modello.',
+  'admin.prompts.approveTitle': 'Convalidi e pubblichi questo tutor: comparirà nel catalogo e la sua traduzione nelle altre tre lingue partirà subito.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -3148,6 +3157,9 @@ export const de: Record<TranslationKey, string> = {
   'essai.err.bodyTooLarge': 'Der Prompt überschreitet 256 KB.',
   'essai.err.quotaUser': 'Kontingent von 1 MB erreicht.',
   'essai.err.generic': 'Die Aktion ist fehlgeschlagen.',
+  'admin.tr.redo': 'Neu übersetzen',
+  'admin.tr.redoTitle': 'Alle drei Sprachen sind aktuell. Ein erneuter Lauf erstellt sie vollständig neu, auf dem internen Schlüssel — nützlich zur Prüfung der Kette oder nach einem Modellwechsel.',
+  'admin.prompts.approveTitle': 'Diesen Tutor freigeben und veröffentlichen: er erscheint im Katalog, und seine Übersetzung in die drei anderen Sprachen startet sofort.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;

@@ -232,10 +232,10 @@ export default function AdminPage() {
   // Relance des traductions. Celle-ci est attendue (trois appels à Haiku),
   // là où la publication ne l'attend pas : ici, le résultat EST la réponse.
   const [traduisant, setTraduisant] = useState<string | null>(null);
-  const retraduire = async (name: string) => {
+  const retraduire = async (name: string, forcer = false) => {
     setTraduisant(name);
     try {
-      const ok = await act(name, "retranslate");
+      const ok = await act(name, "retranslate", forcer ? { force: true } : {});
       if (ok) setMessage(t("admin.tr.done", { name }));
     } finally {
       setTraduisant(null);
@@ -528,18 +528,27 @@ export default function AdminPage() {
                       className={BTN}><MdEdit /> {t("admin.btn.edit")}</button>
                     {/* Le « en cas de validation » du cycle de traduction : tant
                         que ce bouton n'a pas été cliqué, une traduction périmée
-                        n'est pas servie et l'élève lit l'original. */}
-                    {(p.translations.aVerifier || p.translations.enEchec
-                      || p.translations.pretes < p.translations.total) && (
-                      <button onClick={() => retraduire(p.name)} disabled={traduisant === p.name}
-                        title={t("admin.tr.retranslateTitle")}
-                        className="flex items-center gap-1 rounded border border-[#DC6521]/60 px-2 py-0.5 text-xs hover:bg-[#DC6521]/10 disabled:opacity-40">
-                        <MdTranslate />{" "}
-                        {traduisant === p.name ? t("admin.tr.working")
-                          : p.translations.aVerifier ? t("admin.tr.checkAndRetranslate")
-                            : t("admin.tr.translate")}
-                      </button>
-                    )}
+                        n'est pas servie et l'élève lit l'original.
+                        Il reste affiché MÊME quand les trois langues sont à
+                        jour — le cacher ôtait le seul moyen de relancer une
+                        traduction à la demande, donc de vérifier qu'elle
+                        marche. Dans ce cas il force le refaire, sinon
+                        traduireTuteur, qui est idempotent, ne ferait rien. */}
+                    {(() => {
+                      const tr = p.translations;
+                      const aJour = !tr.aVerifier && !tr.enEchec && tr.pretes === tr.total;
+                      return (
+                        <button onClick={() => retraduire(p.name, aJour)} disabled={traduisant === p.name}
+                          title={t(aJour ? "admin.tr.redoTitle" : "admin.tr.retranslateTitle")}
+                          className="flex items-center gap-1 rounded border border-[#DC6521]/60 px-2 py-0.5 text-xs hover:bg-[#DC6521]/10 disabled:opacity-40">
+                          <MdTranslate />{" "}
+                          {traduisant === p.name ? t("admin.tr.working")
+                            : tr.aVerifier ? t("admin.tr.checkAndRetranslate")
+                              : aJour ? t("admin.tr.redo")
+                                : t("admin.tr.translate")}
+                        </button>
+                      );
+                    })()}
                   </>
                 ) : p.status === "retired" ? (
                   <>
@@ -550,6 +559,17 @@ export default function AdminPage() {
                   </>
                 ) : (
                   <>
+                    {/* Cette branche ne reçoit que des BROUILLONS : la file du
+                        haut retire déjà les prompts soumis de cette liste.
+                        Un brouillon n'a pas d'autre chemin vers le catalogue —
+                        « soumettre » appartient à son auteur, depuis son URL
+                        secrète. L'administration publie donc directement. */}
+                    {p.status === "draft" && (
+                      <button onClick={() => act(p.name, "approve")} title={t("admin.prompts.approveTitle")}
+                        className="flex items-center gap-1 rounded border border-green-500/40 px-2 py-0.5 text-xs hover:bg-green-500/10">
+                        <MdCheck /> {t("admin.btn.publish")}
+                      </button>
+                    )}
                     <button onClick={() => ouvrirEdition(p)} title={t("admin.prompts.editTitle")}
                       className={BTN}><MdEdit /> {t("admin.btn.edit")}</button>
                     <button onClick={() => archive(p.name)} title={t("admin.prompts.archiveTitle")}

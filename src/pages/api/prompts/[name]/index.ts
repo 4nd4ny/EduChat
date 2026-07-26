@@ -177,7 +177,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Modération a priori : approbation par un admin OU par un promptagogue
     // vérifié (décision client — la validation protège surtout le flux anonyme).
     if (!(rights.isAdmin || rights.isPromptagogue)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
-    if (row.status !== 'pending') return res.status(409).json({ error: { code: 'ERR_STATUS' } });
+    // Un promptagogue ne valide que ce qui lui est SOUMIS. L'administration,
+    // elle, peut publier un BROUILLON directement : elle est de toute façon
+    // l'autorité de modération, elle en lit le texte dans la même page, et
+    // exiger un aller-retour par l'URL secrète de l'auteur — seul chemin vers
+    // « soumis » — laissait des brouillons sans aucune issue vers le catalogue.
+    const etatsValidables = rights.isAdmin ? ['pending', 'draft'] : ['pending'];
+    if (!etatsValidables.includes(row.status)) return res.status(409).json({ error: { code: 'ERR_STATUS' } });
     db.prepare("UPDATE prompts SET status = 'published', updated_at = ? WHERE id = ?").run(now, row.id);
     // Un tuteur validé est traduit dans les trois autres langues. En ARRIÈRE-PLAN :
     // trois appels au fournisseur prendraient une minute, et une clé sans crédit
