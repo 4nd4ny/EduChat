@@ -118,7 +118,7 @@ export default function DuelPage() {
   // mais après coup, par une erreur, là où il ne fallait tout simplement pas
   // proposer le choix. Le serveur décide (réseau d'établissement d'abord,
   // certification adulte ensuite) ; cette page ne fait que le refléter.
-  const { served, visibles } = useFournisseurs();
+  const { served, visibles } = useFournisseurs({ surface: "duel" });
 
   // Une colonne peut pointer un fournisseur qui vient de sortir de la liste —
   // au changement de compte, ou parce que la réponse du serveur arrive après

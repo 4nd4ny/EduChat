@@ -178,6 +178,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
+  // OPENROUTER : LE SEUL FOURNISSEUR À DEUX STATUTS, ET VOICI CE QUI LE TIENT.
+  //
+  // Il n'est pas « adultOnly », parce que dans le chat personne ne choisit de
+  // modèle : l'administration règle l'échelle, aujourd'hui Mistral et Claude,
+  // et OpenRouter n'est qu'un intermédiaire vers des modèles conformes. Son
+  // drapeau WRNG suffit donc à le signaler, sans l'écarter.
+  //
+  // Mais cette promesse ne vaut QUE tant que le modèle vient de l'échelle.
+  // Nommer « deepseek/... » à travers OpenRouter contournerait tout l'AI Act
+  // d'une ligne de requête. À qui n'a pas droit aux fournisseurs écartés, on
+  // n'accepte donc d'OpenRouter que les modèles réglés par l'administration.
+  // La page « duel » ne le propose plus à ces visiteurs ; ceci le refuse aussi
+  // à une requête forgée à la main, qui n'a pas d'interface à contourner.
+  if (provider === 'openrouter' && body.model && !getLadder('openrouter').includes(model)) {
+    const verdict = await mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
+    if (!verdict.allowed) {
+      return res.status(403).json({
+        error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
+      });
+    }
+  }
+
   let personalKey = String(body.apiKey || "").trim();
   if (!personalKey) {
     const account = requireAuth(req);

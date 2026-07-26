@@ -131,3 +131,18 @@ export type ErrorCode = (typeof ERR)[keyof typeof ERR];
  */
 export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
   id => !providerDefaults[id].adultOnly);
+
+/**
+ * Même liste, pour les interfaces où l'utilisateur NOMME LE MODÈLE lui-même.
+ *
+ * OpenRouter est le seul fournisseur à porter deux statuts selon l'endroit, et
+ * ce n'est pas une incohérence à « corriger » : dans le chat, l'utilisateur ne
+ * choisit pas de modèle — l'administration règle l'échelle, aujourd'hui Mistral
+ * et Claude — donc OpenRouter n'est qu'un intermédiaire vers des modèles
+ * conformes, et son drapeau WRNG suffit à le dire. Sur la page « duel », le
+ * modèle est écrit à la main : rien n'empêcherait d'y demander un modèle
+ * chinois à travers OpenRouter. Là, il doit donc être traité comme les
+ * fournisseurs réservés aux adultes.
+ */
+export const DUEL_PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
+  id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);

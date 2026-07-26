@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PROVIDER_IDS, PUBLIC_PROVIDER_IDS, type ProviderId } from '../shared/providers';
+import { PROVIDER_IDS, PUBLIC_PROVIDER_IDS, DUEL_PUBLIC_PROVIDER_IDS, type ProviderId } from '../shared/providers';
 import { authHeaders } from '../utils/account';
 
 // QUELS FOURNISSEURS CE VISITEUR-CI A LE DROIT DE VOIR.
@@ -16,7 +16,10 @@ import { authHeaders } from '../utils/account';
 // pas voir l'option. Une règle de conformité recopiée est une règle qui finira
 // par diverger — celle-ci n'a plus qu'un seul point d'application.
 
-export function useFournisseurs() {
+export function useFournisseurs(options?: { surface?: 'chat' | 'duel' }) {
+  // « duel » retire en plus OpenRouter : voir DUEL_PUBLIC_PROVIDER_IDS — on y
+  // nomme le modèle à la main, donc l'intermédiaire ne garantit plus rien.
+  const publique = options?.surface === 'duel' ? DUEL_PUBLIC_PROVIDER_IDS : PUBLIC_PROVIDER_IDS;
   const [served, setServed] = useState<string[] | null>(null);
   const [adulteAutorise, setAdulteAutorise] = useState(false);
   const [bloqueParEcole, setBloqueParEcole] = useState(false);
@@ -48,6 +51,6 @@ export function useFournisseurs() {
     /** Refusé PARCE QUE l'on est sur le réseau d'une école, compte adulte ou non. */
     bloqueParEcole,
     /** La liste à afficher. Tant que la réponse n'est pas là : la plus restrictive. */
-    visibles: (adulteAutorise ? PROVIDER_IDS : PUBLIC_PROVIDER_IDS) as readonly ProviderId[],
+    visibles: (adulteAutorise ? PROVIDER_IDS : publique) as readonly ProviderId[],
   };
 }
