@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useMemo, useState } from "react";
+import { useT } from "../i18n/useT";
 
 // Des listes qui ne débordent pas de l'écran, et une porte vers la liste
 // entière.
@@ -28,6 +29,7 @@ export function useListe<T>(id: string, items: T[], options?: {
   cherchable?: (item: T) => string;
   tris?: Tri<T>[];
 }) {
+  const t = useT();
   const seule = useListeSeule();
   const tout = seule === id;
   const [page, setPage] = useState(0);
@@ -52,18 +54,19 @@ export function useListe<T>(id: string, items: T[], options?: {
     <span className="ml-2 inline-flex flex-wrap items-center gap-2 align-middle text-xs font-normal">
       {cherchable && (
         <input value={recherche} onChange={e => setRecherche(e.target.value)}
-          placeholder="Rechercher…" aria-label="Rechercher dans la liste"
+          placeholder={t("liste.search")} aria-label={t("liste.searchAria")}
           className="w-48 rounded bg-tertiary px-2 py-0.5" />
       )}
       {!!tris?.length && (
         <select value={triActif} onChange={e => setTriActif(e.target.value)}
-          aria-label="Trier la liste" className="rounded bg-tertiary px-2 py-0.5">
+          aria-label={t("liste.sortAria")} className="rounded bg-tertiary px-2 py-0.5">
           {tris.map(t => <option key={t.cle} value={t.cle}>{t.label}</option>)}
         </select>
       )}
       <span className="opacity-60">
-        {filtres.length} entrée{filtres.length > 1 ? "s" : ""}
-        {recherche.trim() && ` sur ${items.length}`}
+        {recherche.trim()
+          ? t("liste.entriesOf").replace("{n}", String(filtres.length)).replace("{total}", String(items.length))
+          : t("liste.entries").replace("{n}", String(filtres.length))}
       </span>
     </span>
   ) : (
@@ -82,9 +85,9 @@ export function useListe<T>(id: string, items: T[], options?: {
         </>
       )}
       <Link href={{ query: { tout: id } }} target="_blank" rel="noreferrer"
-        title="Ouvrir cette liste seule dans un nouvel onglet, avec recherche et tri"
+        title={t("liste.allTitle")}
         className="rounded border border-white/20 px-2 py-0.5 hover:bg-tertiary">
-        Tout voir ↗
+        {t("liste.all")}
       </Link>
     </span>
   );

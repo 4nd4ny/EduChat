@@ -8,7 +8,7 @@ import { deleteServerConversations, deleteServerProfile } from "../utils/profile
 import { providerDefaults } from "../shared/providers";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
-import { useListe } from "../site/ListePaginee";
+import { useListe, useListeSeule } from "../site/ListePaginee";
 import type { AccountData } from "../server/accountData";
 
 // Dossier FICTIF de la visite guidée : de quoi montrer chaque section — dont
@@ -103,12 +103,13 @@ export default function ComptePage() {
 
   // Huit conversations par page ; « Tout voir » rouvre la page sur cette
   // seule liste, entière, avec recherche et tri.
+  const seule = useListeSeule();
   const listeConv = useListe("conversations", data?.conversations ?? [], {
     cherchable: c => `${c.name} ${c.promptName}`,
     tris: [
-      { cle: "recent", label: "Plus récentes", compare: (a, b) => (b.lastMessage || b.createdAt) - (a.lastMessage || a.createdAt) },
-      { cle: "nom", label: "Nom", compare: (a, b) => a.name.localeCompare(b.name) },
-      { cle: "taille", label: "Les plus lourdes", compare: (a, b) => b.bytes - a.bytes },
+      { cle: "recent", label: t("compte.conv.sortRecent"), compare: (a, b) => (b.lastMessage || b.createdAt) - (a.lastMessage || a.createdAt) },
+      { cle: "nom", label: t("compte.conv.sortName"), compare: (a, b) => a.name.localeCompare(b.name) },
+      { cle: "taille", label: t("compte.conv.sortSize"), compare: (a, b) => b.bytes - a.bytes },
     ],
   });
 
@@ -303,6 +304,7 @@ export default function ComptePage() {
     <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
       <Head><title>{t("compte.title")} — EduChat</title></Head>
 
+      {!seule && (<>
       {demo && (
         <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
           <b>Démonstration.</b> Voici « Mes données » telle que la voit une enseignante qui
@@ -346,8 +348,10 @@ export default function ComptePage() {
           <button onClick={() => void charger()} className="underline">{t("compte.retry")}</button>
         </p>
       )}
+      </>)}
 
       {/* 1 — Consommation ------------------------------------------------ */}
+      {!seule && (
       <Section ancre="compte-conso" numero={1} titre={t("compte.usage.title")}>
         <p className="text-sm opacity-80">{t("compte.usage.notMeasured")}</p>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -388,8 +392,10 @@ export default function ComptePage() {
           )}
         </dl>
       </Section>
+      )}
 
       {/* 2 — Clés API ------------------------------------------------------ */}
+      {!seule && (
       <Section ancre="compte-cles" numero={2} titre={t("compte.keys.title")}>
         <p className="text-sm opacity-80">{t("compte.keys.intro")}</p>
         {keys.length === 0
@@ -419,8 +425,10 @@ export default function ComptePage() {
           </div>
         )}
       </Section>
+      )}
 
       {/* 3 — Conversations -------------------------------------------------- */}
+      {(!seule || seule === "conversations") && (
       <Section ancre="compte-conversations" numero={3} titre={t("compte.conv.title")} barre={listeConv.barre}>
         <p className="text-sm opacity-80">{t("compte.conv.intro")}</p>
 
@@ -494,8 +502,10 @@ export default function ComptePage() {
           </p>
         )}
       </Section>
+      )}
 
       {/* 4 — Le reste -------------------------------------------------------- */}
+      {!seule && (
       <Section ancre="compte-tuteurs" numero={4} titre={t("compte.other.title")}>
         <h3 className="text-sm font-bold">{t("compte.prompts.title")}</h3>
         <p className="mt-1 text-xs opacity-70">{t("compte.prompts.publicDomain")}</p>
@@ -592,6 +602,7 @@ export default function ComptePage() {
         </dl>
         <p className="mt-3 text-xs opacity-60">{t("compte.other.rest")}</p>
       </Section>
+      )}
 
       <p className="mt-6 text-xs opacity-60">
         {t("compte.footer")} <Link href="/rgpd" className="underline">{t("common.privacy")}</Link>.
