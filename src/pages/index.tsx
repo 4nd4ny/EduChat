@@ -132,7 +132,9 @@ export default function Catalogue() {
 
       {/* Démo inline : « Essayer » un tuteur ouvre ce panneau ici même. */}
       <div ref={demoRef} className="scroll-mt-4">
-        {demo && <DemoChat promptName={demo} onClose={() => setDemo(null)} />}
+        {demo && <DemoChat promptName={demo}
+          titre={ordered.find(c => c.name === demo)?.title}
+          onClose={() => setDemo(null)} />}
       </div>
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">

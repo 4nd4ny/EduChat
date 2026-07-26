@@ -12,7 +12,11 @@ type Msg = { role: "user" | "assistant"; content: string };
 // → le serveur utilise le repli gratuit (OpenRouter/Gemma). Pour l'expérience
 // complète (historique, fournisseurs, clé personnelle), le bouton « Utiliser »
 // ouvre le vrai chat /chat.
-export default function DemoChat({ promptName, onClose }: { promptName: string; onClose: () => void }) {
+export default function DemoChat({ promptName, titre, onClose }:
+  { promptName: string; titre?: string; onClose: () => void }) {
+  // « promptName » est l'identité (serveur, URL, facturation) ; « titre »
+  // n'est que l'affichage, et suit la langue du lecteur.
+  const affiche = titre || promptName;
   const t = useT();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -59,7 +63,7 @@ export default function DemoChat({ promptName, onClose }: { promptName: string; 
     <div className="mb-6 rounded-lg border border-[#DC6521]/50 bg-secondary p-4">
       <div className="flex items-center justify-between gap-2">
         {/* Le tiret cadratin reste dans le JSX : c'est de la ponctuation, pas du texte à traduire. */}
-        <h2 className="text-lg font-bold">{t("demo.title")} — <span className="text-[#DC6521]">{promptName}</span></h2>
+        <h2 className="text-lg font-bold">{t("demo.title")} — <span className="text-[#DC6521]">{affiche}</span></h2>
         <div className="flex items-center gap-2">
           <Link href={`/chat?tuteur=${encodeURIComponent(promptName)}`}
             className="flex items-center gap-1 rounded border border-white/20 px-3 py-1.5 text-xs hover:bg-tertiary">
@@ -78,7 +82,7 @@ export default function DemoChat({ promptName, onClose }: { promptName: string; 
         )}
         {messages.map((m, i) => (
           <div key={i} className="mb-3">
-            <span className="text-xs uppercase tracking-wide opacity-50">{m.role === "user" ? t("demo.you") : promptName}</span>
+            <span className="text-xs uppercase tracking-wide opacity-50">{m.role === "user" ? t("demo.you") : affiche}</span>
             {m.role === "user"
               ? <p className="whitespace-pre-wrap text-primary">{m.content}</p>
               : <div className="mt-1"><AssistantMessageContent content={m.content} /></div>}
