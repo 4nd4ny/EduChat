@@ -168,8 +168,3 @@ src/i18n/           flat dictionaries fr / en / it / de
 planning/           the design notes this project was built from
 ```
 
-## About
-
-Written for the RESPIRE schools by a full-time teacher at the Gymnasium of Chamblandes,
-Switzerland — which means limited time for maintenance. Issues and pull requests are welcome;
-answers may take a while.
