@@ -81,7 +81,7 @@ export default function GuideDE() {
       </div>
 
       <DemoButtons
-        titre="Die vier Führungen"
+        titre="Die Führungen"
         chapeau="Jede Schaltfläche öffnet die ECHTE Seite, so wie die betreffende Person sie sieht, und erklärt sie Element für Element. Geschützte Oberflächen erscheinen entsperrt, aber reglos: Dort lässt sich nichts auslösen."
         boutons={[
           { label: "Lernende", note: "der Chat, von der Frage zur Antwort", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },

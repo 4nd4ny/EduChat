@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
+import { setAdultVerified } from '../../../server/adult';
 import { requireAdmin } from '../../../server/admin';
 import { ERR } from '../../../shared/providers';
 
@@ -22,6 +23,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         SELECT u.email, u.name, u.is_promptagogue AS isPromptagogue, u.is_teacher AS isTeacher,
                u.etablissement_id AS etablissementId, e.name AS etablissementName,
                u.sync_optin AS syncOptin, u.created_at AS createdAt, u.verified_at AS verifiedAt,
+               u.adult_verified_at AS adultVerifiedAt, u.adult_verified_by AS adultVerifiedBy,
                (SELECT COUNT(*) FROM prompts p WHERE p.author_email = u.email) AS promptCount
         FROM users u LEFT JOIN etablissements e ON e.id = u.etablissement_id
         ORDER BY u.is_teacher DESC, u.email
@@ -41,6 +43,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     if ('etablissementId' in (req.body ?? {})) {
       sets.push('etablissement_id = ?');
       params.push(req.body.etablissementId ? Number(req.body.etablissementId) : null);
+    }
+    // Certification de majorité : on n'enregistre QUE le nom de la personne
+    // qui se porte garante — l'administration après un entretien vidéo, ou un
+    // enseignant qui répond de ses élèves majeurs. Champ vide = retrait.
+    // Aucune pièce d'identité n'est demandée ni conservée.
+    if ('adultVerifiedBy' in (req.body ?? {})) {
+      setAdultVerified(email, String(req.body.adultVerifiedBy ?? ''));
     }
     if ('isTeacher' in (req.body ?? {})) {
       sets.push('is_teacher = ?');

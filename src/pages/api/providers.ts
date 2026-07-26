@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { DeveloperKeys } from '../../utils/env';
 import { getClientIp, mayUseServerKeys } from '../../server/access';
+import { mayUseAdultProviders } from '../../server/adult';
+import { requireAuth } from '../../server/token';
 import { ERR, PROVIDER_IDS, providerDefaults } from '../../shared/providers';
 
 // Quels fournisseurs le SERVEUR peut servir lui-même (clé interne d'école ou
@@ -21,7 +23,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     !providerDefaults[id].wrng && !!String(DeveloperKeys[id] || '').trim());
   // Dépend de l'IP de l'appelant (une salle de classe déverrouillée, ou non) :
   // surtout pas de cache partagé.
-  const internalKey = await mayUseServerKeys(getClientIp(req));
+  const ip = getClientIp(req);
+  const internalKey = await mayUseServerKeys(ip);
+  // Les fournisseurs écartés au titre de l'AI Act ne sont proposés que hors
+  // réseau scolaire ET à un compte dont la majorité a été vérifiée.
+  const adulte = await mayUseAdultProviders(ip, requireAuth(req)?.email ?? null);
   res.setHeader('Cache-Control', 'private, no-store');
-  return res.status(200).json({ served, internalKey });
+  return res.status(200).json({
+    served, internalKey,
+    adultAllowed: adulte.allowed,
+    adultBlockedBySchool: adulte.reason === 'school-network',
+  });
 }

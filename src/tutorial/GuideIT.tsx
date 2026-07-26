@@ -81,7 +81,7 @@ export default function GuideIT() {
       </div>
 
       <DemoButtons
-        titre="Le quattro visite guidate"
+        titre="Le visite guidate"
         chapeau="Ogni pulsante apre la PAGINA REALE, come la vede la persona interessata, e la commenta elemento per elemento. Le interfacce riservate appaiono sbloccate ma inerti: nulla può esservi attivato."
         boutons={[
           { label: "Allievo", note: "la chat, dalla domanda alla risposta", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },

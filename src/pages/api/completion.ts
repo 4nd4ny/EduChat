@@ -3,6 +3,7 @@ import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/acces
 import { getDb, PromptRow } from "../../server/db";
 import { requireAuth } from "../../server/token";
 import { getLadder } from "../../server/ladder";
+import { mayUseAdultProviders } from "../../server/adult";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { readUserKey } from "../../server/userKeys";
 import { getPublishedByName, getByShareToken } from "../../server/prompts";
@@ -154,6 +155,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // titulaire du compte a demandé de mémoriser (chiffrée en base). Résolue ici,
   // avant tout contrôle, pour que la suite ne fasse plus la différence : une
   // clé mémorisée donne exactement les mêmes droits qu'une clé saisie.
+  // AI Act : les fournisseurs écartés sont refusés AVANT même de regarder
+  // quelle clé sera utilisée. Sur un réseau d'établissement, ils le sont pour
+  // tout le monde — c'est le seul engagement qu'on puisse tenir devant une
+  // école. Ailleurs, ils demandent un compte dont la majorité a été vérifiée.
+  if (providerDefaults[provider].adultOnly) {
+    const verdict = await mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
+    if (!verdict.allowed) {
+      return res.status(403).json({
+        error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
+      });
+    }
+  }
+
   let personalKey = String(body.apiKey || "").trim();
   if (!personalKey) {
     const account = requireAuth(req);

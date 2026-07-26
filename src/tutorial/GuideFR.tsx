@@ -83,7 +83,7 @@ export default function GuideFR() {
       </div>
 
       <DemoButtons
-        titre="Les quatre visites guidées"
+        titre="Les visites guidées"
         chapeau="Chaque bouton ouvre la VRAIE page, telle que la voit la personne concernée, et la commente élément par élément. Les interfaces réservées s'affichent déverrouillées mais inertes : rien ne peut y être déclenché."
         boutons={[
           { label: "Apprenant", note: "le chat, de la question à la réponse", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },

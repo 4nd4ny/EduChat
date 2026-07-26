@@ -29,6 +29,7 @@ type AdminUser = {
   email: string; name: string; isPromptagogue: number; isTeacher: number;
   etablissementId: number | null; etablissementName: string | null;
   syncOptin: number; createdAt: number; verifiedAt: number | null; promptCount: number;
+  adultVerifiedAt: number | null; adultVerifiedBy: string | null;
 };
 type AdminComment = {
   id: number; body: string; status: "pending" | "approved" | "hidden";
@@ -519,7 +520,7 @@ export default function AdminPage() {
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase opacity-60">
                 <tr><th className="py-1 pr-2">Compte</th><th className="pr-2">Rôles</th>
-                  <th className="pr-2">Établissement</th><th className="pr-2">Prompts</th><th>Créé le</th></tr>
+                  <th className="pr-2">Établissement</th><th className="pr-2">Majorité certifiée par</th><th className="pr-2">Prompts</th><th>Créé le</th></tr>
               </thead>
               <tbody>
                 {users.map(u => (
@@ -548,6 +549,23 @@ export default function AdminPage() {
                           {etabs.map(e2 => <option key={e2.id} value={e2.id}>{e2.name}</option>)}
                         </select>
                       ) : <span className="text-xs opacity-40">—</span>}
+                    </td>
+                    <td className="pr-2 text-xs">
+                      {/* Certification de majorité : le NOM du garant suffit.
+                          Aucune pièce d'identité n'est demandée ni conservée —
+                          l'entretien vidéo sert à décider, pas à archiver. */}
+                      <input
+                        defaultValue={u.adultVerifiedBy ?? ""}
+                        placeholder="certifié adulte par…"
+                        title={u.adultVerifiedAt
+                          ? `Majorité certifiée le ${new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH")} par ${u.adultVerifiedBy}. Vider le champ pour retirer.`
+                          : "Nom de la personne qui se porte garante de la majorité (vous après un entretien vidéo, ou un enseignant pour ses élèves majeurs). Vide = non certifié."}
+                        onBlur={e => {
+                          if ((e.target.value.trim() || "") !== (u.adultVerifiedBy ?? "")) {
+                            updateUser(u.email, { adultVerifiedBy: e.target.value.trim() });
+                          }
+                        }}
+                        className={`w-36 rounded bg-tertiary px-1 py-0.5 text-xs ${u.adultVerifiedAt ? "ring-1 ring-green-600/60" : ""}`} />
                     </td>
                     <td className="pr-2 text-xs">{u.promptCount || 0}</td>
                     <td className="text-xs opacity-60">

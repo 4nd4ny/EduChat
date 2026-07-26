@@ -71,6 +71,19 @@ export default function InterfaceTour({ onClose, parcours = "chat" }: { onClose:
 
   const current = steps[index] ?? null;
 
+  // Où poser le sous-titre sans masquer ce qu'il explique. On lui réserve une
+  // bande d'environ 200 px : si elle croise la fenêtre éclairée, il se range
+  // du côté le plus dégagé — en bas de préférence, en haut si l'élément est bas.
+  const placement = (() => {
+    if (typeof window === "undefined" || !box) return "items-center";
+    const hauteur = window.innerHeight;
+    const BANDE = 200;
+    const chevauche = box.top < (hauteur + BANDE) / 2 && box.top + box.height > (hauteur - BANDE) / 2;
+    if (!chevauche) return "items-center";
+    const placeEnBas = hauteur - (box.top + box.height);
+    return placeEnBas >= box.top ? "items-end pb-6" : "items-start pt-6";
+  })();
+
   // Les mises à jour d'état restent PURES : appeler onClose() depuis un
   // updater ferait fermer la visite pendant le rendu (React 18 rejoue les
   // updaters), et elle disparaissait aussitôt affichée.
@@ -156,9 +169,11 @@ export default function InterfaceTour({ onClose, parcours = "chat" }: { onClose:
           className="rounded p-2 hover:bg-white/20"><MdClose /></button>
       </div>
 
-      {/* Sous-titre : blanc sur fond noir, AU CENTRE de l'écran — en bas, il
-          masquait précisément les éléments qu'il décrit (saisie, boutons). */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4"
+      {/* Sous-titre : blanc sur fond noir, AU CENTRE quand la place est libre.
+          Mais un sous-titre qui recouvre l'élément qu'il décrit ne sert à rien :
+          s'il chevauche la zone éclairée, il se range du côté où il reste le
+          plus d'espace — en bas de préférence, en haut si l'élément est bas. */}
+      <div className={`pointer-events-none absolute inset-0 flex justify-center px-4 ${placement}`}
         onClick={event => event.stopPropagation()}>
         <div className="pointer-events-auto max-w-2xl rounded-lg bg-black/95 px-6 py-4 text-center shadow-2xl ring-1 ring-white/10">
           <p className="text-lg font-medium leading-relaxed text-white">

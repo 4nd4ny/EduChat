@@ -81,7 +81,7 @@ export default function GuideEN() {
       </div>
 
       <DemoButtons
-        titre="The four guided walkthroughs"
+        titre="The guided walkthroughs"
         chapeau="Each button opens the REAL page as the person concerned sees it, and comments on it element by element. Restricted interfaces appear unlocked but inert: nothing can be triggered there."
         boutons={[
           { label: "Learner", note: "the chat, from question to answer", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },

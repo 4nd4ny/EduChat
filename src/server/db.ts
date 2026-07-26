@@ -325,6 +325,14 @@ export function getDb(): Database.Database {
     // Consentement à la mémorisation des clés API (case à cocher du chat) :
     // mémorisé côté compte pour suivre l'utilisateur d'un navigateur à l'autre.
     "ALTER TABLE users ADD COLUMN keys_optin INTEGER NOT NULL DEFAULT 0",
+    // Majorité vérifiée, pour l'accès aux fournisseurs écartés au titre de
+    // l'AI Act. On n'enregistre QUE la décision : la date, et le nom de la
+    // personne qui se porte garante (l'administration après un entretien
+    // vidéo, ou un enseignant qui répond de ses élèves majeurs). Aucune pièce
+    // d'identité n'est demandée ni conservée : en garder une copie créerait un
+    // risque plus lourd que celui qu'on cherche à couvrir.
+    "ALTER TABLE users ADD COLUMN adult_verified_at INTEGER",
+    "ALTER TABLE users ADD COLUMN adult_verified_by TEXT",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

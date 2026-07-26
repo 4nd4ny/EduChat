@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
-import { PUBLIC_PROVIDER_IDS } from "../shared/providers";
+import { PROVIDER_IDS, PUBLIC_PROVIDER_IDS } from "../shared/providers";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -51,8 +51,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   // sont signalés dans la liste : mieux vaut le dire avant le clic qu'après
   // une erreur incompréhensible.
   const [served, setServed] = useState<string[] | null>(null);
+  const [adulteAutorise, setAdulteAutorise] = useState(false);
   useEffect(() => {
-    fetch("/api/providers").then(r => r.json()).then(d => setServed(d.served ?? [])).catch(() => {});
+    fetch("/api/providers").then(r => r.json()).then(d => {
+      setServed(d.served ?? []);
+      setAdulteAutorise(!!d.adultAllowed);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
@@ -153,7 +157,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             {/* AI Act : les fournisseurs réservés aux adultes ne figurent pas
                 dans la liste. Le code les connaît toujours — ils reviendront
                 avec le compte adulte vérifié. */}
-            {PUBLIC_PROVIDER_IDS.map(id => {
+            {(adulteAutorise ? PROVIDER_IDS : PUBLIC_PROVIDER_IDS).map(id => {
               const item = providerDefaults[id];
               const cleRequise = served !== null && !served.includes(id);
               return (
