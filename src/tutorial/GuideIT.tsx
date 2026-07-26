@@ -1,6 +1,6 @@
 import Link from "next/link";
 import React from "react";
-import { MdAdminPanelSettings, MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
+import { MdAccountCircle, MdAdminPanelSettings, MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
 import { DemoButtons, GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
 
 // Guida di EduChat — versione ITALIANA. Segue esattamente la struttura di GuideFR.
@@ -88,12 +88,10 @@ export default function GuideIT() {
           { label: "Insegnante", note: "aprire l'aula, distribuire un tutor", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
           { label: "Istituto", note: "orari, quote, consumo", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
           { label: "Promptagogo", note: "confrontare due tutor in duello", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
+          { label: "I miei dati", note: "ciò che il server conserva di te", href: "/compte?visite=1", color: "#4DB6AC", icon: <MdAccountCircle /> },
           { label: "Amministrazione", note: "validare, fatturare, gestire le scuole", href: "/admin-demo?visite=1", color: "#FFD54F", icon: <MdAdminPanelSettings /> },
         ]} />
 
-      <p className="mt-3 text-sm">
-        <b>E per tutti: « I miei dati »</b> — <Link href="/compte?visite=1" className="underline">la pagina che mostra ciò che il server conserva di te — visita guidata</Link>.
-      </p>
 
       <div id="visite" className="mt-8 scroll-mt-6">
         <GuidedWalk steps={WALK}

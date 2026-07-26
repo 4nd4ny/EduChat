@@ -165,14 +165,16 @@ export function DemoButtons({ titre, chapeau, boutons }: {
     <section className="mt-6">
       <h2 className="text-lg font-bold">{titre}</h2>
       <p className="mt-1 text-sm opacity-70">{chapeau}</p>
-      <div className="mt-3 grid grid-cols-5 gap-2">
+      {/* Six portes sur une ligne quand la place le permet ; sinon deux rangées
+          de trois, puis trois rangées de deux. Jamais de rangée bancale. */}
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {boutons.map(b => (
           <Link key={b.href} href={b.href}
             className="flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition hover:bg-tertiary"
             style={{ borderColor: `${b.color}66` }}>
             <span className="text-2xl md:text-3xl" style={{ color: b.color }}>{b.icon}</span>
-            <span className="text-[11px] font-bold leading-tight md:text-sm">{b.label}</span>
-            <span className="hidden text-[11px] leading-tight opacity-60 md:block">{b.note}</span>
+            <span className="text-xs font-bold leading-tight lg:text-sm">{b.label}</span>
+            <span className="hidden text-[11px] leading-tight opacity-60 sm:block">{b.note}</span>
           </Link>
         ))}
       </div>

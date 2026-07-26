@@ -1,6 +1,6 @@
 import Link from "next/link";
 import React from "react";
-import { MdAdminPanelSettings, MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
+import { MdAccountCircle, MdAdminPanelSettings, MdChat, MdCoPresent, MdCompareArrows, MdSchool, MdSettings } from "react-icons/md";
 import { DemoButtons, GuidedWalk, Mindmap, Profile, Section, WalkStep } from "./shared";
 
 // EduChat guide — ENGLISH version. Mirrors GuideFR structure exactly.
@@ -88,12 +88,10 @@ export default function GuideEN() {
           { label: "Teacher", note: "open the room, deploy a tutor", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
           { label: "School", note: "hours, quotas, usage", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
           { label: "Promptagogue", note: "compare two tutors in a duel", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
+          { label: "My data", note: "what the server keeps about you", href: "/compte?visite=1", color: "#4DB6AC", icon: <MdAccountCircle /> },
           { label: "Administration", note: "validate, bill, manage schools", href: "/admin-demo?visite=1", color: "#FFD54F", icon: <MdAdminPanelSettings /> },
         ]} />
 
-      <p className="mt-3 text-sm">
-        <b>And for everyone: “My data”</b> — <Link href="/compte?visite=1" className="underline">the page showing what the server keeps about you — guided walkthrough</Link>.
-      </p>
 
       <div id="visite" className="mt-8 scroll-mt-6">
         <GuidedWalk steps={WALK}
