@@ -106,8 +106,12 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     const respire = !!ecole.respire;
     // RESPIRE : zéro, participation comprise. Ces écoles sont la destination
     // des 10 %, pas leur source.
-    const consommation = respire ? 0 : centimes(lignes.reduce((n, l) => n + l.montant, 0));
-    const participation = respire ? 0 : centimes(consommation * BillingSurchargePct / 100);
+    // MÊME RÈGLE QUE LE PORTE-MONNAIE, arrondi vers le haut compris : la
+    // facture est le RELEVÉ de ce qui a été décompté, pas un second calcul.
+    // Deux calculs parallèles finissent toujours par diverger d'un centime,
+    // et c'est l'écart inexpliqué qui ruine la confiance.
+    const consommation = respire ? 0 : Math.ceil(lignes.reduce((n, l) => n + l.montant, 0) * 100 - 1e-9) / 100;
+    const participation = respire ? 0 : Math.ceil(consommation * BillingSurchargePct - 1e-7) / 100;
     const emise = emises.find(f => f.etablissement_id === ecole.id);
 
     return {

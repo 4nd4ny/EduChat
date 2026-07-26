@@ -80,3 +80,22 @@ SECRET_FREE_DAILY_USD=1
 # Prix moyen du filet PAYANT de la cascade gratuite, en USD par million de
 # tokens (les modèles « :free » sont comptés à zéro). Défaut : 0.08.
 SECRET_FREE_PRICE_PER_MTOK=0.08
+
+# ── RECHARGE PAR PAYPAL ─────────────────────────────────────────────────────
+# TOUT EST ÉTEINT tant que les trois valeurs ne sont pas renseignées : les
+# routes répondent 503 et l'interface ne propose aucun bouton. Commencez par un
+# bac à sable (developer.paypal.com), passez une recharge ET un remboursement
+# de test, et ne mettez les identifiants de production qu'ensuite.
+SECRET_PAYPAL_CLIENT_ID=
+SECRET_PAYPAL_SECRET=
+SECRET_PAYPAL_WEBHOOK_ID=
+SECRET_PAYPAL_ENV=sandbox        # « live » pour la production, tout le reste = bac à sable
+# Webhook à déclarer chez PayPal : https://educh.at/api/paypal/webhook
+# Événements à cocher : PAYMENT.CAPTURE.COMPLETED, .REFUNDED, .REVERSED,
+#                       .DENIED, .DECLINED, CUSTOMER.DISPUTE.CREATED
+# Sans les quatre derniers, un remboursement ne reprend PAS le crédit : c'est
+# l'arnaque « je recharge, je consomme, je conteste ».
+
+# Monnaie des factures et participation aux frais de fonctionnement (%).
+SECRET_BILLING_CURRENCY=CHF
+SECRET_BILLING_SURCHARGE_PCT=10

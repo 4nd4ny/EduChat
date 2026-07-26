@@ -128,6 +128,21 @@ CREATE TABLE IF NOT EXISTS credit_mouvements (
 );
 CREATE INDEX IF NOT EXISTS idx_credit_etab ON credit_mouvements(etablissement_id, ts);
 
+-- INTENTIONS DE RECHARGE. Écrite AVANT d'envoyer qui que ce soit chez PayPal,
+-- c'est elle — et jamais un champ renvoyé par le client — qui dira au retour
+-- quelle école créditer.
+CREATE TABLE IF NOT EXISTS recharges (
+  order_id         TEXT PRIMARY KEY,
+  etablissement_id INTEGER NOT NULL,
+  montant          REAL NOT NULL,
+  devise           TEXT NOT NULL DEFAULT '',
+  etat             TEXT NOT NULL DEFAULT 'attente',   -- attente · creditee · reprise
+  capture_id       TEXT,
+  cree_at          INTEGER NOT NULL,
+  credite_at       INTEGER,
+  par              TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS email_codes (
   email        TEXT PRIMARY KEY,
   name         TEXT NOT NULL DEFAULT '',
@@ -406,6 +421,11 @@ export function getDb(): Database.Database {
     // prix_mtok reste le repli tant que le détail n'est pas réglé.
     "ALTER TABLE tarifs ADD COLUMN prix_entree_mtok REAL NOT NULL DEFAULT 0",
     "ALTER TABLE tarifs ADD COLUMN prix_sortie_mtok REAL NOT NULL DEFAULT 0",
+    // Identifiant PayPal du mouvement. UNIQUE : c'est la contrainte, et non un
+    // « SELECT puis INSERT », qui empêche une notification rejouée de créditer
+    // deux fois — deux webhooks simultanés sont un cas NORMAL.
+    "ALTER TABLE credit_mouvements ADD COLUMN paypal_id TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_paypal ON credit_mouvements(paypal_id) WHERE paypal_id IS NOT NULL",
     // Traduction automatique des tuteurs (voir src/server/traduction.ts). La
     // table prompt_translations existait depuis la v2 mais n'avait jamais servi :
     // ces colonnes lui donnent son état. source_version est le lien avec
