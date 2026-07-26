@@ -9,7 +9,9 @@ import { authHeaders } from "../../utils/account";
 import { formatTokens } from "../../utils/formatTokens";
 
 type Detail = {
-  name: string; authorName: string; language: string; description: string;
+  // « name » est l'identité (URL, favoris, facturation) ; « title » est ce
+  // qu'on montre, et il suit la langue du lecteur.
+  name: string; title: string; authorName: string; language: string; description: string;
   version: number; createdAt: number; updatedAt: number;
   usageCount: number; tokensTotal: number;
   ratingAvg: number | null; ratingCount: number; body: string;
@@ -125,12 +127,12 @@ export default function PromptPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-16 text-primary">
-      <Head><title>{`${detail.name} — EduChat`}</title></Head>
+      <Head><title>{`${detail.title || detail.name} — EduChat`}</title></Head>
 
 
       <header className="flex flex-col gap-3">
         <div className="flex items-start justify-between">
-          <h1 className="text-3xl font-bold">{detail.name}</h1>
+          <h1 className="text-3xl font-bold">{detail.title || detail.name}</h1>
           <button onClick={() => setFavorites(toggleFavorite(detail.name))}
             aria-label={isFavorite ? "Retirer des favoris" : "Mettre en favori"}
             className="text-3xl text-yellow-400">
