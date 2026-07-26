@@ -85,6 +85,33 @@ CREATE TABLE IF NOT EXISTS prompt_translations (
   PRIMARY KEY (prompt_id, locale)
 );
 
+-- TARIF de la clé interne, par fournisseur : prix pour un MILLION de jetons,
+-- dans la monnaie du gestionnaire. Réglé par le site, jamais par une école.
+-- Un fournisseur absent de cette table vaut zéro : on ne facture pas ce dont
+-- on ne connaît pas le prix.
+CREATE TABLE IF NOT EXISTS tarifs (
+  provider   TEXT PRIMARY KEY,
+  prix_mtok  REAL NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+-- FACTURES ÉMISES. La consommation se recalcule à tout moment depuis
+-- usage_log ; une facture ÉMISE, elle, fige son montant — sinon un changement
+-- de tarif réécrirait le passé, et une école recevrait deux fois un chiffre
+-- différent pour le même mois. Elle est le seul endroit où « payée » existe.
+CREATE TABLE IF NOT EXISTS factures (
+  etablissement_id INTEGER NOT NULL,
+  periode          TEXT NOT NULL,             -- « AAAA-MM »
+  jetons           INTEGER NOT NULL DEFAULT 0,
+  consommation     REAL NOT NULL DEFAULT 0,   -- au tarif du jour de l'émission
+  participation    REAL NOT NULL DEFAULT 0,   -- les 10 % de frais de fonctionnement
+  total            REAL NOT NULL DEFAULT 0,
+  devise           TEXT NOT NULL DEFAULT '',
+  emise_at         INTEGER NOT NULL,
+  payee_at         INTEGER,
+  PRIMARY KEY (etablissement_id, periode)
+);
+
 CREATE TABLE IF NOT EXISTS email_codes (
   email        TEXT PRIMARY KEY,
   name         TEXT NOT NULL DEFAULT '',

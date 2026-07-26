@@ -137,3 +137,19 @@ function isValidIP(ip: string): boolean {
   const ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7}([0-9a-fA-F]{1,4}|:))$/;
   return ipv4Regex.test(ip) || ipv6Regex.test(ip);
 }
+
+// Monnaie des factures. Un simple libellé : le site ne convertit rien, il
+// affiche le montant dans l'unité que le gestionnaire a choisie pour ses
+// tarifs. Changer ce réglage ne recalcule aucune facture déjà émise, qui
+// garde la sienne.
+export const BillingCurrency: string = (process.env.SECRET_BILLING_CURRENCY || 'CHF').trim();
+
+// PARTICIPATION AUX FRAIS DE FONCTIONNEMENT, en pourcentage de la
+// consommation. Elle alimente les clés API offertes : la démonstration
+// publique du site et les écoles RESPIRE, qui ne paient rien. Elle est
+// affichée en clair sur la facture de chaque école — une contribution qu'on
+// cache n'est plus une contribution, c'est une marge.
+export const BillingSurchargePct: number = (() => {
+  const parsed = parseFloat(process.env.SECRET_BILLING_SURCHARGE_PCT ?? '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10;
+})();

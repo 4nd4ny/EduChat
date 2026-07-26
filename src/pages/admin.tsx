@@ -120,6 +120,18 @@ function BadgeTraductions({ resume }: { resume: ResumeTraductions }) {
 
 const BTN = "flex items-center gap-1 rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary";
 
+type LigneFacture = { provider: string; tokens: number; prixMtok: number; montant: number };
+type FactureRow = {
+  etablissementId: number; etablissement: string; respire: boolean; periode: string;
+  lignes: LigneFacture[]; jetons: number; consommation: number; participation: number;
+  participationPct: number; total: number; devise: string;
+  emiseAt: number | null; payeeAt: number | null; tarifChange: boolean;
+};
+type Impayee = { etablissementId: number; etablissement: string; periode: string;
+  total: number; devise: string; emiseAt: number; billingEmail: string };
+type Participation = { devise: string; pct: number; collectee: number; demo: number; respire: number; jetonsOfferts: number };
+type TarifRow = { provider: string; prixMtok: number };
+
 type CatalogueRow = { provider: string; source: string; count: number; at: number };
 type LadderRow = {
   provider: string; rungs: string[]; suggested: string[]; custom: boolean;
@@ -205,6 +217,10 @@ export default function AdminPage() {
       { cle: "etab", label: t("admin.col.school"), compare: (a, b) => a.etablissement.localeCompare(b.etablissement) },
     ],
   });
+  const [factures, setFactures] = useState<FactureRow[]>([]);
+  const [impayees, setImpayees] = useState<Impayee[]>([]);
+  const [participation, setParticipation] = useState<Participation | null>(null);
+  const [tarifsListe, setTarifsListe] = useState<TarifRow[]>([]);
   const [message, setMessage] = useState("");
 
   const reload = useCallback(() => {
@@ -224,6 +240,8 @@ export default function AdminPage() {
       .then(r => r.json()).then(data => setLadders(data.ladders ?? [])).catch(() => {});
     fetch("/api/admin/models", { headers: authHeaders() })
       .then(r => r.json()).then(data => setCatalogue(data.catalogue ?? [])).catch(() => {});
+    fetch("/api/admin/tarifs", { headers: authHeaders() })
+      .then(r => r.json()).then(d => setTarifsListe(d.tarifs ?? [])).catch(() => {});
     fetch("/api/admin/comments", { headers: authHeaders() })
       .then(r => r.json())
       .then(data => { setComments(data.comments ?? []); setModeratedTotal(data.moderatedTotal ?? 0); })
@@ -396,6 +414,44 @@ export default function AdminPage() {
     if (!response.ok) { setMessage(t("admin.msg.schoolSaveFailed")); return; }
     setForm({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
     reload();
+  };
+
+  // La facture en MONNAIE, période par période. Le relevé en jetons plus haut
+  // reste le détail ; ceci en est la traduction en francs, participation
+  // comprise et nommée.
+  useEffect(() => {
+    const [y, m] = period.split("-");
+    if (!y || !m) return;
+    fetch(`/api/admin/factures?year=${y}&month=${Number(m)}`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(d => { setFactures(d.factures ?? []); setImpayees(d.impayees ?? []); setParticipation(d.participation ?? null); })
+      .catch(() => {});
+  }, [period, isSuper]);
+
+  const actionFacture = async (etablissementId: number, action: string, periode?: string) => {
+    const [y, m] = period.split("-");
+    const r = await fetch("/api/admin/factures", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ action, etablissementId, periode, year: Number(y), month: Number(m) }),
+    });
+    if (!r.ok) { setMessage(t("admin.facture.failed")); return; }
+    const [yy, mm] = period.split("-");
+    fetch(`/api/admin/factures?year=${yy}&month=${Number(mm)}`, { headers: authHeaders() })
+      .then(x => x.json()).then(d => { setFactures(d.factures ?? []); setImpayees(d.impayees ?? []); })
+      .catch(() => {});
+  };
+
+  const reglerTarif = async (provider: string, prixMtok: number) => {
+    const r = await fetch("/api/admin/tarifs", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ provider, prixMtok }),
+    });
+    if (!r.ok) { setMessage(t("admin.tarif.failed")); return; }
+    fetch("/api/admin/tarifs", { headers: authHeaders() })
+      .then(x => x.json()).then(d => setTarifsListe(d.tarifs ?? [])).catch(() => {});
+    const [y, m] = period.split("-");
+    fetch(`/api/admin/factures?year=${y}&month=${Number(m)}`, { headers: authHeaders() })
+      .then(x => x.json()).then(d => setFactures(d.factures ?? [])).catch(() => {});
   };
 
   const downloadCsv = () => {
@@ -844,6 +900,134 @@ export default function AdminPage() {
           </>
         )}
         <p className="mt-2 text-xs opacity-50">{t("admin.billing.note")}</p>
+      </section>
+      )}
+
+      {/* ─── LA FACTURE, EN MONNAIE, AVEC SA PARTICIPATION EN CLAIR ───
+          Le relevé ci-dessus compte les jetons ; celui-ci les traduit au tarif
+          et nomme les 10 % de frais de fonctionnement. C'est la ligne que
+          l'école doit voir : une contribution qu'on cache n'est plus une
+          contribution, c'est une marge. */}
+      {(!seule || seule === "factures") && (
+      <section className="mt-10">
+        <h2 className="text-lg font-bold">{t("admin.facture.heading")}</h2>
+        <p className="mt-1 text-xs opacity-60">{t("admin.facture.help")}</p>
+
+        {factures.length === 0 ? (
+          <p className="mt-2 text-sm opacity-60">{t("admin.facture.empty")}</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-3">
+            {factures.map(f => (
+              <div key={f.etablissementId} className="rounded border border-white/10 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <b>{f.etablissement}</b>
+                  <span className="opacity-60">{f.periode}</span>
+                  {f.respire && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.facture.respire")}</span>}
+                  {f.payeeAt && <span className="rounded bg-green-600/30 px-1.5 text-xs">{t("admin.facture.paid")}</span>}
+                  {!f.payeeAt && f.emiseAt && <span className="rounded bg-amber-500/30 px-1.5 text-xs">{t("admin.facture.unpaid")}</span>}
+                  {f.tarifChange && <span className="rounded bg-amber-500/30 px-1.5 text-xs" title={t("admin.facture.driftTitle")}>{t("admin.facture.drift")}</span>}
+                  <span className="flex-grow" />
+                  {isSuper && !f.respire && (
+                    <>
+                      <button onClick={() => actionFacture(f.etablissementId, "emettre")} className={BTN}>
+                        {f.emiseAt ? t("admin.facture.reissue") : t("admin.facture.issue")}
+                      </button>
+                      {f.emiseAt && (
+                        <button onClick={() => actionFacture(f.etablissementId, f.payeeAt ? "impayee" : "payee", f.periode)} className={BTN}>
+                          {f.payeeAt ? t("admin.facture.markUnpaid") : t("admin.facture.markPaid")}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+                {f.lignes.length > 0 && (
+                  <table className="mt-2 w-full text-left text-xs">
+                    <tbody>
+                      {f.lignes.map(l => (
+                        <tr key={l.provider} className="opacity-70">
+                          <td className="py-0.5">{l.provider}</td>
+                          <td className="text-right">{l.tokens.toLocaleString("fr-CH")} {t("admin.facture.tokens")}</td>
+                          <td className="text-right">× {l.prixMtok.toFixed(2)} / M</td>
+                          <td className="text-right">{l.montant.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <dl className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                  <span><dt className="inline opacity-60">{t("admin.facture.consumption")} </dt>
+                    <dd className="inline font-mono">{f.consommation.toFixed(2)} {f.devise}</dd></span>
+                  <span title={t("admin.facture.shareTitle")}>
+                    <dt className="inline opacity-60">{t("admin.facture.share", { pct: f.participationPct })} </dt>
+                    <dd className="inline font-mono">{f.participation.toFixed(2)} {f.devise}</dd></span>
+                  <span><dt className="inline font-bold">{t("admin.facture.total")} </dt>
+                    <dd className="inline font-mono font-bold">{f.total.toFixed(2)} {f.devise}</dd></span>
+                </dl>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Le tarif : lisible par l'école qu'il facture, modifiable par le
+            site seul — il vaut pour toutes, une seule ne peut pas le fixer. */}
+        {tarifsListe.length > 0 && (
+          <>
+            <h3 className="mt-6 font-bold">{t("admin.tarif.heading")}</h3>
+            <p className="mt-1 text-xs opacity-60">{isSuper ? t("admin.tarif.helpSuper") : t("admin.tarif.helpSchool")}</p>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm">
+              {tarifsListe.map(tr => (
+                <label key={tr.provider} className="flex items-center gap-1">
+                  <span className="opacity-70">{tr.provider}</span>
+                  <input type="number" min={0} step="0.01" defaultValue={tr.prixMtok} disabled={!isSuper}
+                    onBlur={e => { const v = Number(e.target.value);
+                      if (isSuper && Number.isFinite(v) && v !== tr.prixMtok) void reglerTarif(tr.provider, v); }}
+                    className="w-20 rounded bg-tertiary p-1 text-right text-xs disabled:opacity-50" />
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Ce que la participation a rapporté, face à ce qu'elle a financé.
+            Les mettre côte à côte est la seule façon de vérifier la promesse. */}
+        {isSuper && participation && (
+          <p className="mt-4 rounded border border-[#DC6521]/40 bg-[#DC6521]/10 p-2 text-xs">
+            {t("admin.participation.summary", {
+              pct: participation.pct,
+              collectee: participation.collectee.toFixed(2),
+              demo: participation.demo.toFixed(2),
+              respire: participation.respire.toFixed(2),
+              devise: participation.devise,
+            })}
+          </p>
+        )}
+
+        {isSuper && impayees.length > 0 && (
+          <>
+            <h3 className="mt-6 font-bold">{t("admin.impayees.heading", { n: impayees.length })}</h3>
+            <table className="mt-2 w-full text-left text-sm">
+              <thead className="text-xs uppercase opacity-60">
+                <tr><th className="py-1">{t("admin.col.school")}</th><th>{t("admin.impayees.period")}</th>
+                  <th>{t("admin.impayees.billingEmail")}</th><th className="text-right">{t("admin.facture.total")}</th><th /></tr>
+              </thead>
+              <tbody>
+                {impayees.map(f => (
+                  <tr key={`${f.etablissementId}-${f.periode}`} className="border-b border-white/5">
+                    <td className="py-1">{f.etablissement}</td>
+                    <td>{f.periode}</td>
+                    <td className="text-xs opacity-70">{f.billingEmail || "—"}</td>
+                    <td className="text-right font-mono">{f.total.toFixed(2)} {f.devise}</td>
+                    <td className="text-right">
+                      <button onClick={() => actionFacture(f.etablissementId, "payee", f.periode)} className={BTN}>
+                        {t("admin.facture.markPaid")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </section>
       )}
 
