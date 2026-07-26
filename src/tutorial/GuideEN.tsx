@@ -31,22 +31,22 @@ const WALK: WalkStep[] = [
   },
   {
     title: "A tutor's page",
-    text: "Click a name to read its page: description, statistics, ratings, lineage (\"inspired by\"), and the FULL text of the prompt — everything is public, school is free. This is where you rate (1 to 5 stars), copy the link to recommend, and propose a variant.",
+    text: "Click a name to read its page: description, statistics, ratings, lineage (“inspired by”), and the FULL text of the prompt — everything is public, school is free. This is where you rate (1 to 5 stars), copy the link to recommend, and propose a variant.",
     href: "/en/p/Socrate", hrefLabel: "See Socrate's page",
   },
   {
     title: "Trying a tutor",
-    text: "\"Try\" opens the chat with that tutor in charge (banner at the top). On the public site, enter your personal API key (\"Personal key\" field): it stays in the page — remembered only if you ask — and it unlocks attachments (images, PDF) and voice chat. Replies stream in live, as they are generated.",
+    text: "“Try” opens the chat with that tutor in charge (banner at the top). On the public site, enter your personal API key (“Personal key” field): it stays in the page — remembered only if you ask — and it unlocks attachments (images, PDF) and voice chat. Replies stream in live, as they are generated.",
     href: "/en/chat?tuteur=Socrate", hrefLabel: "Try Socrate",
   },
   {
     title: "Proposing your own tutor",
-    text: "The \"Propose a tutor\" form starts from a Socratic template: give a unique proper name, a description, adapt the rules. You can publish under your name (email verified in 30 seconds, no password) or anonymously.",
+    text: "The “Propose a tutor” form starts from a Socratic template: give a unique proper name, a description, adapt the rules. You can publish under your name (email verified in 30 seconds, no password) or anonymously.",
     href: "/en/publier", hrefLabel: "Open the form",
   },
   {
     title: "Testing before submitting",
-    text: "Your prompt is born \"under construction\": a secret URL lets you read, edit and TEST it in the chat — share that link with colleagues for feedback, it is not locked. When it is ready: \"Submit for publication\".",
+    text: "Your prompt is born “under construction”: a secret URL lets you read, edit and TEST it in the chat — share that link with colleagues for feedback, it is not locked. When it is ready: “Submit for publication”.",
   },
   {
     title: "Comparing in a duel",
@@ -126,7 +126,7 @@ export default function GuideEN() {
           <li><b>History</b>: your conversations stay in the browser. Renaming, deletion, per-conversation export (.md + .json), and <b>full profile export</b> (conversations + favourites + ratings) re-importable elsewhere by drag and drop.</li>
           <li><b>Token counter</b>: the total consumed shows under the input area and in the tab title.</li>
           <li><b>Through a school</b>: on <Link className="underline" href="/school">/school</Link>, no account or key — see the <Link className="underline" href="/etablissements">schools guide</Link>.</li>
-          <li><b>Privacy</b>: detailed on <Link className="underline" href="/rgpd">the privacy page</Link> — students never have accounts.</li>
+          <li><b>Privacy</b>: detailed on <Link className="underline" href="/rgpd">the Privacy page</Link> — students never have accounts.</li>
         </ul>
       </Section>
 
@@ -135,11 +135,11 @@ export default function GuideEN() {
         <ol className="list-inside list-decimal space-y-2">
           <li><b>Identify yourself</b> (optional but recommended) on <Link className="underline" href="/verifier">/verifier</Link>: public name + email, confirmed by a six-digit code received by email. <b>No password, ever.</b> Without an account, publication is anonymous — testable and submittable via the secret URL, but all moderation (validation, unpublishing, archiving) will rest with the administration.</li>
           <li><b>Write</b> on <Link className="underline" href="/publier">/publier</Link>: a <b>unique proper name</b> (Pythagoras, Curie...), a catalogue description, the language, and the prompt itself — the provided template lays down the basic Socratic rules (never give the answer, advance by questions, encourage). Limits: 256 KB per prompt, 1 MB per author. Text only.</li>
-          <li><b>Test</b>: the \"under construction\" draft has a secret URL — reading, editing, testing in the chat, and inviting testers by simply sharing the link.</li>
+          <li><b>Test</b>: the “under construction” draft has a secret URL — reading, editing, testing in the chat, and inviting testers by simply sharing the link.</li>
           <li><b>Refine in a duel</b> on <Link className="underline" href="/duel">/duel</Link> (promptagogues only): the same question to two tutors on the same model — or the same tutor on two models — to measure the effect of a wording.</li>
           <li><b>Submit</b>, then let validation do its work (next section).</li>
         </ol>
-        <p><b>Afterwards:</b> editing a published tutor creates a <b>new version</b> — ongoing conversations stay on theirs and offer the switch, never forcing it. You can <b>unpublish your</b> tutors at any time from your workshop (the secret link) and republish them later (nothing is ever deleted: counters stay intact). The <b>anonymous comments</b> left on your pages await you: you moderate them (approve or hide). \"Propose a variant\" on any page pre-fills the form with the existing prompt and records the <b>lineage</b> (\"inspired by\", shown on both pages): that is the path of personalisation. The <b>sync</b> option (ticked on /verifier) saves your profile on the server so you can retrieve your conversations and favourites in another browser.</p>
+        <p><b>Afterwards:</b> editing a published tutor creates a <b>new version</b> — ongoing conversations stay on theirs and offer the switch, never forcing it. You can <b>unpublish your</b> tutors at any time from your workshop (the secret link) and republish them later (nothing is ever deleted: counters stay intact). The <b>anonymous comments</b> left on your pages await you: you moderate them (approve or hide). “Propose a variant” on any page pre-fills the form with the existing prompt and records the <b>lineage</b> (“inspired by”, shown on both pages): that is the path of personalisation. The <b>sync</b> option (ticked on /verifier) saves your profile on the server so you can retrieve your conversations and favourites in another browser.</p>
       </Section>
 
       <Section id="validation" title="The validation process">
@@ -158,14 +158,14 @@ export default function GuideEN() {
       </Section>
 
       <Section id="classement" title="How the best tutors are highlighted">
-        <p>The default \"<b>Recommended</b>\" sort computes, in the database, a score for each published tutor:</p>
+        <p>The default “<b>Recommended</b>” sort computes, in the database, a score for each published tutor:</p>
         <p className="overflow-x-auto rounded bg-tertiary p-3 font-mono text-xs">
           score = uses + 5 × average rating + 50 / (1 + age in days)
         </p>
         <ul className="list-inside list-disc space-y-1">
           <li><b>uses</b> — every conversation started with the tutor counts: real popularity weighs in.</li>
           <li><b>5 × average rating</b> — perceived quality (1-5 stars) weighs up to 25 points: an excellent but recent tutor can overtake an old, moderately liked one.</li>
-          <li><b>50 / (1 + age)</b> — a freshness bonus, strong in the first days then decreasing: new tutors get their chance to be seen, preventing the first published from monopolising the top (\"snowball effect\").</li>
+          <li><b>50 / (1 + age)</b> — a freshness bonus, strong in the first days then decreasing: new tutors get their chance to be seen, preventing the first published from monopolising the top (“snowball effect”).</li>
         </ul>
         <p>The other sorts are direct database columns: <b>most used</b> (uses), <b>best rated</b> (average, tie-broken by the number of ratings), <b>newest</b> (creation date), <b>tokens generated</b> (volume produced), <b>name</b> (alphabetical). And your <b>favourites</b> — purely local — are always pinned on top, in the order of the chosen sort.</p>
       </Section>
@@ -177,13 +177,13 @@ export default function GuideEN() {
               <tr><th className="py-1 pr-2">Data</th><th className="pr-2">Where</th><th>Detail</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, personal API key, favourites, given ratings, attachments</td><td className="pr-2"><b>Your browser</b></td><td>Never on the server (attachments are only relayed to the provider). The personal key is kept in THIS browser so you need not retype it — see the Privacy page. Two exceptions: profile backup for accounts, and the key remembered on the server, on request.</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Socratic tutors</td><td className="pr-2">Database</td><td>Full text, successive versions, lineage (\"inspired by\"), status, anonymous counters (uses, tokens generated, sum and count of ratings).</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Conversations, personal API key, favourites, given ratings, attachments</td><td className="pr-2"><b>Your browser</b></td><td>Never on the server (attachments are only relayed to the provider). The personal key is kept in THIS browser so you need not retype it — see <Link className="underline" href="/rgpd">the Privacy page</Link>. Two exceptions: profile backup for accounts, and the key remembered on the server, on request.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Socratic tutors</td><td className="pr-2">Database</td><td>Full text, successive versions, lineage (“inspired by”), status, anonymous counters (uses, tokens generated, sum and count of ratings).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogue / teacher account</td><td className="pr-2">Database</td><td>Public name, email (never displayed), roles, sync option. <b>No password exists.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schools & consumption</td><td className="pr-2">Database</td><td>Detailed in the <Link className="underline" href="/etablissements#donnees">schools guide</Link> (IP, hours, quotas, per-IP consumption log — no student personal data).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synced profile (optional)</td><td className="pr-2">Database</td><td>A copy of your browser profile, deletable at any time from /verifier.</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Remembered API key (on request, accounts)</td><td className="pr-2">Database</td><td>Only if you tick « Remember my key » in the chat: your key is kept <b>encrypted</b> (AES-256-GCM), never travels back to the browser, and disappears as soon as you untick.</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Home page &quot;online&quot; counter</td><td className="pr-2">Database</td><td>A non-reversible technical fingerprint of the browser (never the IP in clear) and the time of the last activity, erased after fifteen minutes.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Remembered API key (on request, accounts)</td><td className="pr-2">Database</td><td>Only if you tick “Remember my key” in the chat: your key is kept <b>encrypted</b> (AES-256-GCM), never travels back to the browser, and disappears as soon as you untick.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Home page “online” counter</td><td className="pr-2">Database</td><td>A non-reversible technical fingerprint of the browser (never the IP in clear) and the time of the last activity, erased after fifteen minutes.</td></tr>
             </tbody>
           </table>
         </div>

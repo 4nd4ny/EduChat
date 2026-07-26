@@ -7,7 +7,8 @@ import { providerDefaults, PROVIDER_IDS, type ProviderId, type ReasoningLevel } 
 import { requestCompletion } from "../utils/streamCompletion";
 import { getClientId } from "../utils/clientId";
 import { getAccount, getToken } from "../utils/account";
-import { fr as frDict } from "../i18n/dictionaries";
+import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
+import { useT } from "../i18n/useT";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
 import ModelField from "../chat/ModelField";
@@ -33,19 +34,18 @@ type ColumnConfig = {
   apiKey: string;
 };
 
-const err = (code: string) => (frDict as any)[`err.${code}`] ?? (frDict as any)["err.fallback"];
-
 function DuelColumn({ title, messages, busy }: { title: string; messages: Msg[]; busy: boolean }) {
+  const t = useT();
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [messages]);
   return (
     <div className="flex min-h-[16rem] flex-col rounded-lg border border-white/10 bg-secondary">
       <div className="border-b border-white/10 px-3 py-2 text-sm font-bold text-[#DC6521]">{title}</div>
       <div className="flex-grow overflow-y-auto p-3 text-sm" style={{ maxHeight: "50vh" }}>
-        {messages.length === 0 && <p className="opacity-50">La réponse de cette colonne s'affichera ici.</p>}
+        {messages.length === 0 && <p className="opacity-50">{t("duel.column.empty")}</p>}
         {messages.map((m, i) => (
           <div key={i} className="mb-3">
-            <span className="text-xs uppercase tracking-wide opacity-50">{m.role === "user" ? "Vous" : title}</span>
+            <span className="text-xs uppercase tracking-wide opacity-50">{m.role === "user" ? t("duel.column.you") : title}</span>
             {m.role === "user"
               ? <p className="whitespace-pre-wrap">{m.content}</p>
               : <div className="prose prose-sm mt-1 max-w-none dark:prose-invert"><AssistantMessageContent content={m.content} /></div>}
@@ -59,6 +59,11 @@ function DuelColumn({ title, messages, busy }: { title: string; messages: Msg[];
 }
 
 export default function DuelPage() {
+  const t = useT();
+  // Message d'erreur d'un code amont, rendu dans la langue de la page (le
+  // dictionnaire français sert seulement à savoir si le code est connu).
+  const err = (code: string) =>
+    (frDict as any)[`err.${code}`] ? t(`err.${code}` as TranslationKey) : t("err.fallback");
   const [me, setMe] = useState<Me>(null);
   // DÉMONSTRATION (?visite=1) : l'atelier s'ouvre sans compte, inerte, pour
   // montrer ce que tout compte vérifié obtient. Aucun appel au modèle.
@@ -172,24 +177,20 @@ export default function DuelPage() {
   };
 
   // ---- Garde d'accès -------------------------------------------------------
-  if ((me === null || !routeur.isReady) && !demo) return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
+  if ((me === null || !routeur.isReady) && !demo) return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
   if ((me === "anonymous" || (me && !me.isPromptagogue)) && !demo) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>Duel — EduChat</title></Head>
+        <Head><title>{t("duel.title")} — EduChat</title></Head>
         <MdCompareArrows className="mx-auto mb-4 text-5xl text-[#DC6521]" />
-        <h1 className="text-2xl font-bold">Le mode duel est réservé aux promptagogues</h1>
-        <p className="mt-3 opacity-80">
-          Comparer deux tuteurs sur le même modèle, ou le même tuteur sur deux modèles,
-          est un outil d'affinage pour les auteurs de prompts. Identifiez-vous (30 secondes,
-          sans mot de passe) pour y accéder.
-        </p>
+        <h1 className="text-2xl font-bold">{t("duel.locked.title")}</h1>
+        <p className="mt-3 opacity-80">{t("duel.locked.subtitle")}</p>
         <div className="mt-6 flex justify-center gap-3">
           <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-            Vérifier mon email
+            {t("compte.anonymousCta")}
           </Link>
           <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            Retour au catalogue
+            {t("duel.locked.back")}
           </Link>
         </div>
       </div>
@@ -199,31 +200,29 @@ export default function DuelPage() {
   // ---- L'atelier -----------------------------------------------------------
   return (
     <div className="mx-auto max-w-6xl px-4 pt-6 pb-24 text-primary">
-      <Head><title>Duel — EduChat</title></Head>
+      <Head><title>{t("duel.title")} — EduChat</title></Head>
 
       {demo && (
         <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
-          <b>Démonstration.</b> L&apos;atelier de comparaison est réservé aux promptagogues — et
-          <b> toute personne qui vérifie son adresse email en devient un</b>, en trente secondes
-          et sans mot de passe. Ici, les commandes sont désactivées : rien n&apos;est envoyé.
+          {/* Bandeau en trois morceaux : le fragment en gras est la promesse
+              centrale, il doit rester saillant dans les quatre langues. */}
+          <b>{t("duel.demo.tag")}</b> {t("duel.demo.intro")}{" "}
+          <b>{t("duel.demo.strong")}</b>{t("duel.demo.outro")}
         </p>
       )}
       {tour && <InterfaceTour parcours="duel" onClose={() => setTour(false)} />}
 
-      <h1 className="flex items-center gap-2 text-3xl font-bold"><MdCompareArrows /> Duel</h1>
-      <p className="mt-1 text-sm opacity-70">
-        La même question part dans les deux colonnes — observez, comparez, affinez.
-        Ces conversations d'essai ne sont pas conservées.
-      </p>
+      <h1 className="flex items-center gap-2 text-3xl font-bold"><MdCompareArrows /> {t("duel.title")}</h1>
+      <p className="mt-1 text-sm opacity-70">{t("duel.subtitle")}</p>
 
       <div data-tour="duel-mode" className="mt-4 flex flex-wrap gap-2 text-sm">
         <button disabled={demo} onClick={() => setMode("prompts")}
           className={`rounded px-3 py-1.5 ${mode === "prompts" ? "bg-[#DC6521] font-bold" : "border border-white/20 hover:bg-tertiary"}`}>
-          2 tuteurs · 1 modèle
+          {t("duel.mode.prompts")}
         </button>
         <button disabled={demo} onClick={() => setMode("models")}
           className={`rounded px-3 py-1.5 ${mode === "models" ? "bg-[#DC6521] font-bold" : "border border-white/20 hover:bg-tertiary"}`}>
-          1 tuteur · 2 modèles
+          {t("duel.mode.models")}
         </button>
       </div>
 
@@ -231,38 +230,38 @@ export default function DuelPage() {
       <div data-tour="duel-colonneA" className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-secondary p-4 text-xs md:grid-cols-2">
         {mode === "prompts" ? (
           <>
-            <label className="flex flex-col gap-1">Tuteur A
+            <label className="flex flex-col gap-1">{t("duel.field.tutorA")}
               <select disabled={demo} className="rounded bg-tertiary p-2" value={config[0].promptName}
                 onChange={e => updateConfig(0, { promptName: e.target.value })}>
                 {prompts.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1">Tuteur B
+            <label className="flex flex-col gap-1">{t("duel.field.tutorB")}
               <select disabled={demo} className="rounded bg-tertiary p-2" value={config[1].promptName}
                 onChange={e => updateConfig(1, { promptName: e.target.value })}>
                 {prompts.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1">Fournisseur (commun)
+            <label className="flex flex-col gap-1">{t("duel.field.providerShared")}
               <select disabled={demo} className="rounded bg-tertiary p-2" value={config[0].provider}
                 onChange={e => updateConfig(0, { provider: e.target.value as ProviderId })}>
                 {PROVIDER_IDS.map(id => <option key={id} value={id}>{providerDefaults[id].label}</option>)}
               </select>
             </label>
-            <label className="flex flex-col gap-1">Modèle (commun)
+            <label className="flex flex-col gap-1">{t("duel.field.modelShared")}
               <ModelField disabled={demo} className="rounded bg-tertiary p-2"
                 provider={config[0].provider} apiKey={config[0].apiKey} model={config[0].model}
                 onChange={value => updateConfig(0, { model: value })} />
             </label>
-            <label className="flex flex-col gap-1 md:col-span-2">Clé personnelle
+            <label className="flex flex-col gap-1 md:col-span-2">{t("chat.input.apiKey")}
               <input disabled={demo} type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={config[0].apiKey}
-                placeholder="Sinon : clé gérée (si session déverrouillée)"
+                placeholder={t("duel.field.apiKeyPlaceholder")}
                 onChange={e => updateConfig(0, { apiKey: e.target.value })} />
             </label>
           </>
         ) : (
           <>
-            <label className="flex flex-col gap-1 md:col-span-2">Tuteur (commun)
+            <label className="flex flex-col gap-1 md:col-span-2">{t("duel.field.tutorShared")}
               <select disabled={demo} className="rounded bg-tertiary p-2" value={config[0].promptName}
                 onChange={e => updateConfig(0, { promptName: e.target.value })}>
                 {prompts.map(name => <option key={name} value={name}>{name}</option>)}
@@ -270,39 +269,40 @@ export default function DuelPage() {
             </label>
             {([0, 1] as const).map(index => (
               <div key={index} className="flex flex-col gap-2 rounded border border-white/10 p-2">
-                <span className="font-bold opacity-70">Moteur {index === 0 ? "A" : "B"}</span>
-                <label className="flex flex-col gap-1">Fournisseur
+                {/* « A » et « B » restent des repères typographiques, pas des mots. */}
+                <span className="font-bold opacity-70">{t("duel.field.engine", { letter: index === 0 ? "A" : "B" })}</span>
+                <label className="flex flex-col gap-1">{t("chat.input.provider")}
                   <select disabled={demo} className="rounded bg-tertiary p-2" value={config[index].provider}
                     onChange={e => updateConfig(index, { provider: e.target.value as ProviderId })}>
                     {PROVIDER_IDS.map(id => <option key={id} value={id}>{providerDefaults[id].label}</option>)}
                   </select>
                 </label>
-                <label className="flex flex-col gap-1">Modèle
+                <label className="flex flex-col gap-1">{t("chat.input.model")}
                   <ModelField disabled={demo} className="rounded bg-tertiary p-2"
                     provider={config[index].provider} apiKey={config[index].apiKey} model={config[index].model}
                     onChange={value => updateConfig(index, { model: value })} />
                 </label>
-                <label className="flex flex-col gap-1">Clé personnelle
+                <label className="flex flex-col gap-1">{t("chat.input.apiKey")}
                   <input disabled={demo} type="password" autoComplete="off" className="rounded bg-tertiary p-2" value={config[index].apiKey}
-                    placeholder="Sinon : clé gérée (si session déverrouillée)"
+                    placeholder={t("duel.field.apiKeyPlaceholder")}
                     onChange={e => updateConfig(index, { apiKey: e.target.value })} />
                 </label>
               </div>
             ))}
           </>
         )}
-        <label className="flex flex-col gap-1">Raisonnement
+        <label className="flex flex-col gap-1">{t("chat.input.reasoning")}
           <select disabled={demo} className="rounded bg-tertiary p-2" value={reasoning}
             onChange={e => setReasoning(e.target.value as ReasoningLevel)}>
-            <option value="low">Rapide</option>
-            <option value="medium">Équilibré</option>
-            <option value="high">Approfondi</option>
+            <option value="low">{t("chat.input.reasoning.low")}</option>
+            <option value="medium">{t("chat.input.reasoning.medium")}</option>
+            <option value="high">{t("chat.input.reasoning.high")}</option>
           </select>
         </label>
         <div className="flex items-end justify-end">
           <button disabled={demo} onClick={() => setColumns([[], []])}
             className="rounded border border-white/20 px-3 py-2 hover:bg-tertiary">
-            Vider les colonnes
+            {t("duel.clear")}
           </button>
         </div>
       </div>
@@ -318,11 +318,11 @@ export default function DuelPage() {
       {/* La question commune */}
       <form onSubmit={ask} className="mt-4 flex gap-2">
         <input data-tour="duel-question" disabled={demo} value={question} onChange={e => setQuestion(e.target.value)}
-          placeholder="Votre question, envoyée aux deux colonnes…"
-          aria-label="Votre question, envoyée aux deux colonnes"
+          placeholder={t("duel.question.placeholder")}
+          aria-label={t("duel.question.aria")}
           className="flex-grow rounded border border-stone-500/20 bg-tertiary p-3 outline-none" />
         <button data-tour="duel-envoyer" type="submit" disabled={demo || busy[0] || busy[1] || !question.trim()}
-          aria-label="Envoyer aux deux colonnes"
+          aria-label={t("duel.send.aria")}
           className="rounded bg-[#DC6521] px-5 font-bold hover:opacity-90 disabled:opacity-50">
           <MdSend />
         </button>

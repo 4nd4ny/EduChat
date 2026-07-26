@@ -81,7 +81,7 @@ export default function VerifierPage() {
 
   return (
     <div className="mx-auto max-w-md px-4 pt-6 pb-16 text-primary">
-      <Head><title>Vérification — EduChat</title></Head>
+      <Head><title>{t("verifier.headTitle")}</title></Head>
 
       <h1 className="text-2xl font-bold">{t("verify.title")}</h1>
       {/* Le compte n'est jamais obligatoire : le dire ici, à l'endroit exact

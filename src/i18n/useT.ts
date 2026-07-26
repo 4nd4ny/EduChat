@@ -23,3 +23,16 @@ export function useT() {
     [locale],
   );
 }
+
+/**
+ * La locale courante, lisible HORS composant React.
+ *
+ * Les routes d'API de Next ne reçoivent pas la locale du routage i18n : il
+ * faut la leur envoyer. Or les appels partent parfois d'un module utilitaire
+ * (streamCompletion) où aucun hook n'est disponible. Next l'expose dans le
+ * document ; côté serveur, on retombe sur le français.
+ */
+export function currentLocale(): string {
+  if (typeof window === 'undefined') return 'fr';
+  return (window as any).__NEXT_DATA__?.locale || document.documentElement.lang || 'fr';
+}

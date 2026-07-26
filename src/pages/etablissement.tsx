@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { MdAdd, MdDelete, MdSchool, MdSettings } from "react-icons/md";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
+import { useT } from "../i18n/useT";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 
@@ -16,13 +17,19 @@ type Data = {
   usage: { monthTokens: number; byProvider: Array<{ provider: string; requests: number; tokens: number }> };
 };
 
-const DAYS = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+// Les jours passent par le dictionnaire : l'index reste la valeur technique
+// envoyée au serveur (0 = dimanche), seul le libellé est traduit.
+const DAY_KEYS = [
+  "etab.day.0", "etab.day.1", "etab.day.2", "etab.day.3",
+  "etab.day.4", "etab.day.5", "etab.day.6",
+] as const;
 
 // Espace du responsable d'établissement — un enseignant, pas un informaticien.
 // Parti pris d'interface : trois réglages seulement, expliqués en langage clair,
 // avec un éditeur d'horaires visuel (pas de JSON). Les IP et la facturation
 // sont montrées mais NON modifiables ici (ce sont des décisions administratives).
 export default function EtablissementPage() {
+  const t = useT();
   const account = typeof window !== "undefined" ? getAccount() : null;
   const [data, setData] = useState<Data | null>(null);
   const [state, setState] = useState<"loading" | "auth" | "none" | "ready">("loading");
@@ -46,7 +53,9 @@ export default function EtablissementPage() {
     if (demo) {
       setData({
         etablissement: {
-          name: "Collège de la Démonstration", ips: "203.0.113.0/24", respire: true,
+          // Le nom de l'école fictive est traduit à l'affichage (voir le titre) :
+          // on ne le fige pas ici, l'état ne doit pas dépendre de la langue.
+          name: "", ips: "203.0.113.0/24", respire: true,
           hours: [{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }],
           quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000,
         },
@@ -86,7 +95,7 @@ export default function EtablissementPage() {
     setBusy(true); setMessage("");
     // Garde-fou côté client, doublé côté serveur : début < fin.
     for (const s of hours) {
-      if (s.start >= s.end) { setBusy(false); setMessage(`Créneau invalide (${DAYS[s.day]}) : l'heure de fin doit suivre l'heure de début.`); return; }
+      if (s.start >= s.end) { setBusy(false); setMessage(t("etab.hours.invalid", { day: t(DAY_KEYS[s.day]) })); return; }
     }
     const response = await fetch("/api/etablissement", {
       method: "PUT",
@@ -98,41 +107,35 @@ export default function EtablissementPage() {
       }),
     });
     setBusy(false);
-    setMessage(response.ok ? "Réglages enregistrés ✓" : "Échec de l'enregistrement.");
+    setMessage(response.ok ? t("etab.saved") : t("etab.saveFailed"));
   };
 
-  if (state === "loading") return <div className="py-16 text-center text-primary opacity-60">Chargement…</div>;
+  if (state === "loading") return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
 
   if (state === "auth" || state === "none") {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>Mon établissement — EduChat</title></Head>
+        <Head><title>{t("etab.title")} — EduChat</title></Head>
         {/* Même allure que la garde d'accès de /duel, et l'engrenage de la
             tuile « Établissement » de l'accueil : une même porte doit se
             reconnaître d'une page à l'autre. */}
         <MdSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
-        <h1 className="text-2xl font-bold">Espace responsable d'établissement</h1>
+        <h1 className="text-2xl font-bold">{t("etab.locked.title")}</h1>
         {state === "auth" ? (
-          <p className="mt-3 opacity-80">
-            Identifiez-vous d'abord : un code reçu par email, sans mot de passe.
-          </p>
+          <p className="mt-3 opacity-80">{t("etab.locked.auth")}</p>
         ) : (
-          <p className="mt-3 opacity-80">
-            Votre compte n'est rattaché à aucun établissement. Demandez à l'administrateur
-            d'EduChat de vous désigner responsable de votre école — il lui suffit de vous
-            rattacher depuis son interface (contact : blanvillain@harmonia.education).
-          </p>
+          <p className="mt-3 opacity-80">{t("etab.locked.noSchool")}</p>
         )}
         {/* Mêmes boutons, même allure que sur /duel : deux pages qui refusent
             l'accès pour la même raison doivent se ressembler. */}
         <div className="mt-6 flex justify-center gap-3">
           {state === "auth" && (
             <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-              Vérifier mon email
+              {t("compte.anonymousCta")}
             </Link>
           )}
           <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            Retour au catalogue
+            {t("etab.locked.back")}
           </Link>
         </div>
       </div>
@@ -142,78 +145,66 @@ export default function EtablissementPage() {
   const etab = data!.etablissement;
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-20 text-primary">
-      <Head><title>Mon établissement — EduChat</title></Head>
+      <Head><title>{t("etab.title")} — EduChat</title></Head>
 
       {demo && (
         <p className="mb-4 rounded-lg border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
-          <b>Démonstration.</b> Voici l&apos;espace tel que le voit le responsable d&apos;un
-          établissement — avec une école fictive, et tous les réglages désactivés : rien de ce
-          qui est montré ici ne peut être modifié.
+          <b>{t("etab.demo.label")}</b> {t("etab.demo.text")}
         </p>
       )}
       {tour && <InterfaceTour parcours="etablissement" onClose={() => setTour(false)} />}
 
-      <h1 data-tour="etab-identite" className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {etab.name}</h1>
-      <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">Guide des établissements</Link> — accès élèves, quotas, facturation, parcours.</p>
+      <h1 data-tour="etab-identite" className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {demo ? t("etab.demo.school") : etab.name}</h1>
+      <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">{t("etab.guide.link")}</Link> — {t("etab.guide.hint")}</p>
       <p className="mt-1 text-sm opacity-70">
-        Vous êtes responsable de cet établissement. Vos élèves accèdent gratuitement à EduChat
-        depuis {etab.ips ? "vos adresses réseau" : "le réseau de l'école"}, aux horaires et
-        dans les limites que vous fixez ci-dessous — la plateforme gère les clés d'IA pour vous.
+        {t("etab.intro", { source: etab.ips ? t("etab.intro.ips") : t("etab.intro.network") })}
       </p>
 
       {/* --- Horaires d'accès libre --- */}
       <section data-tour="etab-horaires" className="mt-8">
-        <h2 className="text-lg font-bold">Quand vos élèves peuvent-ils utiliser EduChat ?</h2>
-        <p className="mt-1 text-sm opacity-70">
-          En dehors de ces créneaux, l'accès gratuit par le réseau de l'école est fermé
-          (un enseignant peut toujours ouvrir une session ponctuelle par mot de passe).
-          Sans aucun créneau, l'accès suit le réglage global d'EduChat.
-        </p>
+        <h2 className="text-lg font-bold">{t("etab.hours.title")}</h2>
+        <p className="mt-1 text-sm opacity-70">{t("etab.hours.help")}</p>
         <div className="mt-3 flex flex-col gap-2">
-          {hours.length === 0 && <p className="text-sm opacity-50">Aucun créneau défini.</p>}
+          {hours.length === 0 && <p className="text-sm opacity-50">{t("etab.hours.empty")}</p>}
           {hours.map((slot, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
               <select disabled={fige} value={slot.day} onChange={e => updateSlot(i, { day: Number(e.target.value) })}
                 className="rounded bg-tertiary p-2">
-                {DAYS.map((d, di) => <option key={di} value={di}>{d}</option>)}
+                {DAY_KEYS.map((cle, di) => <option key={di} value={di}>{t(cle)}</option>)}
               </select>
-              <span className="opacity-60">de</span>
+              <span className="opacity-60">{t("etab.hours.from")}</span>
               <input disabled={fige} type="time" value={slot.start} onChange={e => updateSlot(i, { start: e.target.value })}
                 className="rounded bg-tertiary p-2" />
-              <span className="opacity-60">à</span>
+              <span className="opacity-60">{t("etab.hours.to")}</span>
               <input disabled={fige} type="time" value={slot.end} onChange={e => updateSlot(i, { end: e.target.value })}
                 className="rounded bg-tertiary p-2" />
-              <button disabled={fige} onClick={() => removeSlot(i)} aria-label="Supprimer ce créneau"
+              <button disabled={fige} onClick={() => removeSlot(i)} aria-label={t("etab.hours.remove")}
                 className="rounded p-2 text-red-400 hover:bg-red-500/10"><MdDelete /></button>
             </div>
           ))}
           <button disabled={fige} onClick={addSlot}
             className="flex w-fit items-center gap-1 rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">
-            <MdAdd /> Ajouter un créneau
+            <MdAdd /> {t("etab.hours.add")}
           </button>
         </div>
       </section>
 
       {/* --- Limites de dépense --- */}
       <section data-tour="etab-quotas" className="mt-8">
-        <h2 className="text-lg font-bold">Limites de consommation</h2>
-        <p className="mt-1 text-sm opacity-70">
-          Les échanges consomment des « tokens » (l'unité de facturation de l'IA). Ces plafonds
-          protègent votre budget : au-delà, l'accès gratuit se met en pause (les élèves peuvent
-          toujours utiliser leur propre clé). Laissez vide pour « sans limite ».
-        </p>
+        <h2 className="text-lg font-bold">{t("etab.quotas.title")}</h2>
+        <p className="mt-1 text-sm opacity-70">{t("etab.quotas.help")}</p>
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
-            Par élève et par jour
+            {t("etab.quotas.perStudent")}
             <input disabled={fige} value={perStudent} onChange={e => setPerStudent(e.target.value.replace(/\D/g, ""))}
-              inputMode="numeric" placeholder="ex. 50000 (≈ 30 questions)" className="rounded bg-tertiary p-2" />
-            <span className="text-xs opacity-50">Remis à zéro chaque jour. Empêche qu'un élève monopolise le budget.</span>
+              inputMode="numeric" placeholder={t("etab.quotas.perStudentPlaceholder")} className="rounded bg-tertiary p-2" />
+            <span className="text-xs opacity-50">{t("etab.quotas.perStudentHint")}</span>
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Total de l'établissement par mois
+            {t("etab.quotas.monthly")}
             <input disabled={fige} value={monthly} onChange={e => setMonthly(e.target.value.replace(/\D/g, ""))}
-              inputMode="numeric" placeholder="ex. 5000000" className="rounded bg-tertiary p-2" />
-            <span className="text-xs opacity-50">Plafond global mensuel, remis à zéro le 1er du mois.</span>
+              inputMode="numeric" placeholder={t("etab.quotas.monthlyPlaceholder")} className="rounded bg-tertiary p-2" />
+            <span className="text-xs opacity-50">{t("etab.quotas.monthlyHint")}</span>
           </label>
         </div>
       </section>
@@ -221,20 +212,20 @@ export default function EtablissementPage() {
       <div className="mt-6 flex items-center gap-3">
         <button onClick={save} disabled={fige}
           className="rounded bg-[#DC6521] px-5 py-2 font-bold hover:opacity-90 disabled:opacity-50">
-          {busy ? "…" : "Enregistrer mes réglages"}
+          {busy ? "…" : t("etab.save")}
         </button>
         {message && <span className="text-sm opacity-80">{message}</span>}
       </div>
 
       {/* --- Consommation du mois (lecture seule) --- */}
       <section data-tour="etab-conso" className="mt-10">
-        <h2 className="text-lg font-bold">Consommation du mois</h2>
+        <h2 className="text-lg font-bold">{t("etab.usage.title")}</h2>
         <p className="mt-1 text-sm opacity-80">
-          Total : <b>{formatTokens(data!.usage.monthTokens)}</b> tokens sur la clé de la plateforme.
+          {t("etab.usage.totalLabel")} <b>{formatTokens(data!.usage.monthTokens)}</b> {t("etab.usage.totalSuffix")}
         </p>
         {data!.usage.byProvider.length > 0 && (
           <table className="mt-2 w-full max-w-md text-left text-sm">
-            <thead className="text-xs uppercase opacity-60"><tr><th className="py-1">Modèle d'IA</th><th className="text-right">Tokens</th></tr></thead>
+            <thead className="text-xs uppercase opacity-60"><tr><th className="py-1">{t("etab.usage.model")}</th><th className="text-right">{t("etab.usage.tokens")}</th></tr></thead>
             <tbody>
               {data!.usage.byProvider.map(p => (
                 <tr key={p.provider} className="border-b border-white/5">
@@ -249,14 +240,12 @@ export default function EtablissementPage() {
 
       {/* --- Informations gérées par l'administration --- */}
       <section className="mt-10 rounded-lg border border-white/10 bg-secondary p-4 text-sm">
-        <h2 className="font-bold">Géré par l'administration d'EduChat</h2>
+        <h2 className="font-bold">{t("etab.admin.title")}</h2>
         <ul className="mt-2 space-y-1 opacity-80">
-          <li>Adresses réseau (IP) de reconnaissance de votre école : <span className="font-mono text-xs">{etab.ips || "aucune"}</span></li>
-          <li>Statut : {etab.respire ? "École RESPIRE — accès gratuit" : "Facturé selon consommation"}</li>
+          <li>{t("etab.admin.ips")} <span className="font-mono text-xs">{etab.ips || t("etab.admin.noIps")}</span></li>
+          <li>{t("etab.admin.status")} {etab.respire ? t("etab.admin.statusRespire") : t("etab.admin.statusBilled")}</li>
         </ul>
-        <p className="mt-2 text-xs opacity-60">
-          Pour modifier vos adresses réseau ou vos conditions, contactez blanvillain@harmonia.education.
-        </p>
+        <p className="mt-2 text-xs opacity-60">{t("etab.admin.contact")}</p>
       </section>
     </div>
   );

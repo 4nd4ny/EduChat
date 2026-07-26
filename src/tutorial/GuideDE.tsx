@@ -111,14 +111,14 @@ export default function GuideDE() {
       <Section id="tuteurs" title="Tutoren verwalten: suchen, sortieren, teilen">
         <p dangerouslySetInnerHTML={{ __html: `<b>Suchen</b>: Das Suchfeld der Startseite durchsucht Name und Beschreibung aller veröffentlichten Tutoren. Drei Buchstaben genügen meist.` }} />
         <p dangerouslySetInnerHTML={{ __html: `<b>Sortieren</b>: „Empfohlen“ mischt Beliebtheit, Bewertungen und Aktualität, damit ein guter neuer Tutor nicht von einem alten verdrängt wird. Die übrigen Sortierungen sind roh — meistgenutzt, bestbewertet, neueste, grösster Tokenverbrauch oder alphabetisch. Ihre Favoriten stehen immer oben und gehen nur Sie etwas an: Sie leben in Ihrem Browser.` }} />
-        <p dangerouslySetInnerHTML={{ __html: `<b>Mit der Gemeinschaft teilen</b>: „Einen Tutor vorschlagen“ startet von einer sokratischen Vorlage. Der Entwurf entsteht mit einer geheimen URL — teilen Sie sie mit Kolleginnen für Rückmeldungen, testen Sie ihn im Chat, dann reichen Sie ihn ein. Eine Administration oder jede bestätigte Promptagogin veröffentlicht ihn, und er erscheint im Katalog.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Mit der Gemeinschaft teilen</b>: „Einen Tutor vorschlagen“ startet von einer sokratischen Vorlage. Der Entwurf entsteht mit einer geheimen URL — teilen Sie sie mit Kolleginnen und Kollegen für Rückmeldungen, testen Sie ihn im Chat, dann reichen Sie ihn ein. Ein Administrator oder jede verifizierte Promptagogin / jeder verifizierte Promptagoge veröffentlicht ihn, und er erscheint im Katalog.` }} />
         <p dangerouslySetInnerHTML={{ __html: `<b>Einmal veröffentlicht</b>, gehört er zur Allmende von EduChat: Er wird nie gelöscht. Sie können ihn zurückziehen — er verlässt den Katalog und Sie können ihn zurückholen. „Eine Variante vorschlagen“ kopiert von jeder Seite aus den bestehenden Prompt und vermerkt die Abstammung „inspiriert von“ auf beiden Seiten: der normale Weg der Personalisierung.` }} />
       </Section>
 
       <Section id="eleves" title="Schüler und Besucher — lernen">
         <ul className="list-inside list-disc space-y-1">
           <li><b>Tutor auswählen</b> im <Link className="underline" href="/">Katalog</Link>: Suche, Sortierungen, Detailseite mit vollständigem Prompt.</li>
-          <li><b>Ausprobieren</b>: Der Chat öffnet sich mit dem Tutor am Steuer; auf der öffentlichen Website treibt Ihr <b>eigener API-Schlüssel</b> (nie gespeichert, außer auf Ihren Wunsch) das Gespräch an, mit Anbieter und Denktiefe Ihrer Wahl. Die Antworten kommen <b>live</b>, während sie entstehen.</li>
+          <li><b>Ausprobieren</b>: Der Chat öffnet sich mit dem Tutor am Steuer; auf der öffentlichen Website treibt Ihr <b>eigener API-Schlüssel</b> (nie gespeichert, ausser auf Ihren Wunsch) das Gespräch an, mit Anbieter und Denktiefe Ihrer Wahl. Die Antworten kommen <b>live</b>, während sie entstehen.</li>
           <li><b>Anhänge</b> (eigener Schlüssel): Hängen Sie ein <b>Bild oder PDF</b> an Ihre Frage an, je nach gewähltem Anbieter.</li>
           <li><b>Sprachchat</b> (eigener Schlüssel, kompatible Anbieter): Diktieren Sie Ihre Frage ins Mikrofon — der Sprachmodus liest Antworten laut vor. Praktisch auf dem Smartphone.</li>
           <li><b>Favoriten</b> (Stern) und <b>Bewertungen</b> (1-5): im Browser gespeichert; Favoriten rücken im Katalog nach oben.</li>
@@ -164,7 +164,7 @@ export default function GuideDE() {
         </p>
         <ul className="list-inside list-disc space-y-1">
           <li><b>Nutzungen</b> — jedes mit dem Tutor begonnene Gespräch zählt: echte Beliebtheit fällt ins Gewicht.</li>
-          <li><b>5 × Bewertungsdurchschnitt</b> — die wahrgenommene Qualität (1-5 Sterne) wiegt bis zu 25 Punkte: Ein hervorragender, aber junger Tutor kann einen alten, mittelmäßig geschätzten überholen.</li>
+          <li><b>5 × Bewertungsdurchschnitt</b> — die wahrgenommene Qualität (1-5 Sterne) wiegt bis zu 25 Punkte: Ein hervorragender, aber junger Tutor kann einen alten, mittelmässig geschätzten überholen.</li>
           <li><b>50 / (1 + Alter)</b> — ein Frische-Bonus, stark in den ersten Tagen, dann abnehmend: Neue Tutoren bekommen ihre Chance, gesehen zu werden — die zuerst Veröffentlichten monopolisieren die Spitze nicht („Schneeball-Effekt“).</li>
         </ul>
         <p>Die anderen Sortierungen sind direkte Datenbankspalten: <b>meistgenutzt</b> (Nutzungen), <b>bestbewertet</b> (Durchschnitt, bei Gleichstand entscheidet die Anzahl), <b>neueste</b> (Erstellungsdatum), <b>generierte Tokens</b> (produziertes Volumen), <b>Name</b> (alphabetisch). Und Ihre <b>Favoriten</b> — rein lokal — sind immer oben angeheftet, in der Reihenfolge der gewählten Sortierung.</p>
@@ -174,10 +174,12 @@ export default function GuideDE() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="uppercase opacity-60">
-              <tr><th className="py-1 pr-2">Datum</th><th className="pr-2">Wo</th><th>Detail</th></tr>
+              {/* « Datum » signifierait la date pour un lecteur germanophone : la
+                  colonne liste des données, d'où « Daten ». */}
+              <tr><th className="py-1 pr-2">Daten</th><th className="pr-2">Wo</th><th>Detail</th></tr>
             </thead>
             <tbody className="align-top">
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gespräche, eigener API-Schlüssel, Favoriten, vergebene Bewertungen, Anhänge</td><td className="pr-2"><b>Ihr Browser</b></td><td>Nie auf dem Server (Anhänge werden nur an den Anbieter weitergereicht). Der persönliche Schlüssel wird in DIESEM Browser aufbewahrt, damit Sie ihn nicht neu eintippen müssen — siehe die Datenschutzseite. Zwei Ausnahmen: die Profilsicherung für Konten und der auf Wunsch serverseitig gespeicherte Schlüssel.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gespräche, eigener API-Schlüssel, Favoriten, vergebene Bewertungen, Anhänge</td><td className="pr-2"><b>Ihr Browser</b></td><td>Nie auf dem Server (Anhänge werden nur an den Anbieter weitergereicht). Der persönliche Schlüssel wird in DIESEM Browser aufbewahrt, damit Sie ihn nicht neu eintippen müssen — siehe <Link className="underline" href="/rgpd">die Datenschutzseite</Link>. Zwei Ausnahmen: die Profilsicherung für Konten und der auf Wunsch serverseitig gespeicherte Schlüssel.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Sokratische Tutoren</td><td className="pr-2">Datenbank</td><td>Volltext, aufeinanderfolgende Versionen, Herkunft („inspiriert von“), Status, anonyme Zähler (Nutzungen, generierte Tokens, Summe und Anzahl der Bewertungen).</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogen- / Lehrpersonen-Konto</td><td className="pr-2">Datenbank</td><td>Öffentlicher Name, E-Mail (nie angezeigt), Rollen, Sync-Option. <b>Es existiert kein Passwort.</b></td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schulen & Verbrauch</td><td className="pr-2">Datenbank</td><td>Im Detail im <Link className="underline" href="/etablissements#donnees">Schul-Leitfaden</Link> (IP, Zeiten, Kontingente, Verbrauchsprotokoll pro IP — keine personenbezogenen Schülerdaten).</td></tr>
@@ -210,7 +212,7 @@ export default function GuideDE() {
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/admin">/admin</Link></td><td className="pr-2">Administration</td><td>Moderation, Schulen, Lehrpersonen, Abrechnung</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/rgpd">/rgpd</Link></td><td className="pr-2">Alle</td><td>Datenschutz (DSGVO/nDSG), in 4 Sprachen</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/tutoriel">/tutoriel</Link></td><td className="pr-2">Alle</td><td>Dieser Leitfaden, in 4 Sprachen</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1 pr-2">/police</td><td className="pr-2">Lehrpersonen</td><td>Unabhängiges Klassenführungs-Tool (außerhalb des Chats)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2">/police</td><td className="pr-2">Lehrpersonen</td><td>Unabhängiges Klassenführungs-Tool (ausserhalb des Chats)</td></tr>
             </tbody>
           </table>
         </div>
