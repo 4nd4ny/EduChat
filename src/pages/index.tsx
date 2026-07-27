@@ -52,9 +52,22 @@ const SCHOOL: Profile = { id: "school", labelKey: "nav.school", actionKey: "nav.
 const PROMPTAGOGUE: Profile = { id: "promptagogue", labelKey: "nav.promptagogue", actionKey: "nav.duel", href: "/duel", icon: <MdCompareArrows /> };
 
 // Tailwind compile les classes qu'il LIT dans les sources : `md:grid-cols-${n}`
-// ne produirait aucune règle. Les deux seules largeurs possibles sont donc
-// écrites en toutes lettres.
-const COLONNES: Record<number, string> = { 3: "md:grid-cols-3", 4: "md:grid-cols-4" };
+// ne produirait aucune règle. Toutes les largeurs sont donc écrites en toutes
+// lettres — la largeur MAXIMALE comprise, et c'est elle qui centre.
+//
+// POURQUOI LA LARGEUR CHANGE AVEC LE NOMBRE DE CASES. La grille garde la même
+// laisse pour trois ou quatre cases, mais à DEUX — un élève sur le réseau de
+// son collège n'a plus qu'« Apprenant » et « Établissement » — la même laisse
+// les envoyait à chaque extrémité, séparées par un vide de la largeur d'une
+// troisième case absente. Deux boutons qui se fuient ne se lisent pas comme
+// une paire : ils se lisent comme une ligne à laquelle il manque quelque
+// chose. On resserre donc le conteneur, et l'en-tête, qui centre déjà ses
+// enfants, fait le reste sans qu'on ait à le lui demander.
+const COLONNES: Record<number, string> = {
+  2: "max-w-md md:grid-cols-2",
+  3: "max-w-3xl md:grid-cols-3",
+  4: "max-w-3xl md:grid-cols-4",
+};
 
 // Toutes les cases partagent la même géométrie : la grille impose la largeur,
 // cette classe la hauteur et le centrage. `min-w-0 break-words` est
@@ -213,7 +226,7 @@ export default function Catalogue() {
             espace de travail (le libellé secondaire annonce ce qui va
             s'ouvrir). Trois cases en général, quatre quand une école rouvre
             son atelier de promptagogue. */}
-        <nav className={`mt-2 grid w-full max-w-3xl grid-cols-2 gap-2 text-sm ${COLONNES[profils.length] ?? "md:grid-cols-3"}`}>
+        <nav className={`mt-2 grid w-full grid-cols-2 gap-2 text-sm ${COLONNES[profils.length] ?? "max-w-3xl md:grid-cols-3"}`}>
           {profils.map((item, i) => !item ? (
             // La case en attente : elle occupe la place, elle ne propose rien.
             // `aria-hidden` pour qu'un lecteur d'écran n'annonce pas un vide.
