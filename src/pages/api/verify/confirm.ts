@@ -3,6 +3,8 @@ import bcrypt from 'bcrypt';
 import { getDb } from '../../../server/db';
 import { issueToken } from '../../../server/token';
 import { getClientIp, isRateLimited } from '../../../server/access';
+import { resolveEtablissementByIp } from '../../../server/etablissements';
+import { lierCompte } from '../../../server/appartenance';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR } from '../../../shared/providers';
 
@@ -73,6 +75,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     `).run({ email, name: row.name, now, teacher: isTeacher, optin: syncOptin });
   });
   tx();
+
+  // RECONNAISSANCE PAR L'IP. Une adresse vérifiée depuis le réseau d'un
+  // établissement rattache le compte à CET établissement — c'est ainsi qu'un
+  // enseignant qui donne des cours dans un second collège y est reconnu sans
+  // que personne ait à l'y inscrire à la main.
+  //
+  // SANS DROIT D'ADMINISTRATION, jamais : le rang se donne, il ne se prend
+  // pas en se connectant au bon réseau. lierCompte n'écrase donc aucun lien
+  // existant (INSERT OR IGNORE) — sans quoi un administrateur d'école qui
+  // repasse par la vérification depuis son propre collège se rétrograderait
+  // lui-même. L'école PRINCIPALE (users.etablissement_id) n'est pas touchée
+  // non plus : elle commande le catalogue et la facturation, et ne se déplace
+  // pas au gré d'une IP.
+  const etabIp = resolveEtablissementByIp(ip);
+  if (etabIp && lierCompte(email, etabIp.id)) {
+    notifyAdmin(
+      `Rattachement par IP : ${email} → ${etabIp.name}`,
+      `Le compte ${email} a vérifié son adresse depuis le réseau de ${etabIp.name} (${ip}) : ` +
+      `il y est désormais rattaché, SANS droit d'administration.`,
+    );
+  }
 
   // L'administration est prévenue de chaque NOUVELLE inscription, et d'une
   // demande de rôle enseignant émise par un compte existant qui ne l'a pas.

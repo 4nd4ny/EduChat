@@ -175,6 +175,25 @@ export function listPublished(sort: string, search: string, locale: string | und
   return rows.map(row => toCard(row, locale));
 }
 
+/**
+ * Les NOMS des tuteurs qui APPARTIENNENT à une école, parmi ceux qu'elle voit.
+ *
+ * Sert uniquement à MARQUER, dans une liste déjà filtrée par listPublished,
+ * ce qui vient de la maison — la page d'accueil d'un établissement montre le
+ * catalogue accessible depuis son réseau, mais doit pouvoir dire « celui-ci
+ * est le vôtre ». C'est un ornement, pas une autorisation : la requête réutilise
+ * CLAUSE_VISIBLE plutôt que de réécrire « published AND NOT archived », pour
+ * qu'un tuteur retiré du catalogue ne puisse jamais reparaître ici sous forme
+ * de nom. Le rétrécissement (p.etablissement_id = @etab) ne fait qu'ajouter
+ * une condition à un filtre qui décide déjà de tout.
+ */
+export function nomsDeLEcole(etablissementId: number): string[] {
+  const parametres = parametresPortee(porteeDeLEcole(etablissementId));
+  return (getDb().prepare(
+    `SELECT p.name FROM prompts p WHERE ${CLAUSE_VISIBLE} AND p.etablissement_id = @etab`)
+    .all(parametres) as Array<{ name: string }>).map(row => row.name);
+}
+
 export function getPublishedByName(name: string, portee: PorteeCatalogue): PromptRow | undefined {
   return getDb().prepare(`SELECT p.* FROM prompts p WHERE p.name = @name AND ${CLAUSE_VISIBLE}`)
     .get({ name, ...parametresPortee(portee) }) as PromptRow | undefined;

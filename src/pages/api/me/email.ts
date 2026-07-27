@@ -17,10 +17,16 @@ import { ERR } from '../../../shared/providers';
 //  PUT  { code }     → confirme, puis MIGRE le compte.
 //
 // La migration est la partie délicate : l'email est la clé primaire du compte
-// et sert de référence dans sept tables, sans clé étrangère ni cascade. Tout
-// se fait donc dans UNE transaction, explicitement, table par table — un
-// oubli laisserait des données orphelines (des tuteurs sans auteur, une
-// facturation sans enseignant).
+// et sert de référence dans une dizaine de tables, sans clé étrangère ni
+// cascade. Tout se fait donc dans UNE transaction, explicitement, table par
+// table — un oubli laisserait des données orphelines (des tuteurs sans auteur,
+// une facturation sans enseignant).
+//
+// TOUTE NOUVELLE TABLE PORTANT UN EMAIL DOIT ÊTRE AJOUTÉE ICI. Le rappel n'est
+// pas décoratif : user_etablissements y avait été oublié, et comme cette
+// table-là porte l'AUTORISATION (voir plus bas), l'oubli ne se traduisait pas
+// par une donnée orpheline mais par une perte de droits d'un côté et un rang
+// d'administrateur abandonné sur une adresse libre de l'autre.
 
 const CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -92,6 +98,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       db.prepare('UPDATE usage_log SET teacher_email = ? WHERE teacher_email = ?').run(nouveau, ancien);
       db.prepare('UPDATE session_settings SET set_by_email = ? WHERE set_by_email = ?').run(nouveau, ancien);
       db.prepare('UPDATE comments SET moderated_by = ? WHERE moderated_by = ?').run(nouveau, ancien);
+      // L'APPARTENANCE AUX ÉCOLES DOIT SUIVRE LA PERSONNE — et c'est la ligne
+      // la plus importante de cette transaction depuis le multi-écoles.
+      //
+      // user_etablissements ne range pas un souvenir : c'est la table sur
+      // laquelle s'appuient TOUTES les gardes serveur (estMembre, estAdminDe,
+      // ecoleActivePourCompte — src/server/appartenance.ts). L'oublier ici
+      // cassait deux choses à la fois, et aucune ne se serait plainte :
+      //
+      //   · le titulaire perdait d'un coup toutes ses écoles — plus de
+      //     porte-monnaie, plus de facture, plus de comptes, plus d'espace
+      //     d'établissement — alors que users.etablissement_id, lui, suivait
+      //     bien : l'écran aurait annoncé une école principale que les gardes
+      //     ne lui reconnaissaient plus ;
+      //   · pire, la ligne « is_admin = 1 » restait sur l'ANCIENNE adresse,
+      //     désormais libre. Quiconque la vérifiait ensuite par /api/verify
+      //     héritait du rang d'administrateur de cette école — un rang qui se
+      //     ramasse au lieu de se recevoir.
+      //
+      // Un lien déjà posé sur la nouvelle adresse ferait échouer la clé
+      // primaire (email, etablissement_id) : la transaction annulerait alors
+      // TOUT le changement d'adresse, ce qui est le bon comportement — mieux
+      // vaut un changement refusé qu'un compte à moitié déplacé.
+      db.prepare('UPDATE user_etablissements SET email = ? WHERE email = ?').run(nouveau, ancien);
+      // Même raison que comments.moderated_by : une trace de relecture n'a de
+      // valeur que si elle désigne encore quelqu'un.
+      db.prepare('UPDATE facture_mentions SET par = ? WHERE par = ?').run(nouveau, ancien);
       db.prepare('DELETE FROM email_changes WHERE old_email = ?').run(ancien);
     })();
 

@@ -7,6 +7,9 @@
 
 import { DateTime } from 'luxon';
 import { getDb } from './db';
+// Ce module ne sert QUE des routes d'API : importer le croisement des clés
+// serveur (SECRET_*) ne peut donc rien exposer au navigateur.
+import { fournisseursServis } from './fournisseurs';
 
 export type EtabRow = {
   id: number; name: string; ips: string; respire: number;
@@ -98,4 +101,44 @@ export function monthUsageByProvider(etablissementId: number): Array<{ provider:
     FROM usage_log WHERE etablissement_id = ? AND ts >= ? AND used_server_key = 1
     GROUP BY provider ORDER BY tokens DESC
   `).all(etablissementId, monthStart) as Array<{ provider: string; requests: number; tokens: number }>;
+}
+
+export type LigneConsommation = {
+  provider: string; requests: number; tokens: number;
+  /** La clé de l'école peut-elle encore employer ce fournisseur aujourd'hui ? */
+  servi: boolean;
+};
+
+/**
+ * LE RELEVÉ TEL QUE LE LIT UN ENSEIGNANT-ADMINISTRATEUR.
+ *
+ * Ce que la liste ÉNUMÈRE : les fournisseurs que la clé de l'école peut
+ * réellement servir (src/server/fournisseurs.ts), y compris à zéro jeton — un
+ * zéro répond à la question « ai-je consommé du Claude ce mois-ci ? », alors
+ * qu'une ligne absente laisse le doute. Elle n'énumère RIEN d'autre : une
+ * ligne pour un fournisseur que l'école ne peut pas employer est du bruit.
+ *
+ * Ce que la liste NE JETTE JAMAIS : une consommation réelle. Un fournisseur
+ * peut avoir été servi hier et ne plus l'être aujourd'hui (clé retirée du
+ * serveur, fournisseur reclassé « adultes seulement » depuis l'AI Act) ; ses
+ * jetons ont pourtant été décomptés du porte-monnaie. Il reste donc affiché,
+ * marqué `servi: false` — le faire disparaître creuserait un écart inexpliqué
+ * entre ce relevé et la facture, et c'est l'écart inexpliqué qui ruine la
+ * confiance, jamais la ligne qu'on explique.
+ */
+export function consommationDuMois(etablissementId: number): LigneConsommation[] {
+  const servis = fournisseursServis() as string[];
+  const reel = monthUsageByProvider(etablissementId);
+
+  const lignes: LigneConsommation[] = servis.map(provider => {
+    const ligne = reel.find(r => r.provider === provider);
+    return { provider, requests: ligne?.requests ?? 0, tokens: ligne?.tokens ?? 0, servi: true };
+  });
+  // Les fournisseurs consommés mais plus servis, à la suite et signalés.
+  for (const ligne of reel) {
+    if (!servis.includes(ligne.provider)) lignes.push({ ...ligne, servi: false });
+  }
+  // Le plus consommé d'abord, à l'intérieur de chacun des deux groupes : le
+  // relevé se lit par le haut, et ce qui pèse doit y être.
+  return lignes.sort((a, b) => Number(a.servi === false) - Number(b.servi === false) || b.tokens - a.tokens);
 }

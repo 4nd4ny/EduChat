@@ -1,12 +1,19 @@
 import Head from "next/head";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
-import { MdAdd, MdDelete, MdSchool, MdSettings, MdSupportAgent } from "react-icons/md";
+import { MdAdd, MdChatBubbleOutline, MdDelete, MdSchool, MdSettings, MdSupportAgent } from "react-icons/md";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
 import { useT } from "../i18n/useT";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
+import PourquoiEduChat from "../site/PourquoiEduChat";
+import SelecteurEcole, { useEcoles } from "../site/SelecteurEcole";
+import { ZoneAdmin } from "../administration/commun";
+import Comptes from "../administration/Comptes";
+import Factures from "../administration/Factures";
+import PorteMonnaie from "../administration/PorteMonnaie";
+import TuteursEcole from "../administration/TuteursEcole";
 
 type HourSlot = { day: number; start: string; end: string };
 type Data = {
@@ -14,8 +21,34 @@ type Data = {
     name: string; ips: string; respire: boolean; hours: HourSlot[];
     quotaPerStudentDaily: number; tokenQuotaMonthly: number;
   };
-  usage: { monthTokens: number; byProvider: Array<{ provider: string; requests: number; tokens: number }> };
+  /**
+   * LE SIGNATAIRE EST-IL ADMINISTRATEUR DE L'ÉCOLE ACTIVE ?
+   *
+   * Tranché en base par /api/etablissement (estAdminDe sur le lien), jamais
+   * déduit ici. Cet écran s'adresse maintenant à deux publics : tout
+   * enseignant rattaché y lit la consommation de son école, seul un
+   * administrateur en règle les horaires, les quotas et tout le reste. La
+   * réponse sert à MONTRER la limite — le serveur, lui, la fait respecter.
+   */
+  isAdmin: boolean;
+  // `servi` : la clé de l'école peut-elle EMPLOYER ce fournisseur aujourd'hui ?
+  // Le serveur n'énumère que ceux qu'elle peut employer (zéro compris) et n'y
+  // ajoute que ceux qu'elle a réellement consommés et qui ne le sont plus —
+  // marqués, jamais escamotés (src/server/etablissements.ts).
+  usage: { monthTokens: number; byProvider: Array<{ provider: string; requests: number; tokens: number; servi: boolean }> };
 };
+
+// Ce que voit un visiteur NON RESPONSABLE : le nom de l'école dont son IP
+// relève (ou null), et les tuteurs accessibles depuis ce réseau. Servi sans
+// jeton par /api/etablissement/accueil — voir l'en-tête de cette route pour
+// ce que l'absence de jeton n'ouvre PAS.
+type Tuteur = {
+  name: string; title: string; description: string;
+  authorName: string; language: string;
+  /** Ce tuteur appartient-il à l'école du visiteur ? (marque d'affichage) */
+  maison: boolean;
+};
+type Accueil = { ecole: { name: string } | null; tuteurs: Tuteur[] };
 
 // Les jours passent par le dictionnaire : l'index reste la valeur technique
 // envoyée au serveur (0 = dimanche), seul le libellé est traduit.
@@ -31,8 +64,15 @@ const DAY_KEYS = [
 export default function EtablissementPage() {
   const t = useT();
   const account = typeof window !== "undefined" ? getAccount() : null;
+  // LES ÉCOLES DU COMPTE, pour le sélecteur d'école active. Il commande tout
+  // ce que cette page affiche : l'en-tête qu'il pose (x-educhat-ecole) est
+  // relu et REVÉRIFIÉ par chaque garde serveur (src/server/appartenance.ts).
+  const ecoles = useEcoles();
   const [data, setData] = useState<Data | null>(null);
   const [state, setState] = useState<"loading" | "auth" | "none" | "ready">("loading");
+  // L'accueil public, chargé en parallèle de la garde : c'est lui qui décide
+  // entre « bienvenue chez vous » et « inscrivez votre établissement ».
+  const [accueil, setAccueil] = useState<Accueil | null>(null);
   const [hours, setHours] = useState<HourSlot[]>([]);
   const [perStudent, setPerStudent] = useState("");
   const [monthly, setMonthly] = useState("");
@@ -57,15 +97,21 @@ export default function EtablissementPage() {
   // exactement le getClientIp que verront l'accès élèves et la facturation —
   // c'est donc la seule valeur dont on sache d'avance qu'elle fonctionnera.
   // Une école qui s'inscrit depuis chez elle la corrigera.
+  //
+  // SAUF QUAND LE RÉSEAU EST DÉJÀ CELUI D'UNE ÉCOLE. On n'arrive alors sur ce
+  // formulaire que par « mon établissement n'est pas celui-ci » : préremplir
+  // l'adresse d'où l'on écrit, c'est proposer une IP que la route refusera à
+  // coup sûr (ERR_IP_TAKEN, unicité des IP entre écoles). Le champ reste vide
+  // — il est facultatif, et l'administration posera l'adresse ensuite.
   useEffect(() => {
-    if (!inscription) return;
+    if (!inscription || accueil?.ecole) return;
     fetch("/api/ip")
       .then(r => r.json())
       .then((d: { ip?: string }) => {
         if (d?.ip && d.ip !== "unknown") setIpsEcole(prev => prev || d.ip!);
       })
       .catch(() => { /* simple confort de saisie : un échec ne gêne personne */ });
-  }, [inscription]);
+  }, [inscription, accueil?.ecole]);
 
   // DÉMONSTRATION (?visite=1) : l'espace s'ouvre avec un établissement
   // FICTIF et tous les réglages inertes. Aucun appel au serveur : on montre
@@ -74,12 +120,18 @@ export default function EtablissementPage() {
   const demo = router.query.visite === "1";
   const [tour, setTour] = useState(false);
   useEffect(() => { if (demo) setTour(true); }, [demo]);
-  const fige = demo || busy;
+  // QUI RÈGLE, ET QUI SE CONTENTE DE LIRE (décision A). Tout enseignant
+  // rattaché voit cet écran ; seul un administrateur de l'école y CHANGE
+  // quelque chose. La démonstration, elle, montre l'écran complet — tous ses
+  // contrôles sont de toute façon inertes (fige).
+  const administre = demo || !!data?.isAdmin;
+  const fige = demo || busy || !administre;
 
   useEffect(() => {
     if (!router.isReady) return;   // ?visite=1 n'est lisible qu'ensuite
     if (demo) {
       setData({
+        isAdmin: true,
         etablissement: {
           // Le nom de l'école fictive est traduit à l'affichage (voir le titre) :
           // on ne le fige pas ici, l'état ne doit pas dépendre de la langue.
@@ -88,8 +140,11 @@ export default function EtablissementPage() {
           quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000,
         },
         usage: { monthTokens: 412350, byProvider: [
-          { provider: "mistral", requests: 1240, tokens: 318900 },
-          { provider: "anthropic", requests: 210, tokens: 93450 },
+          { provider: "mistral", requests: 1240, tokens: 318900, servi: true },
+          { provider: "anthropic", requests: 210, tokens: 93450, servi: true },
+          // Un fournisseur à zéro fait partie de la démonstration : c'est ce
+          // que voit une école qui n'a rien consommé chez celui-là ce mois-ci.
+          { provider: "openai", requests: 0, tokens: 0, servi: true },
         ] },
       });
       setHours([{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }]);
@@ -112,7 +167,26 @@ export default function EtablissementPage() {
         setState("ready");
       })
       .catch(() => setState("auth"));
-  }, [demo, router.isReady]);
+    // `ecoles.active` n'est pas lu dans le corps de cet effet : il voyage dans
+    // l'en-tête que pose authHeaders(). Il figure ici comme DÉCLENCHEUR —
+    // changer d'école doit relire les horaires, les quotas et la consommation,
+    // faute de quoi l'écran afficherait ceux de l'école précédente pendant que
+    // les sections d'administration, elles, auraient déjà suivi.
+  }, [demo, router.isReady, ecoles.active]);
+
+  // L'ACCUEIL PUBLIC, chargé SANS ATTENDRE la réponse de la garde : les deux
+  // requêtes partent ensemble, sinon un visiteur non identifié verrait
+  // « Chargement… » le temps d'un 401 puis le temps d'un catalogue. La
+  // démonstration ne le charge pas : elle ne doit toucher à rien de réel.
+  useEffect(() => {
+    if (!router.isReady || demo) return;
+    fetch(`/api/etablissement/accueil?locale=${router.locale ?? "fr"}`)
+      .then(r => r.json())
+      .then((d: Accueil) => setAccueil({ ecole: d?.ecole ?? null, tuteurs: d?.tuteurs ?? [] }))
+      // Un accueil qui échoue ne doit pas laisser la page en suspens : on
+      // retombe sur « aucune école reconnue », c'est-à-dire l'inscription.
+      .catch(() => setAccueil({ ecole: null, tuteurs: [] }));
+  }, [demo, router.isReady, router.locale]);
 
   const addSlot = () => setHours([...hours, { day: 1, start: "08:00", end: "17:00" }]);
   const updateSlot = (i: number, patch: Partial<HourSlot>) =>
@@ -173,56 +247,162 @@ export default function EtablissementPage() {
     setInscriptionFaite(true);
   };
 
-  if (state === "loading") return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
+  // On attend AUSSI l'accueil public tant qu'on n'est pas responsable : sans
+  // lui, on ignore encore s'il faut souhaiter la bienvenue à une école ou
+  // proposer d'en inscrire une. Les deux requêtes partent ensemble (voir plus
+  // haut), l'attente n'est donc pas doublée.
+  if (state === "loading" || (state !== "ready" && accueil === null)) {
+    return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
+  }
 
   if (state === "auth" || state === "none") {
+    // L'ÉCOLE RECONNUE PAR L'IP COMMANDE TOUT CET ÉCRAN.
+    //
+    // Reconnue : /etablissement n'est PAS une porte close, c'est la page
+    // d'accueil de cette école — l'élève de la salle 12 y trouve les tuteurs
+    // que son établissement lui ouvre, et n'a rien à vérifier ni à signer.
+    // Inconnue : le réseau n'appartient à personne, et la seule chose utile à
+    // proposer est d'inscrire l'établissement.
+    const ecole = accueil!.ecole;
+
+    // Une inscription exige une adresse vérifiée (la route la refuse sans
+    // jeton). Le bouton annonce néanmoins CE QUE LE VISITEUR VIENT FAIRE —
+    // inscrire son école — et l'identification n'apparaît qu'après le clic,
+    // au moment où elle devient une étape et non un préalable décourageant.
+    const ouvrirInscription = () => { setInscription(true); setInscriptionErreur(""); };
+
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center text-primary">
-        <Head><title>{`${t("etab.title")} — EduChat`}</title></Head>
-        {/* Même allure que la garde d'accès de /duel, et l'engrenage de la
-            tuile « Établissement » de l'accueil : une même porte doit se
-            reconnaître d'une page à l'autre. */}
-        <MdSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
-        <h1 className="text-2xl font-bold">{t("etab.locked.title")}</h1>
-        {state === "auth" ? (
+      <div className="mx-auto max-w-3xl px-4 py-10 text-primary">
+        <Head><title>{`${ecole ? ecole.name : t("etab.title")} — EduChat`}</title></Head>
+
+        {ecole ? (
           <>
-            <p className="mt-3 opacity-80">{t("etab.locked.auth")}</p>
-            {/* L'identification EST la première étape de l'inscription. Le dire
-                ici évite qu'on lise la garde comme un refus définitif et qu'on
-                referme la page avant d'avoir vu le bouton d'inscription. */}
-            <p className="mt-2 text-sm opacity-70">{t("etab.signup.authHint")}</p>
+            {/* --- ACCUEIL DE L'ÉCOLE (visiteur reconnu par le réseau) --- */}
+            <header className="text-center">
+              <MdSchool className="mx-auto mb-3 text-5xl text-[#DC6521]" />
+              <h1 className="text-3xl font-bold">{ecole.name}</h1>
+              {/* Le nom de l'école est déjà le titre : la phrase n'a pas à le
+                  répéter, elle dit ce que le visiteur peut FAIRE. */}
+              <p className="mt-2 opacity-80">{t("etab.public.welcome")}</p>
+            </header>
+
+            <section className="mt-8">
+              <h2 className="text-lg font-bold">{t("etab.public.tutorsTitle")}</h2>
+              <p className="mt-1 text-sm opacity-70">{t("etab.public.tutorsHelp")}</p>
+              {accueil!.tuteurs.length === 0 ? (
+                <p className="mt-4 text-sm opacity-60">{t("etab.public.tutorsEmpty")}</p>
+              ) : (
+                <ul className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {accueil!.tuteurs.map(tuteur => (
+                    <li key={tuteur.name}
+                      className="flex flex-col gap-2 rounded-lg border border-white/10 bg-secondary p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <Link href={`/p/${encodeURIComponent(tuteur.name)}`}
+                          className="text-lg font-bold hover:underline">{tuteur.title}</Link>
+                        {/* La marque « maison » n'est qu'un repère : le droit de
+                            voir la carte a été tranché en base, pas ici. */}
+                        {tuteur.maison && (
+                          <span className="shrink-0 rounded border border-[#DC6521]/60 px-2 py-0.5 text-[11px] text-[#DC6521]">
+                            {t("etab.public.own")}
+                          </span>
+                        )}
+                      </div>
+                      <p className="flex-grow text-sm opacity-80">{tuteur.description}</p>
+                      <div className="flex flex-wrap items-center gap-x-3 text-xs opacity-60">
+                        <span>{t("home.by")} {tuteur.authorName || t("admin.anonymous")}</span>
+                        <span className="uppercase">{tuteur.language}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={`/chat?tuteur=${encodeURIComponent(tuteur.name)}`}
+                          className="flex items-center gap-1 rounded bg-[#DC6521] px-3 py-1.5 text-sm font-bold hover:opacity-90">
+                          <MdChatBubbleOutline /> {t("home.use")}
+                        </Link>
+                        <Link href={`/p/${encodeURIComponent(tuteur.name)}`}
+                          className="rounded border border-white/20 px-3 py-1.5 text-sm hover:bg-tertiary">
+                          {t("home.view")}
+                        </Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <div className="mt-8"><PourquoiEduChat /></div>
+
+            {/* Le responsable, lui, n'est pas perdu : la porte de gestion reste
+                visible, en bas et en petit — l'écran appartient d'abord aux
+                élèves et aux enseignants qui passent. */}
+            <p className="mt-6 text-sm opacity-70">
+              {state === "auth" ? (
+                <>
+                  {t("etab.public.teacherHint")}{" "}
+                  <Link href="/verifier" className="underline">{t("compte.anonymousCta")}</Link>
+                </>
+              ) : (
+                t("etab.public.notMember")
+              )}
+            </p>
+            {!inscription && !inscriptionFaite && (
+              <p className="mt-2 text-sm">
+                <button onClick={ouvrirInscription} className="underline opacity-70 hover:opacity-100">
+                  {t("etab.public.otherSchool")}
+                </button>
+              </p>
+            )}
           </>
         ) : (
-          // Remplace l'ancien « demandez à l'administration de vous désigner
-          // responsable » (etab.locked.noSchool) : c'était une impasse, aucune
-          // école ne pouvait démarrer sans nous écrire.
-          <p className="mt-3 opacity-80">{t("etab.signup.pitch")}</p>
+          <>
+            {/* --- AUCUN ÉTABLISSEMENT DERRIÈRE CE RÉSEAU --- */}
+            <div className="text-center">
+              {/* Même engrenage que la tuile « Établissement » de l'accueil :
+                  une même porte doit se reconnaître d'une page à l'autre. */}
+              <MdSettings className="mx-auto mb-4 text-5xl text-[#DC6521]" />
+              <h1 className="text-2xl font-bold">{t("etab.locked.title")}</h1>
+              {/* PLUS D'INVITATION À « VÉRIFIER SON EMAIL D'ABORD » : elle
+                  faisait passer une formalité pour le sujet de la page. Ce qui
+                  est en jeu ici, c'est l'inscription d'un établissement — la
+                  vérification n'apparaît qu'une fois le geste engagé. */}
+              <p className="mt-3 opacity-80">{t("etab.public.noSchool")}</p>
+              {/* Une seule phrase pour les deux visiteurs (identifié ou non) :
+                  l'ancienne, « vous n'avez pas encore d'espace responsable »,
+                  parlait d'un compte à quelqu'un qui n'en a peut-être pas. */}
+              <p className="mt-2 text-sm opacity-70">{t("etab.public.signupInvite")}</p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              {!inscription && !inscriptionFaite && (
+                <button onClick={ouvrirInscription}
+                  className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+                  <MdSchool /> {t("etab.signup.cta")}
+                </button>
+              )}
+              {/* L'assistance figure AUSSI ici : c'est devant une porte fermée
+                  qu'on a le plus besoin de joindre quelqu'un. La cacher derrière
+                  la garde reviendrait à ne l'offrir qu'à ceux qui n'en ont pas
+                  besoin. */}
+              <Link href="/assistance" className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+                <MdSupportAgent /> {t("assistance.button")}
+              </Link>
+              <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+                {t("etab.locked.back")}
+              </Link>
+            </div>
+
+            <div className="mt-8"><PourquoiEduChat /></div>
+          </>
         )}
-        {/* Mêmes boutons, même allure que sur /duel : deux pages qui refusent
-            l'accès pour la même raison doivent se ressembler.
-            L'assistance figure AUSSI ici : c'est devant une porte fermée —
-            « mon compte n'est rattaché à aucun établissement » — qu'on a le
-            plus besoin de joindre quelqu'un. La cacher derrière la garde
-            reviendrait à ne l'offrir qu'à ceux qui n'en ont pas besoin. */}
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          {state === "auth" && (
-            <Link href="/verifier" className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
+
+        {/* --- L'identification, découverte APRÈS le geste --- */}
+        {state === "auth" && inscription && (
+          <div className="mt-8 rounded-lg border border-white/10 bg-secondary p-4 text-sm">
+            <p className="opacity-90">{t("etab.signup.needAuth")}</p>
+            <Link href="/verifier"
+              className="mt-3 inline-block rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
               {t("compte.anonymousCta")}
             </Link>
-          )}
-          {state === "none" && !inscription && !inscriptionFaite && (
-            <button onClick={() => setInscription(true)}
-              className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90">
-              <MdSchool /> {t("etab.signup.cta")}
-            </button>
-          )}
-          <Link href="/assistance" className="flex items-center gap-1 rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            <MdSupportAgent /> {t("assistance.button")}
-          </Link>
-          <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
-            {t("etab.locked.back")}
-          </Link>
-        </div>
+          </div>
+        )}
 
         {/* --- Formulaire d'inscription --- */}
         {state === "none" && inscription && !inscriptionFaite && (
@@ -310,11 +490,27 @@ export default function EtablissementPage() {
       )}
       {tour && <InterfaceTour parcours="etablissement" onClose={() => setTour(false)} />}
 
+      {/* LE SÉLECTEUR D'ÉCOLE ACTIVE, tout en haut : un compte peut enseigner
+          dans deux collèges, et TOUT ce que cette page montre — horaires,
+          consommation, porte-monnaie, comptes, facture — répond d'abord à la
+          question « laquelle ? ». La poser une fois, visiblement, vaut mieux
+          que de la laisser deviner section par section. */}
+      {!demo && <SelecteurEcole etat={ecoles} />}
+
       <h1 data-tour="etab-identite" className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {demo ? t("etab.demo.school") : etab.name}</h1>
       <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">{t("etab.guide.link")}</Link> — {t("etab.guide.hint")}</p>
       <p className="mt-1 text-sm opacity-70">
         {t("etab.intro", { source: etab.ips ? t("etab.intro.ips") : t("etab.intro.network") })}
       </p>
+      {/* L'enseignant NON administrateur n'a pas à découvrir la limite en
+          heurtant un champ grisé sans explication : on la nomme, une fois, au
+          début — et les sections réservées portent plus bas leur propre
+          liseré. */}
+      {!administre && (
+        <p className="mt-3 rounded border border-white/15 bg-secondary p-3 text-sm opacity-80">
+          {t("etab.readOnly")}
+        </p>
+      )}
 
       {/* --- Horaires d'accès libre --- */}
       <section data-tour="etab-horaires" className="mt-8">
@@ -365,13 +561,18 @@ export default function EtablissementPage() {
         </div>
       </section>
 
-      <div className="mt-6 flex items-center gap-3">
-        <button onClick={save} disabled={fige}
-          className="rounded bg-[#DC6521] px-5 py-2 font-bold hover:opacity-90 disabled:opacity-50">
-          {busy ? "…" : t("etab.save")}
-        </button>
-        {message && <span className="text-sm opacity-80">{message}</span>}
-      </div>
+      {/* Le bouton d'enregistrement DISPARAÎT pour qui ne règle rien, au lieu
+          de rester grisé : un bouton désactivé promet une action qu'aucun
+          geste ne débloquera jamais ici. */}
+      {administre && (
+        <div className="mt-6 flex items-center gap-3">
+          <button onClick={save} disabled={fige}
+            className="rounded bg-[#DC6521] px-5 py-2 font-bold hover:opacity-90 disabled:opacity-50">
+            {busy ? "…" : t("etab.save")}
+          </button>
+          {message && <span className="text-sm opacity-80">{message}</span>}
+        </div>
+      )}
 
       {/* --- Consommation du mois (lecture seule) --- */}
       <section data-tour="etab-conso" className="mt-10">
@@ -379,13 +580,27 @@ export default function EtablissementPage() {
         <p className="mt-1 text-sm opacity-80">
           {t("etab.usage.totalLabel")} <b>{formatTokens(data!.usage.monthTokens)}</b> {t("etab.usage.totalSuffix")}
         </p>
+        {/* CE QUE LA LISTE ÉNUMÈRE, dit avant qu'on la lise : les fournisseurs
+            que la clé de l'école peut employer, et eux seuls. Sans cette
+            phrase, un zéro se lit « panne » au lieu de « rien consommé », et
+            l'absence d'un fournisseur connu se lit « oubli » au lieu de
+            « votre école ne peut pas l'utiliser ». */}
+        <p className="mt-1 text-xs opacity-60">{t("etab.usage.scope")}</p>
         {data!.usage.byProvider.length > 0 && (
           <table className="mt-2 w-full max-w-md text-left text-sm">
             <thead className="text-xs uppercase opacity-60"><tr><th className="py-1">{t("etab.usage.model")}</th><th className="text-right">{t("etab.usage.tokens")}</th></tr></thead>
             <tbody>
               {data!.usage.byProvider.map(p => (
-                <tr key={p.provider} className="border-b border-white/5">
-                  <td className="py-1">{p.provider}</td>
+                <tr key={p.provider} className={`border-b border-white/5 ${p.servi ? "" : "opacity-60"}`}>
+                  <td className="py-1">
+                    {p.provider}
+                    {/* Consommé hier, plus servi aujourd'hui : la ligne reste,
+                        parce que ces jetons ont bel et bien été décomptés. */}
+                    {!p.servi && (
+                      <span className="ml-2 rounded border border-white/20 px-1 text-xs"
+                        title={t("etab.usage.notServedTitle")}>{t("etab.usage.notServed")}</span>
+                    )}
+                  </td>
                   <td className="text-right">{p.tokens.toLocaleString("fr-CH")}</td>
                 </tr>
               ))}
@@ -393,6 +608,34 @@ export default function EtablissementPage() {
           </table>
         )}
       </section>
+
+      {/* ═══ L'ADMINISTRATION DE L'ÉCOLE ═══
+          Descendue de /admin (décision A). Ces quatre sections ne relèvent ni
+          du site — elles ne parlent que d'une école — ni de la classe : ce
+          sont les décisions d'un établissement sur lui-même. Elles ne
+          s'affichent qu'aux enseignants-ADMINISTRATEURS de l'école ACTIVE,
+          et le disent (liseré orange + pastille de ZoneAdmin).
+          En démonstration, elles ne sont pas montées du tout : chacune
+          interroge le serveur, ce qu'une page qui se dit fictive ne fait pas. */}
+      {!demo && administre && (
+        <>
+          <ZoneAdmin titre={t("etab.zone.wallet")}>
+            <PorteMonnaie ecole={ecoles.active} variante="ecole" />
+          </ZoneAdmin>
+
+          <ZoneAdmin titre={t("etab.zone.invoice")}>
+            <Factures ecole={ecoles.active} variante="ecole" />
+          </ZoneAdmin>
+
+          <ZoneAdmin titre={t("etab.zone.accounts")} aide={t("etab.zone.accountsHelp")}>
+            <Comptes ecole={ecoles.active} isSuper={ecoles.isSuper} />
+          </ZoneAdmin>
+
+          <ZoneAdmin titre={t("etab.zone.tutors")} aide={t("etab.zone.tutorsHelp")}>
+            <TuteursEcole ecole={ecoles.active} />
+          </ZoneAdmin>
+        </>
+      )}
 
       {/* --- Informations gérées par l'administration --- */}
       <section className="mt-10 rounded-lg border border-white/10 bg-secondary p-4 text-sm">
@@ -409,6 +652,13 @@ export default function EtablissementPage() {
             /assistance qui détient l'adresse. */}
         <p className="mt-2 text-xs opacity-60">{t("etab.admin.contact")}</p>
       </section>
+
+      {/* POURQUOI CE SITE EXISTE — ici aussi, et surtout ici : c'est le
+          responsable qui devra l'expliquer à sa direction ou à son service
+          informatique, et ces quatre phrases sont celles qu'il pourra reprendre
+          telles quelles (le mécanisme du virement, et ce que le contrat d'API
+          protège exactement). */}
+      <section className="mt-10"><PourquoiEduChat /></section>
 
       {/* --- Contact / assistance ---
           Placé juste après le bloc « géré par l'administration » : c'est déjà

@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { CommentRow, getDb } from '../../../../server/db';
 import { getByName, estVisible, porteeDepuisIp } from '../../../../server/prompts';
 import { requireAuth, isAdminEmail } from '../../../../server/token';
+import { requireGestionTuteurs, tuteurDeLEcole } from '../../../../server/admin';
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { notifyAdmin } from '../../../../server/mail';
 import { ERR } from '../../../../shared/providers';
@@ -17,6 +18,12 @@ const MAX_COMMENT_CHARS = 2000;
 //  - Le PROMPTAGOGUE auteur du tuteur les voit et les modère (approuver /
 //    masquer) ; l'ADMINISTRATION voit et modère tout — c'est elle qui couvre
 //    les tuteurs proposés anonymement (sans auteur).
+//  - L'ÉCOLE PROPRIÉTAIRE du tuteur modère aussi les siens, par ses enseignants
+//    comme par son administration (décision du client). C'est ce qui donne un
+//    modérateur AUTRE que le site aux propositions anonymes déposées depuis le
+//    réseau d'un établissement — désormais rattachées à cette école-là (voir
+//    src/pages/api/prompts/index.ts). Jamais les tuteurs de la PLATEFORME :
+//    ceux-là ne relèvent d'aucune école.
 //  - Un commentaire n'est JAMAIS supprimé : « hidden » le masque, c'est tout.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const name = String(req.query.name ?? '');
@@ -27,7 +34,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const auth = requireAuth(req);
   const isAdmin = !!auth && isAdminEmail(auth.email);
   const isAuthor = !!auth && !!row.author_email && auth.email === row.author_email;
-  const moderator = isAdmin || isAuthor;
+  // L'école du tuteur, résolue comme partout ailleurs : école ACTIVE du
+  // signataire revérifiée en base, puis rang (administrateur ou enseignant) sur
+  // CETTE école, puis propriété du tuteur — le NULL de la plateforme ne
+  // correspondant à aucune école (tuteurDeLEcole).
+  const gestion = requireGestionTuteurs(req);
+  const moderator = isAdmin || isAuthor || (!!gestion && tuteurDeLEcole(gestion, row.etablissement_id));
 
   // Pour le PUBLIC, seuls existent les tuteurs qu'il a le droit de VOIR :
   // ni brouillon, ni dépublié, ni archivé — et pas davantage le tuteur réservé

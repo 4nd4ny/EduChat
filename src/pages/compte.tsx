@@ -18,7 +18,8 @@ const DOSSIER_DEMO: AccountData = {
   identite: {
     email: "claire.martin@example.org", name: "claire.martin",
     createdAt: Date.parse("2026-02-14T09:00:00Z"), verifiedAt: Date.parse("2026-07-20T08:30:00Z"),
-    isPromptagogue: true, isTeacher: true, isAdmin: false, syncOptin: true, keysOptin: true,
+    isPromptagogue: true, isTeacher: true, isAdmin: false, isSuper: false,
+    syncOptin: true, keysOptin: true,
   },
   consommation: {
     declaredTokens: 128400, profileUpdatedAt: Date.parse("2026-07-25T17:10:00Z"),
@@ -322,10 +323,15 @@ export default function ComptePage() {
         </div>
         {/* Pour l'administration, la première action n'est pas d'exporter ses
             propres données — c'est d'administrer. L'export reste accessible,
-            en second. */}
+            en second.
+            LE BOUTON MÈNE OÙ LE COMPTE A LE DROIT D'ENTRER : depuis la
+            répartition par niveau (décision A), /admin est le site SEUL.
+            Envoyer un administrateur d'école sur /admin l'aurait conduit à un
+            écran de refus — son administration existe, elle a déménagé sur
+            /etablissement. */}
         {identite.isAdmin ? (
           <div className="flex items-center gap-2">
-            <Link href="/admin"
+            <Link href={identite.isSuper ? "/admin" : "/etablissement"}
               className="rounded bg-[#DC6521] px-4 py-2 text-sm font-bold text-[#111827] hover:opacity-90">
               {t("compte.administer")}
             </Link>

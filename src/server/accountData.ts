@@ -41,7 +41,7 @@ export type PromptResume = {
 export type AccountData = {
   identite: {
     email: string; name: string; createdAt: number; verifiedAt: number | null;
-    isPromptagogue: boolean; isTeacher: boolean; isAdmin: boolean;
+    isPromptagogue: boolean; isTeacher: boolean; isAdmin: boolean; isSuper: boolean;
     syncOptin: boolean; keysOptin: boolean;
   };
   consommation: {
@@ -168,10 +168,21 @@ export function collectAccountData(email: string): AccountData {
       isPromptagogue: !!user?.isPromptagogue,
       isTeacher: !!user?.isTeacher,
       // « Mes données » n'affiche qu'un bouton « Administrer » : les deux
-      // niveaux y ont droit, la page /admin fera le tri.
+      // niveaux y ont droit, mais ils ne mènent plus au même endroit —
+      // /admin est désormais le site SEUL, et l'administration d'une école
+      // vit sur /etablissement (décision A). D'où isSuper à côté : sans lui,
+      // le bouton d'un administrateur d'école pointerait sur une page qui le
+      // refuse.
+      // La question est « ce compte administre-t-il AU MOINS une école ? ».
+      // Depuis le multi-écoles, elle se pose à la table de liaison : le rang
+      // vit sur le LIEN, et un compte peut être administrateur d'un collège
+      // qui n'est pas son école principale — l'ancienne lecture
+      // (is_school_admin + etablissement_id) l'aurait alors dit non-admin,
+      // et « Mes données » aurait caché le bouton d'une porte pourtant ouverte.
       isAdmin: isAdminEmail(email) || !!(getDb()
-        .prepare('SELECT 1 FROM users WHERE email = ? AND is_school_admin = 1 AND etablissement_id IS NOT NULL')
+        .prepare('SELECT 1 FROM user_etablissements WHERE email = ? AND is_admin = 1')
         .get(email)),
+      isSuper: isAdminEmail(email),
       syncOptin: !!user?.syncOptin,
       keysOptin: !!user?.keysOptin,
     },

@@ -6,6 +6,10 @@ import {
   MAX_PROMPT_BYTES, MAX_USER_BYTES,
 } from '../../../server/prompts';
 import { requireAuth } from '../../../server/token';
+import {
+  choixEcole, ecoleActivePourCompte, estAdminDe, estEnseignantDe, ecolePrincipale,
+} from '../../../server/appartenance';
+import { resolveEtablissementByIp } from '../../../server/etablissements';
 import { getClientIp, isRateLimited } from '../../../server/access';
 import { ERR } from '../../../shared/providers';
 
@@ -16,10 +20,11 @@ export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 //   (voir porteeDepuisIp, src/server/prompts.ts).
 // POST /api/prompts — créer un BROUILLON (« en construction ») :
 //   - signé (Authorization: Bearer) : rattaché à l'auteur, soumis à son quota de 1 Mo ;
-//   - anonyme : possible (décision client), la validation admin sera le seul filtre,
-//     et toute la modération (validation, dépublication, archivage) lui reviendra.
+//   - anonyme : possible (décision client), la validation sera le seul filtre.
 //     L'URL secrète renvoyée est alors l'unique « clé » du proposant pour tester
-//     et soumettre son brouillon.
+//     et soumettre son brouillon. La modération revient au site — ou, si le
+//     dépôt vient du réseau d'un établissement, aux enseignants de CETTE école,
+//     à qui le rattachement posé ci-dessous donne un titre pour agir.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     const sort = String(req.query.sort ?? 'score').slice(0, 16);
@@ -77,14 +82,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  // RATTACHEMENT À L'ÉCOLE DE L'AUTEUR — lu en base sur le compte signataire,
-  // jamais reçu du client : c'est une propriété, pas une préférence. Une
-  // proposition anonyme, ou celle d'un auteur sans école, reste NULL et
-  // rejoint le catalogue de la plateforme, comme avant.
-  const etablissementId = auth
-    ? ((db.prepare('SELECT etablissement_id FROM users WHERE email = ?').get(auth.email) as
-      { etablissement_id: number | null } | undefined)?.etablissement_id ?? null)
-    : null;
+  // RATTACHEMENT À L'ÉCOLE DU DÉPÔT — jamais reçu du client : c'est une
+  // propriété du geste, pas une préférence de l'auteur. Deux sources, dans
+  // cet ordre :
+  //
+  //   1. l'ÉCOLE DU COMPTE signataire, relue en base ;
+  //   2. à défaut, l'ÉTABLISSEMENT DE L'ADRESSE IP d'où vient le dépôt.
+  //
+  // LE SECOND POINT EST NOUVEAU, et c'est lui qui donne un modérateur aux
+  // PROPOSITIONS ANONYMES : sans école notée au moment du dépôt, rien ne
+  // permettra plus tard de dire qu'un tuteur sans auteur relevait d'un
+  // établissement — l'information n'existe qu'à cet instant, et on ne la
+  // reconstitue pas. Les enseignants de cette école peuvent dès lors relire,
+  // corriger, valider et modérer ce qui a été proposé chez eux
+  // (src/server/admin.ts, requireGestionTuteurs).
+  //
+  // RGPD : on enregistre l'ÉTABLISSEMENT RÉSOLU, jamais l'adresse IP — une IP
+  // d'établissement désigne une école, une IP conservée en base désignerait un
+  // particulier. resolveEtablissementByIp ne rend qu'un identifiant d'école, et
+  // l'adresse ne quitte pas cette fonction. Hors établissement, le rattachement
+  // reste NULL : le catalogue de la plateforme, visible de tous, comme avant.
+  //
+  // ─── POURQUOI PAS « ecoleActivePourCompte » TOUT SEUL ───
+  //
+  // RATTACHER, C'EST CONFISQUER, et il faut le dire ainsi pour choisir juste.
+  // Un tuteur rattaché à une école sort du catalogue public : CLAUSE_VISIBLE
+  // (src/server/prompts.ts) ne le montre plus qu'au réseau de cette école tant
+  // qu'elle ne l'a pas « partagé » — et ce geste-là appartient à son
+  // administration. Les enseignants de l'école y gagnent en outre le droit de
+  // relire, corriger et valider le texte.
+  //
+  // Or l'école ACTIVE, seule, se contente d'un LIEN D'APPARTENANCE — et ce
+  // lien se RAMASSE : vérifier son adresse depuis une IP d'établissement en
+  // pose un (src/pages/api/verify/confirm.ts), élèves et visiteurs de passage
+  // compris. Un promptagogue ayant un jour créé son compte depuis le wifi d'un
+  // collège aurait vu, DEPUIS CHEZ LUI ET POUR TOUJOURS, chacun de ses tuteurs
+  // disparaître du catalogue public au profit de ce collège-là, sans rien lui
+  // dire et sans pouvoir l'en sortir lui-même.
+  //
+  // ON EXIGE DONC UN TITRE, exactement comme les quatre autres gardes issues
+  // du multi-écoles (requireGestionTuteurs, /api/etablissement, session-settings,
+  // dansLaPortee) : administrer cette école, ou en être l'enseignant au sens où
+  // elle en répond. C'est ce qui rend à la décision B ce qui lui revient — un
+  // enseignant partagé entre deux collèges rattache bien son tuteur à celui
+  // qu'il a choisi — sans donner la même chose à qui n'a fait que passer.
+  //
+  // LE REPLI SUR L'ÉCOLE PRINCIPALE n'est pas décoratif : c'est le
+  // comportement d'avant le multi-écoles (users.etablissement_id), et il couvre
+  // le PROMPTAGOGUE NON-ENSEIGNANT qu'une administration a rattaché — ni admin,
+  // ni is_teacher, donc invisible des deux tests ci-dessus, et dont les tuteurs
+  // doivent pourtant continuer d'appartenir à son école.
+  const active = auth ? ecoleActivePourCompte(auth.email, choixEcole(req)) : null;
+  const parLeCompte = !auth ? null
+    : (active !== null && (estAdminDe(auth.email, active) || estEnseignantDe(auth.email, active)))
+      ? active
+      : ecolePrincipale(auth.email);
+  const etablissementId = parLeCompte ?? resolveEtablissementByIp(ip)?.id ?? null;
 
   const now = Date.now();
   const shareToken = crypto.randomBytes(16).toString('hex');

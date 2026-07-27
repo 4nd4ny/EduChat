@@ -13,6 +13,7 @@ import { useT } from "../i18n/useT";
 import type { TranslationKey } from "../i18n/dictionaries";
 import DemoChat from "../chat/DemoChat";
 import SiteStats from "../site/SiteStats";
+import PourquoiEduChat from "../site/PourquoiEduChat";
 
 type Card = {
   name: string;
@@ -39,7 +40,11 @@ const PROFILES: Array<{
   icon: React.ReactNode;
 }> = [
   { id: "learner", labelKey: "nav.learner", actionKey: "nav.freeChat", href: "/chat", icon: <MdChatBubbleOutline /> },
-  { id: "teacher", labelKey: "nav.teacher", actionKey: "nav.session", href: "/session", icon: <MdSchool /> },
+  // /enseignant, et non plus /session : la répartition par niveau (décision A)
+  // nomme chaque espace par la personne à qui il s'adresse. L'ancienne adresse
+  // reste servie (src/pages/session.tsx la réexporte) — les quatre guides y
+  // mènent encore.
+  { id: "teacher", labelKey: "nav.teacher", actionKey: "nav.session", href: "/enseignant", icon: <MdSchool /> },
   { id: "school", labelKey: "nav.school", actionKey: "nav.settings", href: "/etablissement", icon: <MdSettings /> },
   { id: "promptagogue", labelKey: "nav.promptagogue", actionKey: "nav.duel", href: "/duel", icon: <MdCompareArrows /> },
 ];
@@ -71,8 +76,28 @@ export default function Catalogue() {
   // Tuteur ouvert en démo inline (null = fermé). « Essayer » ouvre la démo.
   const [demo, setDemo] = useState<string | null>(null);
   const demoRef = React.useRef<HTMLDivElement>(null);
+  // Le nom de l'école dont relève le RÉSEAU du visiteur (résolu par IP côté
+  // serveur), ou null hors établissement.
+  const [ecole, setEcole] = useState<string | null>(null);
 
   useEffect(() => setFavorites(getFavorites()), []);
+
+  // « bref=1 » : l'accueil n'a besoin que de savoir s'il parle à une école —
+  // pas de son catalogue, qu'il charge déjà par /api/prompts.
+  useEffect(() => {
+    fetch("/api/etablissement/accueil?bref=1")
+      .then(r => r.json())
+      .then((d: { ecole?: { name: string } | null }) => setEcole(d?.ecole?.name ?? null))
+      .catch(() => { /* sans réponse, l'accueil reste celui de tout le monde */ });
+  }, []);
+
+  // QUAND LE VISITEUR ARRIVE DU RÉSEAU D'UNE ÉCOLE, SA TUILE PASSE EN TÊTE.
+  // Pour lui, « Établissement » n'est plus un réglage d'administrateur : c'est
+  // la page de SON école, et elle porte son nom. Ailleurs, l'ordre habituel.
+  const profils = useMemo(
+    () => (ecole ? [...PROFILES].sort((a, b) => Number(b.id === "school") - Number(a.id === "school")) : PROFILES),
+    [ecole],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,7 +140,7 @@ export default function Catalogue() {
         {/* Une ligne, quatre profils : chaque case EST l'entrée de son espace
             de travail (le libellé secondaire annonce ce qui va s'ouvrir). */}
         <nav className="mt-2 grid w-full max-w-3xl grid-cols-2 gap-2 text-sm md:grid-cols-4">
-          {PROFILES.map(item => item.id === "learner" ? (
+          {profils.map(item => item.id === "learner" ? (
             // Le chat libre remet le tuteur à zéro : c'est une action, pas un lien.
             <button key={item.id} onClick={() => usePrompt("")} className={CELL}>
               <span className="flex items-center gap-1.5 font-semibold">{item.icon} {t(item.labelKey)}</span>
@@ -124,11 +149,22 @@ export default function Catalogue() {
           ) : (
             <Link key={item.id} href={item.href} className={CELL}>
               <span className="flex items-center gap-1.5 font-semibold">{item.icon} {t(item.labelKey)}</span>
-              <span className="text-[11px] opacity-60">{t(item.actionKey)}</span>
+              {/* La tuile de l'école annonce SON NOM plutôt que « Gestion des
+                  paramètres » : depuis le réseau d'un établissement, ce qui
+                  s'ouvre est sa page d'accueil, pas une console de réglages. */}
+              <span className="text-[11px] opacity-60">
+                {item.id === "school" && ecole ? ecole : t(item.actionKey)}
+              </span>
             </Link>
           ))}
         </nav>
       </header>
+
+      {/* POURQUOI CE SITE EXISTE — au-dessus du catalogue, parce qu'un visiteur
+          qui ne comprend pas ce que la plateforme apporte ne comprend pas
+          davantage ce que ce catalogue vient faire là. Même bloc, mot pour mot,
+          que sur la page d'un établissement. */}
+      <div className="mb-6"><PourquoiEduChat /></div>
 
       {/* Démo inline : « Essayer » un tuteur ouvre ce panneau ici même. */}
       <div ref={demoRef} className="scroll-mt-4">

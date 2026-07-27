@@ -5,7 +5,9 @@ import {
   CLAUSE_VISIBLE, parametresPortee, MAX_PROMPT_BYTES, MAX_USER_BYTES,
 } from '../../../../server/prompts';
 import { requireAuth, isAdminEmail, TokenPayload } from '../../../../server/token';
-import { requireAdmin, AdminScope } from '../../../../server/admin';
+import {
+  requireGestionTuteurs, tuteurDeLEcole, AdminScope, PorteeTuteurs,
+} from '../../../../server/admin';
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { notifyAdmin } from '../../../../server/mail';
 import { ERR } from '../../../../shared/providers';
@@ -37,6 +39,16 @@ type Rights = {
   // actions qui relèvent du propriétaire du tuteur — « isAdmin » ci-dessus ne
   // connaît que le site (SECRET_ADMIN_EMAILS) et n'a jamais vu les écoles.
   scope: AdminScope | null;
+  // Portée de GESTION des tuteurs — la précédente, ÉLARGIE aux enseignants
+  // non-administrateurs de l'école propriétaire (décision du client).
+  //
+  // DEUX CHAMPS ET NON UN SEUL, et c'est la précaution centrale de ce fichier :
+  // élargir `scope` aurait donné du même geste « partager / réserver » à un
+  // enseignant simple, c'est-à-dire le droit de publier au monde entier le
+  // tuteur de son école — que le commentaire de cette action réserve
+  // explicitement à l'administration de l'établissement. Une seule autorité
+  // pour deux questions différentes finit toujours par répondre à la mauvaise.
+  gestion: PorteeTuteurs | null;
 };
 
 function resolveRights(req: NextApiRequest, row: PromptRow): Rights {
@@ -51,7 +63,25 @@ function resolveRights(req: NextApiRequest, row: PromptRow): Rights {
       { is_promptagogue: number } | undefined;
     isPromptagogue = !!user?.is_promptagogue;
   }
-  return { isAuthor: byToken || byShare, isAdmin, isPromptagogue, auth, scope: requireAdmin(req) };
+  // Une seule résolution pour les deux portées : requireGestionTuteurs commence
+  // par requireAdmin, et tout ce qui n'est pas « enseignant » EST la portée
+  // d'administration d'avant — au champ près, les deux types sont le même.
+  // Rappeler requireAdmin ici ne ferait que relire la base pour un résultat
+  // identique, avec le risque de le voir diverger un jour de celui-ci.
+  const gestion = requireGestionTuteurs(req);
+  const scope = gestion && gestion.niveau !== 'enseignant' ? gestion : null;
+  return { isAuthor: byToken || byShare, isAdmin, isPromptagogue, auth, scope, gestion };
+}
+
+/**
+ * Le signataire répond-il de CE tuteur au titre de son école ?
+ *
+ * C'est la garde des gestes de COLLÈGUE — relire, corriger, valider ce qui a
+ * été soumis. Elle ne dit rien des gestes d'ADMINISTRATION (renommer,
+ * archiver, retraduire, partager), qui gardent chacun leur propre garde.
+ */
+function releveDeSonEcole(rights: Rights, row: PromptRow): boolean {
+  return !!rights.gestion && tuteurDeLEcole(rights.gestion, row.etablissement_id);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -124,7 +154,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const action = String(req.body?.action ?? 'edit');
 
   if (action === 'edit') {
-    if (!rights.isAuthor && !rights.isAdmin) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    // L'auteur, le site — et désormais l'ÉCOLE PROPRIÉTAIRE du tuteur, par ses
+    // enseignants comme par son administration : un tuteur rattaché à un
+    // établissement est un texte de l'établissement, et une coquille dans le
+    // prompt d'un collègue absent ne doit pas attendre le site pour être
+    // corrigée. Le rattachement NULL (plateforme) n'est jamais concerné :
+    // tuteurDeLEcole écarte le NULL avant toute comparaison.
+    if (!rights.isAuthor && !rights.isAdmin && !releveDeSonEcole(rights, row)) {
+      return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    }
     const body = req.body?.body !== undefined ? String(req.body.body) : row.body;
     const description = req.body?.description !== undefined
       ? String(req.body.description).trim().slice(0, 500) : row.description;
@@ -194,13 +232,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (action === 'approve') {
-    // Modération a priori : approbation par un admin OU par un promptagogue
-    // vérifié (décision client — la validation protège surtout le flux anonyme).
-    if (!(rights.isAdmin || rights.isPromptagogue)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
-    // Un promptagogue ne valide que ce qui lui est SOUMIS. L'administration,
-    // elle, peut publier un BROUILLON directement : elle est de toute façon
-    // l'autorité de modération, elle en lit le texte dans la même page, et
-    // exiger un aller-retour par l'URL secrète de l'auteur — seul chemin vers
+    // Modération a priori : approbation par un admin, par un promptagogue
+    // vérifié (décision client — la validation protège surtout le flux anonyme),
+    // ou par l'école propriétaire du tuteur (enseignants compris) : valider ce
+    // qui est proposé chez soi est le geste même que le client confie à
+    // l'enseignant non-administrateur.
+    if (!(rights.isAdmin || rights.isPromptagogue || releveDeSonEcole(rights, row))) {
+      return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+    }
+    // Un promptagogue ne valide que ce qui lui est SOUMIS — et l'école non
+    // plus : publier un BROUILLON que personne n'a soumis court-circuite le
+    // seul geste par lequel un auteur dit « c'est prêt ». L'administration du
+    // SITE, elle, peut le faire : elle est de toute façon l'autorité de
+    // modération, elle en lit le texte dans la même page, et exiger un
+    // aller-retour par l'URL secrète de l'auteur — seul chemin vers
     // « soumis » — laissait des brouillons sans aucune issue vers le catalogue.
     const etatsValidables = rights.isAdmin ? ['pending', 'draft'] : ['pending'];
     if (!etatsValidables.includes(row.status)) return res.status(409).json({ error: { code: 'ERR_STATUS' } });

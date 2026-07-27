@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { requireAdmin } from '../../../server/admin';
+import { requireGestionTuteurs } from '../../../server/admin';
 import { ERR } from '../../../shared/providers';
 import { resumeTraductions } from '../../../server/traduction';
 
@@ -8,7 +8,10 @@ import { resumeTraductions } from '../../../server/traduction';
 // elle-même passe par PATCH/DELETE /api/prompts/[name], qui portent les
 // règles de droits). Inclut le corps pour examen avant approbation.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  const scope = requireAdmin(req);
+  // requireGestionTuteurs, et non requireAdmin : un ENSEIGNANT non-administrateur
+  // relit et valide les tuteurs de son école (décision du client). Sa portée est
+  // plus étroite que celle de l'administrateur — voir le filtre ci-dessous.
+  const scope = requireGestionTuteurs(req);
   if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
@@ -16,16 +19,24 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   }
   // PORTÉE. Cette vue rend le CORPS de chaque tuteur : la servir entière à un
   // administrateur d'école lui ouvrirait le texte des tuteurs de toutes les
-  // autres, ce que la propriété d'un tuteur par son école interdit. Une école
-  // voit les siens, plus ceux de la plateforme (rattachement NULL) — qui sont
-  // publics de toute façon, et qu'elle peut avoir à modérer.
-  const filtreEcole = scope.niveau === 'ecole'
-    ? 'AND (etablissement_id = @etab OR etablissement_id IS NULL)' : '';
+  // autres, ce que la propriété d'un tuteur par son école interdit.
+  //
+  //   ecole (administrateur) — les siens, PLUS ceux de la plateforme
+  //     (rattachement NULL), publics de toute façon et qu'elle peut modérer ;
+  //   enseignant — les siens, ET RIEN D'AUTRE. Le NULL disparaît : un tuteur
+  //     de la plateforme ne relève d'aucune école, et l'enseignant n'a aucun
+  //     titre à en relire le texte ni à en modérer les commentaires.
+  //
+  // Le paramètre @etab et le filtre qui le nomme se posent D'UN SEUL GESTE :
+  // better-sqlite3 refuse aussi bien une liaison sans paramètre correspondant
+  // qu'un paramètre manquant, et les deux erreurs sont des 500 à l'exécution.
+  const filtreEcole = scope.niveau === 'super' ? ''
+    : scope.niveau === 'ecole' ? 'AND (etablissement_id = @etab OR etablissement_id IS NULL)'
+      : 'AND etablissement_id = @etab';
+  const args = scope.niveau === 'super' ? [] : [{ etab: scope.etablissementId }];
   // Les prompts ARCHIVÉS sont définitivement masqués de cette vue (nettoyage
   // d'interface) — ils restent en base avec leurs compteurs, rien n'est supprimé.
   //
-  // Le paramètre nommé n'est fourni QUE lorsque la requête le contient :
-  // better-sqlite3 refuse une liaison qui ne correspond à aucun paramètre.
   // Ce commentaire vit AU-DESSUS du gabarit : deux lignes de « // » tombées
   // à l'intérieur des accents graves sont parties dans le SQL, et
   // db.prepare() jetait « near "/" : syntax error » — toute l'administration
@@ -40,7 +51,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     WHERE archived = 0 ${filtreEcole}
     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'draft' THEN 1 WHEN 'published' THEN 2 ELSE 3 END,
              updated_at DESC
-  `).all(...(scope.niveau === 'ecole' ? [{ etab: scope.etablissementId }] : [])) as
+  `).all(...args) as
     (Record<string, unknown> & { id: number; version: number; language: string })[];
 
   // L'état des traductions voyage avec la ligne : c'est là que l'administration

@@ -358,6 +358,11 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');       // lectures concurrentes sans blocage
   db.pragma('foreign_keys = ON');
+  // Relevé AVANT toute création : c'est le seul instant où l'on sait qu'une
+  // base est ANTÉRIEURE au multi-écoles, et donc que ses rattachements sont
+  // encore à recopier (voir la recopie unique, plus bas).
+  const tableLiaisonPresente = !!db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_etablissements'").get();
   db.exec(SCHEMA);
   // Migrations additives : ignorées si la colonne existe déjà.
   for (const alter of [
@@ -484,8 +489,98 @@ export function getDb(): Database.Database {
     "ALTER TABLE etablissements ADD COLUMN catalogue_ouvert INTEGER NOT NULL DEFAULT 0",
     // Le catalogue filtre désormais sur le rattachement à chaque requête.
     "CREATE INDEX IF NOT EXISTS idx_prompts_etab ON prompts(etablissement_id)",
+    // NOTE : user_etablissements N'EST PAS ICI. Cette table-là ne peut pas
+    // naître sans la recopie qui la remplit — les deux forment UNE migration,
+    // et une migration en deux morceaux se casse en son milieu. Voir le bloc
+    // transactionnel juste après cette boucle.
+    // MENTIONS ADMINISTRATIVES D'UNE FACTURE — ce qu'une école doit ajouter au
+    // document pour que sa comptabilité puisse le payer : l'adresse exacte à
+    // laquelle il doit parvenir, la référence ou le numéro de commande interne
+    // sous lequel la dépense a été engagée, et une note libre.
+    //
+    // TABLE SÉPARÉE, ET NON DES COLONNES SUR `factures`, pour deux raisons.
+    // D'abord `factures.emise_at` est NOT NULL : une école ne pourrait pas
+    // préparer ses mentions AVANT que le site n'émette, c'est-à-dire au seul
+    // moment où elle a le temps de les chercher. Ensuite l'émission écrit par
+    // ON CONFLICT DO UPDATE sur `factures` : garder les mentions ailleurs est
+    // la garantie mécanique qu'une réémission ne les efface jamais.
+    //
+    // AUCUN DE CES CHAMPS N'ENTRE DANS UN CALCUL. Le montant est celui du
+    // porte-monnaie ; rien de ce qu'une école saisit ici ne peut le changer —
+    // c'est pourquoi ils vivent loin des colonnes de montants.
+    `CREATE TABLE IF NOT EXISTS facture_mentions (
+       etablissement_id INTEGER NOT NULL,
+       periode          TEXT NOT NULL,             -- « AAAA-MM », comme factures
+       adresse          TEXT NOT NULL DEFAULT '',  -- adresse de facturation du mois
+       reference        TEXT NOT NULL DEFAULT '',  -- référence / n° de commande interne
+       note             TEXT NOT NULL DEFAULT '',  -- note libre
+       updated_at       INTEGER NOT NULL DEFAULT 0,
+       par              TEXT NOT NULL DEFAULT '',  -- qui a saisi, pour la relecture
+       PRIMARY KEY (etablissement_id, periode)
+     )`,
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
+  }
+
+  // ── UN COMPTE PEUT APPARTENIR À PLUSIEURS ÉCOLES (décision du client) ──
+  //
+  // Un enseignant partagé entre deux collèges avait jusqu'ici un seul
+  // users.etablissement_id : le second rattachement écrasait le premier. Cette
+  // table de LIAISON porte l'appartenance, et elle seule ; is_admin y est PAR
+  // LIEN, parce qu'être administrateur d'un collège ne dit rien de l'autre.
+  // users.etablissement_id SURVIT comme « école principale » (défaut d'école
+  // active, et rattachement que lit tout l'existant : catalogue, séance,
+  // facturation) — voir src/server/appartenance.ts.
+  //
+  // AUTORITÉ : pour l'AUTORISATION, c'est cette table qui fait foi.
+  // users.is_school_admin n'est plus qu'un miroir dénormalisé, conservé pour
+  // les listes d'administration ; toute écriture met les deux à jour.
+  //
+  // CRÉATION ET RECOPIE SONT UNE SEULE ÉCRITURE, ET C'EST TOUT L'OBJET DE CE
+  // BLOC. La table vide ne veut rien dire de bon : les gardes serveur lisent
+  // désormais la liaison, donc une table créée mais non remplie retire d'un
+  // coup toutes les écoles de tous les comptes — plus un seul administrateur
+  // d'établissement, plus un membre, et pas un message d'erreur nulle part.
+  // Or le déclencheur de la recopie est l'ABSENCE de la table (et non son
+  // nombre de lignes : une recopie rejouée à chaque démarrage ressusciterait
+  // le lendemain tout lien qu'une administration a retiré la veille). Créer
+  // d'un côté et recopier de l'autre laissait donc une fenêtre — un plantage
+  // entre les deux, ou un simple échec de l'INSERT — après laquelle la table
+  // EXISTE, la recopie ne se rejoue PLUS JAMAIS, et la perte est définitive.
+  // Le DDL de SQLite étant transactionnel, les deux tiennent ici dans la même
+  // transaction : ou la table naît pleine, ou elle ne naît pas.
+  //
+  // APRÈS la boucle de migrations, jamais avant : la recopie lit
+  // users.is_school_admin et users.created_at, deux colonnes que cette boucle
+  // vient d'ajouter aux bases anciennes.
+  //
+  // ON NE RATTRAPE PAS L'ERREUR. Si la transaction échoue, elle est annulée :
+  // il n'y a plus de table, et la requête suivante échouera bruyamment sur
+  // « no such table ». C'est le bon état — un démarrage qui refuse de démarrer
+  // se diagnostique, une table d'autorisation silencieusement vide ne se voit
+  // qu'au moment où une école découvre qu'elle a perdu ses administrateurs.
+  if (!tableLiaisonPresente) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_etablissements (
+          email            TEXT NOT NULL,
+          etablissement_id INTEGER NOT NULL,
+          is_admin         INTEGER NOT NULL DEFAULT 0,
+          created_at       INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (email, etablissement_id)
+        )
+      `);
+      // « Qui appartient à cette école ? » est la question de l'administration
+      // d'établissement ; sans index, elle balaie toute la table.
+      db.exec('CREATE INDEX IF NOT EXISTS idx_ue_etab ON user_etablissements(etablissement_id)');
+      // Les rattachements d'AVANT le multi-écoles, tels qu'ils existent : sans
+      // eux, la vue des gardes serait vide le jour de la mise à jour.
+      db.exec(`
+        INSERT OR IGNORE INTO user_etablissements (email, etablissement_id, is_admin, created_at)
+        SELECT email, etablissement_id, is_school_admin, COALESCE(created_at, 0)
+        FROM users WHERE etablissement_id IS NOT NULL
+      `);
+    })();
   }
   seedIfEmpty(db);
   instance = db;

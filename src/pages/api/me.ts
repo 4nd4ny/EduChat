@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
 import { requireAuth, isAdminEmail } from '../../server/token';
-import { requireAdmin } from '../../server/admin';
+import { requireAdmin, requireGestionTuteurs } from '../../server/admin';
+import { choixEcole, ecoleActivePourCompte, listerEcoles } from '../../server/appartenance';
 import { ERR } from '../../shared/providers';
 
 // Identité et rôles du compte porté par le jeton — relus EN BASE à chaque
@@ -47,15 +48,38 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     'SELECT name, is_promptagogue, is_teacher FROM users WHERE email = ? AND verified_at IS NOT NULL')
     .get(auth.email) as { name: string; is_promptagogue: number; is_teacher: number } | undefined;
 
+  // LES ÉCOLES DU COMPTE — ce que lira le sélecteur d'école active. On rend
+  // la LISTE et l'école ACTIVE telle que le serveur vient de la résoudre :
+  // si le navigateur a annoncé une école qu'il n'a plus (lien retiré entre
+  // deux visites), la réponse le lui dit au lieu de le laisser croire qu'il
+  // travaille encore dedans. Aucune donnée d'école ici, seulement le nom :
+  // le porte-monnaie et les comptes se lisent sur /api/etablissement, après
+  // les gardes qui leur sont propres.
+  const ecoles = listerEcoles(auth.email);
+  const ecoleActiveId = ecoleActivePourCompte(auth.email, choixEcole(req));
+
   return res.status(200).json({
     email: auth.email,
     name: user?.name || auth.name,
     isPromptagogue: !!user?.is_promptagogue,
     isTeacher: !!user?.is_teacher,
+    ecoles: ecoles.map(e => ({
+      id: e.etablissementId,
+      name: e.name,
+      isAdmin: e.isAdmin,
+      principale: e.principale,
+    })),
+    ecoleActive: ecoleActiveId,
     // isAdmin ouvre la porte de /admin — les DEUX niveaux la franchissent.
     // isSuper décide ensuite de ce qui s'y affiche. Sans cette distinction, un
     // administrateur d'école n'aurait vu aucune entrée vers l'administration.
     isAdmin: !!requireAdmin(req),
     isSuper: isAdminEmail(auth.email),
+    // Un ENSEIGNANT non-administrateur gère les tuteurs de son école sans
+    // franchir la porte de /admin : ce drapeau est ce qui permettra à l'espace
+    // enseignant d'exister sans mentir sur les droits. Champ AJOUTÉ, isAdmin
+    // inchangé — c'est lui que lisent la barre de navigation et duel.tsx, et
+    // le rendre vrai ici ouvrirait des écrans que le serveur refuse.
+    gereTuteurs: !!requireGestionTuteurs(req),
   });
 }

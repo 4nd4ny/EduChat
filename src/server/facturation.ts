@@ -20,6 +20,92 @@ import { contributionDe, coutDe } from './porteMonnaie';
 
 export type LigneFournisseur = { provider: string; tokens: number; prixMtok: number; montant: number };
 
+/**
+ * LES MENTIONS ADMINISTRATIVES — ce que l'école ajoute pour pouvoir payer.
+ *
+ * Une facture juste ne suffit pas à être payée : il faut qu'elle arrive au bon
+ * service, sous la référence par laquelle la dépense a été engagée. Ces trois
+ * champs appartiennent donc à l'ÉCOLE et à elle seule.
+ *
+ * AUCUN N'ENTRE DANS LE CALCUL. Le montant reste celui du porte-monnaie ; rien
+ * de ce qu'une école saisit ne peut le déplacer d'un centime — c'est la seule
+ * raison pour laquelle on peut lui en confier la saisie sans réserve.
+ */
+export type MentionsFacture = {
+  adresse: string; reference: string; note: string;
+  /**
+   * L'adresse affichée vient-elle du profil de l'école (billing_address, saisi
+   * à l'inscription) faute de saisie propre à ce mois ? Le dire évite qu'on
+   * croie avoir validé une adresse qu'on n'a jamais relue.
+   */
+  adresseParDefaut: boolean;
+  updatedAt: number | null;
+  par: string;
+};
+
+/** Bornes de saisie. Longues, mais bornées : une adresse n'est pas un roman. */
+const MAX_ADRESSE = 500, MAX_REFERENCE = 120, MAX_NOTE = 500;
+
+/**
+ * Les mentions d'un mois, avec repli sur l'adresse du profil de l'école.
+ *
+ * Le repli n'écrit rien : tant que l'école n'a rien saisi pour CE mois, elle
+ * lit l'adresse de son profil et peut la corriger sans que la correction
+ * remonte au profil — une facture de janvier ne doit pas changer parce que
+ * l'école a déménagé en juin.
+ */
+export function mentionsDe(etablissementId: number, periode: string): MentionsFacture {
+  const db = getDb();
+  const row = db.prepare('SELECT adresse, reference, note, updated_at, par FROM facture_mentions WHERE etablissement_id = ? AND periode = ?')
+    .get(etablissementId, periode) as
+    { adresse: string; reference: string; note: string; updated_at: number; par: string } | undefined;
+  const profil = (db.prepare('SELECT billing_address FROM etablissements WHERE id = ?')
+    .get(etablissementId) as { billing_address: string } | undefined)?.billing_address ?? '';
+  const adressePropre = (row?.adresse ?? '').trim();
+  return {
+    adresse: adressePropre || profil,
+    reference: row?.reference ?? '',
+    note: row?.note ?? '',
+    adresseParDefaut: !adressePropre,
+    updatedAt: row?.updated_at || null,
+    par: row?.par ?? '',
+  };
+}
+
+/**
+ * Écrit les mentions d'un mois. TROIS CHAMPS, NOMMÉS UN PAR UN — jamais un
+ * corps de requête recopié : c'est ce qui garantit qu'aucune saisie d'école ne
+ * puisse atteindre un montant, une devise ou une date d'émission.
+ *
+ * Un champ absent du patch est CONSERVÉ : l'écran peut n'envoyer que ce qui a
+ * changé, et deux personnes qui remplissent l'une l'adresse et l'autre la
+ * référence ne s'effacent pas mutuellement.
+ */
+export function reglerMentions(
+  etablissementId: number, periode: string,
+  patch: { adresse?: string; reference?: string; note?: string }, par: string,
+): MentionsFacture {
+  const db = getDb();
+  const actuel = db.prepare('SELECT adresse, reference, note FROM facture_mentions WHERE etablissement_id = ? AND periode = ?')
+    .get(etablissementId, periode) as { adresse: string; reference: string; note: string } | undefined;
+  const borne = (valeur: string | undefined, defaut: string, max: number) =>
+    valeur === undefined ? defaut : String(valeur).trim().slice(0, max);
+  db.prepare(`
+    INSERT INTO facture_mentions (etablissement_id, periode, adresse, reference, note, updated_at, par)
+    VALUES (@id, @periode, @adresse, @reference, @note, @now, @par)
+    ON CONFLICT(etablissement_id, periode) DO UPDATE SET
+      adresse = excluded.adresse, reference = excluded.reference,
+      note = excluded.note, updated_at = excluded.updated_at, par = excluded.par
+  `).run({
+    id: etablissementId, periode,
+    adresse: borne(patch.adresse, actuel?.adresse ?? '', MAX_ADRESSE),
+    reference: borne(patch.reference, actuel?.reference ?? '', MAX_REFERENCE),
+    note: borne(patch.note, actuel?.note ?? '', MAX_NOTE),
+    now: Date.now(), par: par.slice(0, 200),
+  });
+  return mentionsDe(etablissementId, periode);
+}
+
 export type Facture = {
   etablissementId: number;
   etablissement: string;
@@ -37,6 +123,10 @@ export type Facture = {
   /** État de l'émission, s'il y en a eu une. */
   emiseAt: number | null;
   payeeAt: number | null;
+  /** Adresse email de facturation de l'école — l'en-tête du document imprimé. */
+  billingEmail: string;
+  /** Ce que l'école a ajouté pour pouvoir payer (jamais un calcul). */
+  mentions: MentionsFacture;
   /** Le montant figé à l'émission diffère-t-il du recalcul d'aujourd'hui ? */
   tarifChange: boolean;
 };
@@ -90,9 +180,10 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
   // Une école sans consommation doit tout de même apparaître : « rien à payer »
   // est une information, l'absence de ligne est un doute.
   const ecoles = db.prepare(`
-    SELECT id, name AS nom, respire FROM etablissements
+    SELECT id, name AS nom, respire, billing_email AS billingEmail FROM etablissements
     WHERE (? IS NULL OR id = ?) ORDER BY name
-  `).all(etablissementId, etablissementId) as { id: number; nom: string; respire: number }[];
+  `).all(etablissementId, etablissementId) as
+    { id: number; nom: string; respire: number; billingEmail: string }[];
 
   const emises = db.prepare('SELECT * FROM factures WHERE periode = ?').all(periode) as
     { etablissement_id: number; total: number; emise_at: number; payee_at: number | null }[];
@@ -134,6 +225,12 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
       devise: BillingCurrency,
       emiseAt: emise?.emise_at ?? null,
       payeeAt: emise?.payee_at ?? null,
+      billingEmail: ecole.billingEmail,
+      // Lues à chaque relecture, jamais figées à l'émission : une école qui
+      // corrige sa référence après coup doit pouvoir réimprimer le document
+      // sans que le site ait à réémettre — et une réémission, à l'inverse, ne
+      // doit rien effacer de ce qu'elle a saisi.
+      mentions: mentionsDe(ecole.id, periode),
       // Le montant figé à l'émission ne correspond plus au recalcul : le tarif
       // a bougé depuis. La facture ÉMISE fait foi ; on le signale, on ne
       // réécrit pas le passé.

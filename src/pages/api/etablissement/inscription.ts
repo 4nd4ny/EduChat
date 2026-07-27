@@ -3,6 +3,7 @@ import { isIP } from 'net';
 import { getDb } from '../../../server/db';
 import { requireAuth } from '../../../server/token';
 import { getClientIp, isRateLimited } from '../../../server/access';
+import { definirAdminEcole } from '../../../server/appartenance';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR } from '../../../shared/providers';
 
@@ -149,12 +150,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // en base à chaque requête, le jeton ne porte aucun rôle ; inutile donc
       // d'en réémettre un, celui du navigateur ouvre déjà la nouvelle porte).
       const maj = db.prepare(
-        'UPDATE users SET is_teacher = 1, is_school_admin = 1, etablissement_id = ? WHERE email = ?')
+        'UPDATE users SET is_teacher = 1, etablissement_id = ? WHERE email = ?')
         .run(id, auth.email);
       // Zéro ligne touchée = jeton valide sans compte en base (compte effacé
       // entre-temps). On LÈVE, ce qui annule l'INSERT : une école sans
       // responsable n'aurait aucun moyen d'en retrouver un.
       if (maj.changes !== 1) throw new Error('inscription : aucun compte à rattacher');
+      // Le rang d'administrateur s'écrit DANS LA LIAISON (multi-écoles) : il
+      // vaut pour CETTE école et pour elle seule. definirAdminEcole crée le
+      // lien manquant et tient à jour le miroir users.is_school_admin — c'est
+      // pourquoi l'UPDATE ci-dessus ne le pose plus lui-même. L'appel est
+      // imbriqué dans la transaction en cours (better-sqlite3 la traduit en
+      // SAVEPOINT) : un échec ici annule bien l'école créée.
+      definirAdminEcole(auth.email, id, true);
 
       return { ok: true, id };
     })();

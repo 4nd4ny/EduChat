@@ -2,30 +2,65 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
 import { requireAuth } from '../../server/token';
 import { getClientIp, isRateLimited } from '../../server/access';
-import { getEtablissementById, monthUsage, monthUsageByProvider, parseHours, isValidClock, HourSlot } from '../../server/etablissements';
+import { getEtablissementById, monthUsage, consommationDuMois, parseHours, isValidClock, HourSlot } from '../../server/etablissements';
+import { choixEcole, ecoleActivePourCompte, estAdminDe, estEnseignantDe } from '../../server/appartenance';
 import { ERR } from '../../shared/providers';
 
-// Espace du RESPONSABLE d'établissement (un enseignant rattaché).
+// Espace de l'ÉCOLE — lu par tout enseignant rattaché, réglé par les seuls
+// administrateurs de cette école.
 //
 // Contrôle de cohérence : la gestion ne repose JAMAIS sur l'IP (usurpable côté
 // usage, et le responsable travaille souvent depuis chez lui) — elle exige un
-// jeton de compte dont le rattachement (users.etablissement_id, posé par
-// l'admin) est relu en base à chaque requête.
+// jeton de compte dont l'appartenance est relue en base à chaque requête.
 //
-// Le responsable peut modifier : les HORAIRES d'accès libre, le QUOTA QUOTIDIEN
-// PAR ÉLÈVE et le PLAFOND MENSUEL de dépense. Il ne peut PAS modifier : les IP
-// (l'identité même de l'établissement — admin uniquement), le statut RESPIRE ni
-// l'email de facturation.
+// DEPUIS LE MULTI-ÉCOLES, l'école n'est plus users.etablissement_id (une seule
+// école par compte) mais l'ÉCOLE ACTIVE : celle que le navigateur ANNONCE dans
+// x-educhat-ecole et que le serveur REVÉRIFIE lien par lien
+// (ecoleActivePourCompte, src/server/appartenance.ts). Sans cela, un enseignant
+// partagé entre deux collèges basculerait le sélecteur sur le second et lirait
+// toujours la consommation du premier — l'écran mentirait sans rien signaler.
+//
+// L'administrateur de l'école peut modifier : les HORAIRES d'accès libre, le
+// QUOTA QUOTIDIEN PAR ÉLÈVE et le PLAFOND MENSUEL. Il ne peut PAS modifier :
+// les IP (l'identité même de l'établissement — le site uniquement), le statut
+// RESPIRE ni l'email de facturation.
 
 const MAX_SLOTS = 30;
 
-function resolveResponsable(req: NextApiRequest): { email: string; etablissementId: number } | 'auth' | 'none' {
+function resolveResponsable(req: NextApiRequest):
+  { email: string; etablissementId: number; isAdmin: boolean } | 'auth' | 'none' {
   const auth = requireAuth(req);
   if (!auth) return 'auth';
-  const user = getDb().prepare('SELECT is_teacher, etablissement_id FROM users WHERE email = ?')
-    .get(auth.email) as { is_teacher: number; etablissement_id: number | null } | undefined;
-  if (!user?.is_teacher || !user.etablissement_id) return 'none';
-  return { email: auth.email, etablissementId: user.etablissement_id };
+  // L'ÉCOLE D'ABORD, LE RANG ENSUITE — même ordre que requireAdmin : c'est
+  // parce que l'école est résolue et son lien revérifié avant de regarder le
+  // rang qu'un identifiant annoncé par le navigateur ne peut jamais désigner
+  // l'école d'autrui.
+  const etablissementId = ecoleActivePourCompte(auth.email, choixEcole(req));
+  if (etablissementId === null) return 'none';
+
+  // NI « users.is_teacher », NI « estMembre » — ET C'EST TOUTE LA GARDE.
+  //
+  // is_teacher se DÉCLARE : c'est la case « je suis enseignant » de /verifier,
+  // recopiée telle quelle par src/pages/api/verify/confirm.ts. Le lien
+  // d'appartenance, lui, se gagne tout seul en vérifiant son adresse depuis
+  // une IP d'établissement (même fichier, lierCompte) — élèves compris.
+  // « Case cochée + connecté au wifi du collège » aurait donc suffi à lire, en
+  // GET, les adresses réseau de l'école, ses quotas et sa consommation du
+  // mois : trois renseignements d'administration donnés pour une case à
+  // cocher. C'est exactement l'attaque que décrit estEnseignantDe
+  // (src/server/appartenance.ts), et l'on emploie ici la même parade.
+  //
+  // DEUX TITRES, ET DEUX SEULEMENT :
+  //   · ADMINISTRER cette école — le rang vit sur le LIEN, il se donne ;
+  //   · en être l'enseignant AU SENS OÙ L'ÉCOLE EN RÉPOND (estEnseignantDe :
+  //     enseignant déclaré ET école principale, c'est-à-dire un rattachement
+  //     posé par une administration, jamais par une adresse IP).
+  // Le premier est indispensable au second : un administrateur d'un collège
+  // qui n'est pas son école principale échouerait au test d'enseignant, et se
+  // verrait fermer l'écran qu'il administre.
+  const isAdmin = estAdminDe(auth.email, etablissementId);
+  if (!isAdmin && !estEnseignantDe(auth.email, etablissementId)) return 'none';
+  return { email: auth.email, etablissementId, isAdmin };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -38,6 +73,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === 'GET') {
     return res.status(200).json({
+      // LE RANG EST TRANCHÉ EN BASE, jamais déduit par l'écran : il sert à
+      // MONTRER la limite (les réglages s'affichent inertes pour un enseignant
+      // ordinaire), et le PUT ci-dessous la fait respecter pour de bon.
+      isAdmin: who.isAdmin,
       etablissement: {
         name: etab.name,
         ips: etab.ips,
@@ -47,8 +86,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         tokenQuotaMonthly: etab.token_quota_monthly,
       },
       usage: {
+        // TOTAL DU MOIS tel que le compte le PLAFOND MENSUEL (voir
+        // /api/completion) : un plafond ne se lit pas sur un autre chiffre que
+        // celui qui le déclenche. Il inclut donc la dictée et la lecture à voix
+        // haute (/api/transcribe, /api/speak), que le détail par fournisseur
+        // rassemble sous leur fournisseur.
         monthTokens: monthUsage(etab.id),
-        byProvider: monthUsageByProvider(etab.id),
+        // LE DÉTAIL ÉNUMÈRE les fournisseurs que la clé de l'école peut
+        // réellement employer (zéro compris — un zéro répond à une question,
+        // une ligne absente n'y répond pas), et rien d'autre : une ligne pour
+        // un fournisseur inutilisable ici est du bruit, et le bruit fait
+        // douter du reste. S'y ajoutent, marqués, ceux qui ont été consommés
+        // et ne sont plus servis : ces jetons-là ont été décomptés, les
+        // escamoter creuserait un écart avec la facture.
+        //
+        // LA SOMME DES LIGNES ÉGALE LE TOTAL, et ce n'est pas un hasard :
+        // usage_log ne reçoit QUE des appels payés par une clé serveur (vérifié
+        // sur les cinq points d'écriture — completion, transcribe, speak,
+        // traduction), donc une conversation en clé personnelle n'entre ni dans
+        // l'un ni dans l'autre. Si un jour on journalisait la clé personnelle,
+        // il faudrait le dire ICI plutôt que de laisser deux chiffres diverger.
+        byProvider: consommationDuMois(etab.id),
       },
     });
   }
@@ -57,6 +115,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader('Allow', ['GET', 'PUT']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
   }
+
+  // LA SÉCURITÉ VIT SUR LE SERVEUR. L'écran grise déjà ses réglages pour un
+  // enseignant qui n'administre pas son école — mais une règle appliquée dans
+  // le seul navigateur n'est pas une règle : le rang est revérifié ici, sur
+  // l'école ACTIVE, avant toute écriture.
+  if (!who.isAdmin) return res.status(403).json({ error: { code: 'ERR_NOT_SCHOOL_ADMIN' } });
 
   if (await isRateLimited(getClientIp(req), 10, 'etablissement')) {
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });

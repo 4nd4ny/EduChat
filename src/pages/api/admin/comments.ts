@@ -1,14 +1,18 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { requireAdmin } from '../../../server/admin';
+import { requireGestionTuteurs } from '../../../server/admin';
 import { ERR } from '../../../shared/providers';
 
 // Tous les commentaires, vus par l'ADMINISTRATION — la modération elle-même
-// passe par PATCH /api/prompts/[name]/comments (droits auteur/admin).
+// passe par PATCH /api/prompts/[name]/comments (droits auteur/admin/école).
 // L'admin voit tout : en attente d'abord, puis le reste, du plus récent au
 // plus ancien. Rien n'est jamais supprimé (« hidden » = masqué).
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  const scope = requireAdmin(req);
+  // Même garde que la liste des tuteurs : un ENSEIGNANT modère les commentaires
+  // portant sur les tuteurs de SON école. La file qu'il reçoit ici est
+  // exactement celle sur laquelle la route de modération lui obéira — une
+  // liste plus large ne lui donnerait que des boutons répondant 403.
+  const scope = requireGestionTuteurs(req);
   if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
@@ -18,10 +22,15 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // PORTÉE, comme pour les tuteurs eux-mêmes : chaque ligne porte le NOM du
   // tuteur commenté. Servir la file entière à un administrateur d'école lui
   // dirait les tuteurs des autres, que la propriété d'une école sur les siens
-  // lui refuse par ailleurs. Il modère les siens et ceux de la plateforme.
-  const filtre = scope.niveau === 'ecole'
-    ? 'AND (p.etablissement_id = @etab OR p.etablissement_id IS NULL)' : '';
-  const args = scope.niveau === 'ecole' ? [{ etab: scope.etablissementId }] : [];
+  // lui refuse par ailleurs. Il modère les siens et ceux de la plateforme ;
+  // l'ENSEIGNANT, lui, s'arrête aux siens — un commentaire déposé sur un
+  // tuteur de la plateforme ne regarde aucune école (décision du client).
+  const filtre = scope.niveau === 'super' ? ''
+    : scope.niveau === 'ecole' ? 'AND (p.etablissement_id = @etab OR p.etablissement_id IS NULL)'
+      : 'AND p.etablissement_id = @etab';
+  // Le paramètre suit le filtre qui le nomme : les DEUX niveaux d'école
+  // écrivent @etab, et une liaison manquante est un 500 à l'exécution.
+  const args = scope.niveau === 'super' ? [] : [{ etab: scope.etablissementId }];
   const select = `
     SELECT c.id, c.body, c.status, c.created_at AS createdAt,
            c.moderated_at AS moderatedAt, c.moderated_by AS moderatedBy,
