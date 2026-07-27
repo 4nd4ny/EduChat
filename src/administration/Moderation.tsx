@@ -56,8 +56,12 @@ type Props = {
 const SUFFIXE_ECOLE = '?portee=ecole';
 
 export function ModerationTuteurs({ ecole, demo, limiterAEcole }: Props) {
+  // « Tout voir » ouvert SUR CETTE LISTE-CI. La garde de sortie plus bas laisse
+  // passer `null` (la page entière) comme « prompts » ; ce booléen sépare les
+  // deux, et commande la disposition en une ou deux lignes.
   const t = useT();
   const seule = useListeSeule();
+  const tout = seule === "prompts";
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -257,12 +261,25 @@ export function ModerationTuteurs({ ecole, demo, limiterAEcole }: Props) {
         <ul className="mt-2 flex flex-col gap-1 text-sm">
           {listePrompts.visibles.map(p => (
             <li key={p.name} className="border-b border-white/5 py-1">
+              {/* DEUX LIGNES SUR UN PETIT ÉCRAN, UNE SEULE EN « TOUT VOIR ».
+                  Quatre boutons à la suite du titre, d'une largeur de téléphone,
+                  repoussaient les repères de lecture — version, usages, jetons —
+                  hors de vue ou à la ligne au milieu d'eux. Ce qu'on LIT tient
+                  désormais la première ligne, ce qu'on FAIT la seconde.
+                  En « tout voir », la page prend toute la largeur et la ligne
+                  unique passe : les deux enveloppes ci-dessous s'effacent alors
+                  (`contents`, qui retire la boîte sans retirer ses enfants), et
+                  la disposition redevient EXACTEMENT celle d'avant — pas une
+                  imitation, la même. */}
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={p.status} />
-                <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
-                <span className="opacity-60">{p.usageCount} {t("home.uses")} · {formatTokens(p.tokensTotal)}</span>
-                {p.status === "published" && <BadgeTraductions resume={p.translations} />}
-                <span className="flex-grow" />
+                <div className={tout ? "contents" : "flex w-full flex-wrap items-center gap-2"}>
+                  <StatusBadge status={p.status} />
+                  <b>{p.name}</b> <span className="opacity-60">v{p.version}</span>
+                  <span className="opacity-60">{p.usageCount} {t("home.uses")} · {formatTokens(p.tokensTotal)}</span>
+                  {p.status === "published" && <BadgeTraductions resume={p.translations} />}
+                </div>
+                {tout && <span className="flex-grow" />}
+                <div className={tout ? "contents" : "flex w-full flex-wrap items-center gap-2"}>
                 {/* Un état, un jeu d'actions — jamais de bouton désactivé :
                     « republier » et « dépublier » sont les deux faces d'une
                     même bascule, en montrer une seule dit déjà où l'on est.
@@ -329,6 +346,7 @@ export function ModerationTuteurs({ ecole, demo, limiterAEcole }: Props) {
                       className="flex items-center gap-1 rounded border border-gray-500/40 px-2 py-0.5 text-xs hover:bg-gray-500/10"><MdArchive /> {t("admin.btn.archive")}</button>
                   </>
                 )}
+                </div>
               </div>
               {editing?.name === p.name && (
                 <form onSubmit={saveEdit} className="mt-2 flex flex-col gap-2 rounded border border-white/10 bg-secondary p-3">

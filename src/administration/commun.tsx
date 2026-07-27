@@ -143,19 +143,29 @@ export function expliquer(t: ReturnType<typeof useT>, code: string): string {
 /**
  * L'état des traductions d'un tuteur, en un coup d'œil.
  *
- * Trois situations qui n'appellent pas la même réaction, d'où trois couleurs :
- * tout est à jour (vert, rien à faire), une modification a périmé les
- * traductions (orange — c'est à l'administration de vérifier puis de relancer),
- * une traduction a échoué (rouge, avec la raison au survol). Une traduction
- * périmée n'est PAS servie : le tuteur repasse à son texte d'origine.
+ * Trois situations qui n'appellent pas la même réaction, d'où deux alarmes et
+ * un silence : tout est à jour (rien à faire, donc rien à signaler — le compte
+ * se lit comme les repères voisins), une modification a périmé les traductions
+ * (orange — c'est à l'administration de vérifier puis de relancer), une
+ * traduction a échoué (rouge, avec la raison au survol). Une traduction périmée
+ * n'est PAS servie : le tuteur repasse à son texte d'origine.
  */
 export function BadgeTraductions({ resume }: { resume: ResumeTraductions }) {
   const t = useT();
   if (!resume || !resume.total) return null;
-  const couleur = resume.enEchec ? "border-red-500/50 text-red-300"
-    : resume.aVerifier ? "border-[#DC6521]/60 text-[#DC6521]"
-      : resume.pretes === resume.total ? "border-green-500/40 text-green-300"
-        : "border-white/20 opacity-60";
+  // RIEN À FAIRE NE DOIT PAS SE VOIR COMME UN ÉVÉNEMENT.
+  //
+  // Le vert encadré disait « trois langues sur trois » avec la même force
+  // visuelle qu'un échec, au milieu de repères — version, usages, jetons — qui
+  // sont, eux, en simple `opacity-60`. Un tuteur normalement traduit est le cas
+  // ORDINAIRE : il rejoint donc ces repères et se lit comme eux.
+  // Le rouge et l'orange RESTENT encadrés, et ce n'est pas une inconséquence :
+  // ce sont des appels à l'action — une traduction échouée, ou périmée par une
+  // modification et donc plus servie aux élèves. Les fondre dans le décor les
+  // rendrait invisibles exactement quand il faut les voir.
+  const couleur = resume.enEchec ? "rounded border border-red-500/50 px-1.5 text-red-300"
+    : resume.aVerifier ? "rounded border border-[#DC6521]/60 px-1.5 text-[#DC6521]"
+      : "opacity-60";
   const detail = resume.etats
     .map(e => `${e.locale.toUpperCase()} : ${e.perimee ? t("admin.tr.stale")
       : e.state === "ok" ? t("admin.tr.upToDate")
@@ -164,7 +174,7 @@ export function BadgeTraductions({ resume }: { resume: ResumeTraductions }) {
             : t("admin.tr.none")}`)
     .join("\n");
   return (
-    <span title={detail} className={`rounded border px-1.5 text-xs ${couleur}`}>
+    <span title={detail} className={`text-xs ${couleur}`}>
       <MdTranslate className="inline" />{" "}
       {resume.enEchec ? t("admin.tr.failed")
         : resume.aVerifier ? t("admin.tr.toCheck")
