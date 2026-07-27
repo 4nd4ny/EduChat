@@ -22,10 +22,16 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'tutor', shape: 'rect', textKey: 'tour.tutor' },
     { target: 'messages', shape: 'rect', textKey: 'tour.messages' },
     { target: 'history', shape: 'rect', textKey: 'tour.history' },
-    // La visite se lance sur ?visite=1, donc chez un visiteur ANONYME : le
-    // sélecteur qu'elle désigne ici ne contient qu'un fournisseur, celui du
-    // repli gratuit, et le texte de tour.provider doit tenir à côté de cette
-    // liste d'un seul élément.
+    // La visite se lance sur ?visite=1, donc chez un visiteur ANONYME — mais
+    // le sélecteur qu'elle désigne NE CONTIENT PAS TOUJOURS UN SEUL
+    // FOURNISSEUR, et tour.provider ne doit surtout pas le promettre : hors
+    // campus, un anonyme reçoit la seule démonstration gratuite ; SUR LE RÉSEAU
+    // D'UNE ÉCOLE il reçoit SCHOOL_PROVIDER_IDS, soit trois fournisseurs
+    // (src/server/accesFournisseurs.ts:298-301). Et partout, tant que
+    // /api/providers n'a pas répondu, la liste peinte est DÉJÀ celle d'une
+    // salle de classe (`recus = perimetre?.visibles ?? SCHOOL_PROVIDER_IDS`,
+    // src/chat/useFournisseurs.ts). Le texte doit donc dire que la liste
+    // dépend du LIEU, jamais qu'elle tient en une ligne.
     { target: 'provider', shape: 'rect', textKey: 'tour.provider' },
     { target: 'apikey', shape: 'rect', textKey: 'tour.apikey' },
     { target: 'composer', shape: 'rect', textKey: 'tour.composer' },
@@ -78,7 +84,12 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'etab-portemonnaie', shape: 'rect', textKey: 'tour.etab.wallet' },
   ],
 
-  // L'atelier de comparaison, ouvert à tout compte vérifié.
+  // L'atelier de comparaison — RÉSERVÉ AUX PROMPTAGOGUES VÉRIFIÉS, et pas à
+  // « tout compte vérifié » : la page renvoie un refus à qui ne l'est pas
+  // (src/pages/duel.tsx:234) et la complétion refait le contrôle en base,
+  // ERR_PROMPTAGOGUE_ONLY (src/pages/api/completion.ts:171-177). La visite,
+  // elle, se lance sur ?visite=1 : l'atelier s'ouvre alors sans compte, mais
+  // inerte — tous les champs sont désactivés.
   duel: [
     { target: 'duel-mode', shape: 'rect', textKey: 'tour.duel.mode' },
     { target: 'duel-colonneA', shape: 'rect', textKey: 'tour.duel.columnA' },
@@ -91,6 +102,11 @@ export const TOURS: Record<string, TourStep[]> = {
   compte: [
     { target: 'compte-conso', shape: 'rect', textKey: 'tour.compte.usage' },
     { target: 'compte-cles', shape: 'rect', textKey: 'tour.compte.keys' },
+    // LE PORTE-MONNAIE PERSONNEL — la seule ancre de /compte qui n'avait pas
+    // son étape. La section 3 est peinte en démonstration (compte.tsx:557,
+    // dossier fictif), seuls les deux boutons d'argent sont retirés sous
+    // `!demo` (compte.tsx:622) : il y a donc bien quelque chose à désigner.
+    { target: 'compte-credit', shape: 'rect', textKey: 'tour.compte.credit' },
     { target: 'compte-conversations', shape: 'rect', textKey: 'tour.compte.conversations' },
     { target: 'compte-tuteurs', shape: 'rect', textKey: 'tour.compte.prompts' },
     { target: 'compte-identite', shape: 'rect', textKey: 'tour.compte.identity' },
