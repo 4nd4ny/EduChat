@@ -4,6 +4,15 @@
 // texte qui l'explique. Une étape dont l'élément est absent est simplement
 // sautée : c'est ce qui permet à un même parcours de servir une page selon
 // qu'on y est identifié ou non.
+//
+// UNE RÈGLE, ET ELLE EST STRICTE : la visite ne se lance QUE sur ?visite=1,
+// c'est-à-dire en DÉMONSTRATION. Une étape qui désigne un élément absent de la
+// démonstration n'est donc pas « sautée quelquefois » : elle ne se voit
+// JAMAIS. Avant d'ajouter une étape, il faut vérifier deux choses dans le
+// JSX — que l'ancre existe, et qu'elle est peinte quand `demo` est vrai. C'est
+// pour cela que /etablissement montre désormais un porte-monnaie fictif et que
+// les deux consoles montrent un sélecteur d'école fictif : sans quoi les deux
+// nouveautés qui changent le plus de choses restaient indescriptibles.
 
 export type TourStep = { target: string; shape: 'rect' | 'circle'; textKey: string };
 
@@ -20,25 +29,42 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'voice', shape: 'circle', textKey: 'tour.voice' },
     { target: 'send', shape: 'circle', textKey: 'tour.send' },
     { target: 'tokens', shape: 'rect', textKey: 'tour.tokens' },
+    // Il n'y a plus d'étape « modèle » ni « niveau de raisonnement » : le chat
+    // ne nomme plus de modèle (l'échelle des trois barreaux est réglée par
+    // l'administration, et « Régénérer » monte d'un cran). Décrire un menu
+    // disparu était pire que se taire.
   ],
 
-  // La console de classe, présentée déverrouillée et inerte.
-  session: [
+  // LA CLASSE — /enseignant (l'ancienne /session, qui la réexporte).
+  //
+  // Le parcours s'appelait « session », du nom de l'objet technique ; il porte
+  // maintenant celui de la page et de la personne à qui elle s'adresse. Les
+  // ancres gardent leur préfixe `session-` : ce sont celles du verrou de
+  // salle, et les renommer n'aurait rien appris à personne.
+  enseignant: [
+    { target: 'ecole-selecteur', shape: 'rect', textKey: 'tour.ecole.selecteur' },
     { target: 'session-etat', shape: 'rect', textKey: 'tour.session.state' },
     { target: 'session-motdepasse', shape: 'rect', textKey: 'tour.session.password' },
     { target: 'session-duree', shape: 'rect', textKey: 'tour.session.duration' },
     { target: 'session-ouvrir', shape: 'rect', textKey: 'tour.session.open' },
     { target: 'session-tuteur', shape: 'rect', textKey: 'tour.session.tutor' },
     { target: 'session-web', shape: 'rect', textKey: 'tour.session.web' },
+    { target: 'session-fournisseurs', shape: 'rect', textKey: 'tour.session.providers' },
     { target: 'session-deployer', shape: 'rect', textKey: 'tour.session.deploy' },
+    { target: 'ens-etablissement', shape: 'rect', textKey: 'tour.session.school' },
   ],
 
-  // L'espace du responsable d'établissement.
+  // L'ÉCOLE — /etablissement. Les horaires et les quotas ne sont plus tout :
+  // l'école y tient son porte-monnaie, sa facture, ses comptes et son
+  // catalogue. Seul le porte-monnaie est peint en démonstration (les trois
+  // autres interrogeraient le serveur), et lui seul a donc une étape.
   etablissement: [
+    { target: 'ecole-selecteur', shape: 'rect', textKey: 'tour.ecole.selecteur' },
     { target: 'etab-identite', shape: 'rect', textKey: 'tour.etab.identity' },
     { target: 'etab-horaires', shape: 'rect', textKey: 'tour.etab.hours' },
     { target: 'etab-quotas', shape: 'rect', textKey: 'tour.etab.quotas' },
     { target: 'etab-conso', shape: 'rect', textKey: 'tour.etab.usage' },
+    { target: 'etab-portemonnaie', shape: 'rect', textKey: 'tour.etab.wallet' },
   ],
 
   // L'atelier de comparaison, ouvert à tout compte vérifié.
@@ -60,7 +86,10 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'compte-export', shape: 'rect', textKey: 'tour.compte.export' },
   ],
 
-  // La vitrine de l'administration (page /admin-demo, données fictives).
+  // La vitrine de l'administration DU SITE (page /admin-demo, données
+  // fictives). Ce qui appartient à une école — porte-monnaie, comptes,
+  // facture, catalogue — a quitté cet écran pour /etablissement : les textes
+  // le disent, plutôt que de le montrer deux fois.
   admin: [
     { target: 'admin-validation', shape: 'rect', textKey: 'tour.admin.validation' },
     { target: 'admin-prompts', shape: 'rect', textKey: 'tour.admin.prompts' },

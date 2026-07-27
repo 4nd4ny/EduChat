@@ -12,15 +12,15 @@ const PROFILES: Profile[] = [
   { color: "#DC6521", topic: "Promptagoge", anchor: "#promptagogues", leaves: [
     ["E-Mail verifizieren", "#promptagogues"], ["Tutor veröffentlichen", "#promptagogues"],
     ["Test per Geheimlink", "#validation"], ["Duell & Varianten", "#promptagogues"] ] },
-  { color: "#81C784", topic: "Lehrperson", anchor: "/etablissements", leaves: [
-    ["/school entsperren", "/etablissements"], ["An die Klasse verteilen", "/etablissements"],
-    ["Konto per E-Mail", "/etablissements"] ] },
-  { color: "#BA68C8", topic: "Schule", anchor: "/etablissements", leaves: [
-    ["Zeiten in Selbstverwaltung", "/etablissements"], ["Kontingent pro Schüler", "/etablissements"],
-    ["Monatsbudget", "/etablissements"], ["Abläufe (Schemata)", "/etablissements"] ] },
-  { color: "#FFD54F", topic: "Administrator", anchor: "#admin", leaves: [
-    ["Tutoren freigeben", "#validation"], ["Schulen verwalten", "/etablissements"],
-    ["Abrechnen (CSV)", "/etablissements"] ] },
+  { color: "#81C784", topic: "Lehrperson", anchor: "#enseignants", leaves: [
+    ["Den Raum öffnen", "#enseignants"], ["Einen Tutor bereitstellen", "#enseignants"],
+    ["Tutoren der Schule prüfen", "#enseignants"] ] },
+  { color: "#BA68C8", topic: "Schule", anchor: "#etablissement", leaves: [
+    ["Schule anmelden", "#etablissement"], ["Guthaben im Voraus", "#etablissement"],
+    ["Beitrag selbst wählen", "#etablissement"], ["Ihre Tutoren gehören ihr", "#etablissement"] ] },
+  { color: "#FFD54F", topic: "Administrator", anchor: "#pages", leaves: [
+    ["Tutoren freigeben", "#validation"], ["Schulen anlegen", "#etablissement"],
+    ["Tarife und Rechnungen", "#etablissement"] ] },
 ];
 
 const WALK: WalkStep[] = [
@@ -31,7 +31,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Die Seite eines Tutors",
-    text: "Klicken Sie auf einen Namen, um seine Seite zu lesen: Beschreibung, Statistiken, Bewertungen, Herkunft („inspiriert von“), und der VOLLSTÄNDIGE Text des Prompts — alles ist öffentlich, Schule ist gratis. Hier bewertet man (1 bis 5 Sterne), kopiert den Link zum Weiterempfehlen und schlägt eine Variante vor.",
+    text: "Klicken Sie auf einen Namen, um seine Seite zu lesen: Beschreibung, Statistiken, Bewertungen, Herkunft („inspiriert von“), und der VOLLSTÄNDIGE Text des Prompts — ein Tutor verbirgt seine Regeln nie. Hier bewertet man (1 bis 5 Sterne), kopiert den Link zum Weiterempfehlen und schlägt eine Variante vor.",
     href: "/de/p/Socrate", hrefLabel: "Socrates Seite ansehen",
   },
   {
@@ -59,7 +59,7 @@ const WALK: WalkStep[] = [
   },
   {
     title: "Vertreten Sie eine Schule?",
-    text: "Schulen haben ihren eigenen Leitfaden: kontofreier Zugang für Schüler, Verteilen eines Tutors an die Klasse, Zeiten und Budgets in Selbstverwaltung, Abrechnung. Alles mit Ablauf-Schemata erklärt.",
+    text: "Eine Schule meldet sich selbst an: ein Name, die IP-Adressen ihres Netzes, eine Rechnungsadresse. Ihr Guthaben startet bei null, und eine Aufladung wird vereinbart, indem sie uns schreibt: Es ist noch kein Zahlungsmittel an die Website angebunden, und heute wird nichts verrechnet. Ist es aufgefüllt, wird jeder Aufruf davon abgezogen, und der Zugang schliesst sich von selbst, sobald das Guthaben erschöpft ist; die Schüler schreiben dann ohne Konto und ohne Schlüssel an die Tutoren. Der Schul-Leitfaden zeigt die Abläufe; der Abschnitt „Schulen“ weiter unten fasst zusammen, was eine Schule selbst regelt.",
     href: "/de/etablissements", hrefLabel: "Schul-Leitfaden",
   },
 ];
@@ -85,8 +85,8 @@ export default function GuideDE() {
         chapeau="Jede Schaltfläche öffnet die ECHTE Seite, so wie die betreffende Person sie sieht, und erklärt sie Element für Element. Geschützte Oberflächen erscheinen entsperrt, aber reglos: Dort lässt sich nichts auslösen."
         boutons={[
           { label: "Lernende", note: "der Chat, von der Frage zur Antwort", href: "/chat?tuteur=Socrate&visite=1", color: "#4FC3F7", icon: <MdChat /> },
-          { label: "Lehrperson", note: "den Raum öffnen, einen Tutor bereitstellen", href: "/session?visite=1", color: "#81C784", icon: <MdCoPresent /> },
-          { label: "Schule", note: "Zeiten, Kontingente, Verbrauch", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
+          { label: "Lehrperson", note: "den Raum öffnen, einen Tutor bereitstellen", href: "/enseignant?visite=1", color: "#81C784", icon: <MdCoPresent /> },
+          { label: "Schule", note: "Zeiten, Kontingente, Guthaben", href: "/etablissement?visite=1", color: "#BA68C8", icon: <MdSettings /> },
           { label: "Promptagoge", note: "zwei Tutoren im Duell vergleichen", href: "/duel?visite=1", color: "#DC6521", icon: <MdCompareArrows /> },
           { label: "Meine Daten", note: "was der Server über Sie aufbewahrt", href: "/compte?visite=1", color: "#4DB6AC", icon: <MdAccountCircle /> },
           { label: "Verwaltung", note: "prüfen, abrechnen, Schulen verwalten", href: "/admin-demo?visite=1", color: "#FFD54F", icon: <MdAdminPanelSettings /> },
@@ -102,8 +102,9 @@ export default function GuideDE() {
         className="mt-8 flex items-center gap-3 rounded-lg border border-[#BA68C8]/40 bg-[#BA68C8]/10 p-4 hover:bg-[#BA68C8]/15">
         <MdSchool className="text-2xl text-[#BA68C8]" />
         <span className="text-sm">
-          <b>Vertreten Sie eine Schule, oder sind Sie Lehrperson?</b> Schülerzugang, Verteilen eines
-          Tutors an die Klasse, Zeiten und Budgets, Abrechnung, Ablauf-Schemata:{" "}
+          <b>Vertreten Sie eine Schule, oder sind Sie Lehrperson?</b> Anmeldung der Schule,
+          kontofreier Schülerzugang, Verteilen eines Tutors an die Klasse, Zeiten, Guthaben und
+          Abrechnung:{" "}
           <span className="underline">zum Schul-Leitfaden →</span>
         </span>
       </Link>
@@ -112,7 +113,9 @@ export default function GuideDE() {
         <p dangerouslySetInnerHTML={{ __html: `<b>Suchen</b>: Das Suchfeld der Startseite durchsucht Name und Beschreibung aller veröffentlichten Tutoren. Drei Buchstaben genügen meist.` }} />
         <p dangerouslySetInnerHTML={{ __html: `<b>Sortieren</b>: „Empfohlen“ mischt Beliebtheit, Bewertungen und Aktualität, damit ein guter neuer Tutor nicht von einem alten verdrängt wird. Die übrigen Sortierungen sind roh — meistgenutzt, bestbewertet, neueste, grösster Tokenverbrauch oder alphabetisch. Ihre Favoriten stehen immer oben und gehen nur Sie etwas an: Sie leben in Ihrem Browser.` }} />
         <p dangerouslySetInnerHTML={{ __html: `<b>Mit der Gemeinschaft teilen</b>: „Einen Tutor vorschlagen“ startet von einer sokratischen Vorlage. Der Entwurf entsteht mit einer geheimen URL — teilen Sie sie mit Kolleginnen und Kollegen für Rückmeldungen, testen Sie ihn im Chat, dann reichen Sie ihn ein. Ein Administrator oder jede verifizierte Promptagogin / jeder verifizierte Promptagoge veröffentlicht ihn, und er erscheint im Katalog.` }} />
-        <p dangerouslySetInnerHTML={{ __html: `<b>Einmal veröffentlicht</b>, gehört er zur Allmende von EduChat: Er wird nie gelöscht. Sie können ihn zurückziehen — er verlässt den Katalog und Sie können ihn zurückholen. „Eine Variante vorschlagen“ kopiert von jeder Seite aus den bestehenden Prompt und vermerkt die Abstammung „inspiriert von“ auf beiden Seiten: der normale Weg der Personalisierung.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Einmal veröffentlicht</b>, wird ein Tutor nie gelöscht: Sie können ihn zurückziehen — er verlässt den Katalog — und ihn später zurückholen, die Zähler bleiben intakt.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>Wem ein Tutor gehört</b>: Ein Tutor, der von einem einer Schule zugeordneten Konto aus geschrieben wurde, gehört dieser Schule und bleibt ihren Schülern vorbehalten, solange sie ihn nicht nach aussen teilt. Tutoren ohne Schule — darunter die ursprünglichen — bilden den Katalog der Plattform, für alle sichtbar. Der Abschnitt „Schulen“ weiter unten beschreibt beide Türen.` }} />
+        <p dangerouslySetInnerHTML={{ __html: `<b>„Eine Variante vorschlagen“</b> kopiert von jeder Seite aus den bestehenden Prompt und vermerkt die Abstammung „inspiriert von“ auf beiden Seiten: der normale Weg der Personalisierung.` }} />
       </Section>
 
       <Section id="eleves" title="Schüler und Besucher — lernen">
@@ -125,9 +128,33 @@ export default function GuideDE() {
           <li><b>Anonyme Kommentare</b> auf jeder Seite: Hinterlassen Sie eine Rückmeldung — sie erscheint nach Freigabe durch den Autor des Tutors oder die Administration.</li>
           <li><b>Verlauf</b>: Ihre Gespräche bleiben im Browser. Umbenennen, Löschen, Export jedes Gesprächs (.md + .json) und <b>Export des vollständigen Profils</b> (Gespräche + Favoriten + Bewertungen), per Drag-and-drop anderswo reimportierbar.</li>
           <li><b>Token-Zähler</b>: Der Gesamtverbrauch erscheint unter dem Eingabefeld und im Tab-Titel.</li>
-          <li><b>Über eine Schule</b>: Auf <Link className="underline" href="/school">/school</Link> weder Konto noch Schlüssel — siehe <Link className="underline" href="/etablissements">Schul-Leitfaden</Link>.</li>
+          <li><b>Über eine Schule</b>: Auf <Link className="underline" href="/school">/school</Link> weder Konto noch Schlüssel — der Schlüssel der Schule treibt das Gespräch an, innerhalb der Zeiten und Kontingente, die sie festgelegt hat. Aus dem Netz der eigenen Schule zeigt <Link className="underline" href="/etablissement">/etablissement</Link> direkt deren Namen und die Tutoren, die sie ihren Schülern öffnet.</li>
           <li><b>Datenschutz</b>: im Detail auf <Link className="underline" href="/rgpd">der Datenschutzseite</Link> — Schüler haben nie ein Konto.</li>
         </ul>
+      </Section>
+
+      <Section id="enseignants" title="Lehrpersonen — die Klasse">
+        <p>Der Lehrpersonen-Bereich auf <Link className="underline" href="/enseignant">/enseignant</Link> verlangt ein verifiziertes Konto und spricht nur von dem Raum, in dem Sie stehen. Die alte Adresse /session führt weiterhin dorthin.</p>
+        <ul className="list-inside list-disc space-y-1">
+          <li><b>Den Raum öffnen</b>: Das Raumpasswort entsperrt den Schlüssel der Schule für alle, die aus dem Schulnetz verbunden sind, für die von Ihnen gewählte Dauer. Kein Schüler braucht ein Konto oder einen Schlüssel. Sie können vorzeitig wieder schliessen.</li>
+          <li><b>Einen Tutor bereitstellen</b>: Der gewählte Tutor erscheint bei jedem Schüler im Raum vorausgewählt, mit oder ohne Websuche. Sie können auch die Anbieter der Lektion einschränken; alle abzuwählen ist eine legitime Wahl, und sie schliesst — der Schlüssel der Schule bedient dann nichts mehr. Der Filter gilt nur für diesen Schlüssel: Wer den eigenen mitbringt, hängt nicht davon ab.</li>
+          <li><b>Die Lektion gilt dem Raum, nicht Ihrem Konto</b>: Sie wird an der IP-Adresse des Netzes erkannt. Eine Lehrperson, die an einer anderen Schule unterrichtet, öffnet dort den Raum jener Schule und nicht den ihrer eigenen.</li>
+          <li><b>Tutoren der Schule prüfen</b>: Von Kolleginnen und Kollegen vorgeschlagene Tutoren und die auf diesen Seiten hinterlassenen Kommentare werden hier moderiert. Offen für die Administratoren der Schule und für jede Lehrperson, deren Hauptschule sie ist — jene, die eine Administration ihr zugewiesen hat. Der Administratorenrang ist nicht nötig: den Tutor einer Kollegin freizugeben ist eine Handlung des Unterrichtens.</li>
+          <li><b>Mehrere Schulen</b>: Ein Konto kann an mehreren Schulen unterrichten. Eine Auswahl oben auf der Seite sagt, von welcher die Rede ist — Moderation und Schulbereich folgen ihr.</li>
+        </ul>
+      </Section>
+
+      <Section id="etablissement" title="Schulen — die Schule bei sich">
+        <p><b>Warum es diese Website gibt.</b> Eine Schule kann bei einem KI-Anbieter keinen API-Vertrag abschliessen: Dafür braucht es eine Firmenkarte, eine nutzungsabhängige Zahlung und eine Rechnung in Dollar. Eine Rechnung per Überweisung zu begleichen, kann sie hingegen sehr wohl. Das Hindernis liegt im Zahlungsmittel, nicht im Budget: EduChat unterzeichnet diesen Vertrag an ihrer Stelle und stellt sich zwischen die Schule und die Anbieter.</p>
+        <p><b>Sich selbst anmelden.</b> Auf <Link className="underline" href="/etablissement">/etablissement</Link>, mit einer verifizierten E-Mail-Adresse: ein Name, die IP-Adressen des Schulnetzes, eine Rechnungsadresse. Niemand muss uns schreiben, um zu beginnen. Das Guthaben startet bei null, und das Formular sagt es vor der Unterschrift: Über den Schlüssel der Schule läuft nichts, solange es nicht aufgefüllt ist.</p>
+        <p><b>Die Startseite der Schule.</b> /etablissement ist keine verschlossene Tür mehr. Wer aus dem Netz seiner Schule kommt, sieht dort deren Namen und die Tutoren, die sie ihm öffnet, ohne Konto und ohne Passwort. Aus einem Netz, das niemand angemeldet hat, bietet die Seite stattdessen an, eine Schule anzumelden.</p>
+        <p><b>Das Guthaben im Voraus.</b> Die Schule zahlt einen Betrag ein; jeder Aufruf über den Schlüssel der Plattform wird zum Tagestarif davon abgezogen, und der Zugang schliesst sich von selbst, sobald das Guthaben erschöpft ist. Geprüft wird vor dem Aufruf: Eine bereits begonnene Antwort wird bezahlt, die Überschreitung ist also durch eine Antwort begrenzt. Der Bildschirm zeigt den Saldo, die Ausgaben der letzten dreissig Tage, die geschätzte Reichweite in Tagen, die vorgeschlagene Aufladung und den datierten Verlauf der Bewegungen — Aufladung, Verbrauch, Korrektur. <b>Heute wird noch nichts verrechnet</b>: Es ist kein Zahlungsmittel an die Website angebunden, und eine Aufladung wird vereinbart, indem Sie uns schreiben. In der Zwischenzeit kann jede und jeder den eigenen KI-Schlüssel mitbringen.</p>
+        <p><b>Der Beitrag an die Kosten, von der Schule gewählt.</b> Zum Verbrauch kommt ein Beitrag an die Betriebskosten, und die Schule legt den Satz selbst fest, zwischen 3,5 und 10 %, mit einem Schieberegler. Die Untergrenze deckt nur die Zahlungsgebühren: Auf dieser Höhe bezahlt die Plattform den Server aus eigener Tasche. Solange eine Schule nichts gewählt hat, gilt die Einstellung der Website.</p>
+        <p><b>Die Tutoren einer Schule gehören ihr.</b> Ein Tutor, der von einem der Schule zugeordneten Konto aus geschrieben wurde, ist ihr zugeordnet und ist nicht von vornherein öffentlich: Einen Tutor für die eigenen Schüler zu schreiben soll nicht heissen, ihn für die ganze Welt zu veröffentlichen. Die Schule öffnet ihn nach aussen, Tutor für Tutor. Umgekehrt entscheidet sie auch, ob ihre Schüler die öffentlichen Tutoren anderer Schulen sehen — geschlossen, solange sie es nicht öffnet. Der Katalog der Plattform bleibt in jedem Fall sichtbar.</p>
+        <p><b>Was die Schule einstellt, und wer es einstellt.</b> Zeiten des freien Zugangs, ein tägliches Kontingent pro Schüler, eine monatliche Token-Obergrenze und der Verbrauch des Monats nach Anbieter. Jede zugeordnete Lehrperson liest diesen Bildschirm; nur eine Administratorin der Schule ändert etwas daran, und die Seite sagt es, statt es entdecken zu lassen. IP-Adressen und Abrechnungsstatus bleiben in der Hand der Website.</p>
+        <p><b>Die Konten und die Rechnung.</b> Eine Kollegin tritt der Schule bei, indem sie ihre E-Mail-Adresse aus dem Schulnetz bestätigt: Niemand muss sie von Hand eintragen, und sie kommt ohne Administrationsrechte. Eine Schuladministration erkennt sie danach als Lehrperson an, ernennt weitere Administratoren derselben Schule und bestätigt die Volljährigkeit eines Kontos — nie die eigene. Ein Konto einer Schule zuzuordnen oder es zu verschieben bleibt in der Hand der Website. Sie ergänzt zudem die administrativen Angaben der Rechnung — genaue Adresse, interne Referenz oder Bestellnummer, freie Notiz. Keine dieser Angaben geht in die Berechnung ein: Der Betrag bleibt jener des Guthabens. Die Rechnung eines Monats öffnet sich als druckbare Seite auf <Link className="underline" href="/facture">/facture</Link>.</p>
+        <p><b>Ausgeschlossene Anbieter.</b> Nach der europäischen KI-Verordnung werden Grok, Gemini und die chinesischen Anbieter in der öffentlichen Oberfläche nicht angeboten, und der Schlüssel einer Schule lehnt sie ab. Sie kehren nur für ein Konto zurück, dessen Volljährigkeit bestätigt wurde, und nie aus einem Schulnetz. OpenRouter trägt ein Warnzeichen: Er bleibt zugänglich, wird aber nie von einer Schule bezahlt.</p>
+        <p><b>Bei den Daten bleiben wir genau.</b> Der kostenpflichtige API-Vertrag garantiert, dass die Gespräche nicht dem Training der Modelle dienen, doch sie bleiben rund dreissig Tage beim Anbieter, zur Missbrauchsbekämpfung. „Keine Daten aufbewahrt“ zu schreiben wäre falsch — und ein falsches Versprechen ist genau das, was eine Schule am Tag einer Kontrolle ins Unrecht setzt. <Link className="underline" href="/rgpd">Die Datenschutzseite</Link> führt es aus, <Link className="underline" href="/etablissements">der Schul-Leitfaden</Link> zeigt die Abläufe, und <Link className="underline" href="/assistance">die Support-Seite</Link> — ohne Konto lesbar — nennt die Adresse eines Menschen sowie das, was ein in der Schule aufgestellter Server bedeuten würde.</p>
       </Section>
 
       <Section id="promptagogues" title="Promptagogen — einen Tutor erstellen">
@@ -180,9 +207,10 @@ export default function GuideDE() {
             </thead>
             <tbody className="align-top">
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gespräche, eigener API-Schlüssel, Favoriten, vergebene Bewertungen, Anhänge</td><td className="pr-2"><b>Ihr Browser</b></td><td>Nie auf dem Server (Anhänge werden nur an den Anbieter weitergereicht). Der persönliche Schlüssel wird in DIESEM Browser aufbewahrt, damit Sie ihn nicht neu eintippen müssen — siehe <Link className="underline" href="/rgpd">die Datenschutzseite</Link>. Zwei Ausnahmen: die Profilsicherung für Konten und der auf Wunsch serverseitig gespeicherte Schlüssel.</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Sokratische Tutoren</td><td className="pr-2">Datenbank</td><td>Volltext, aufeinanderfolgende Versionen, Herkunft („inspiriert von“), Status, anonyme Zähler (Nutzungen, generierte Tokens, Summe und Anzahl der Bewertungen).</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogen- / Lehrpersonen-Konto</td><td className="pr-2">Datenbank</td><td>Öffentlicher Name, E-Mail (nie angezeigt), Rollen, Sync-Option. <b>Es existiert kein Passwort.</b></td></tr>
-              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schulen & Verbrauch</td><td className="pr-2">Datenbank</td><td>Im Detail im <Link className="underline" href="/etablissements#donnees">Schul-Leitfaden</Link> (IP, Zeiten, Kontingente, Verbrauchsprotokoll pro IP — keine personenbezogenen Schülerdaten).</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Sokratische Tutoren</td><td className="pr-2">Datenbank</td><td>Volltext, aufeinanderfolgende Versionen, Herkunft („inspiriert von“), Status, die besitzende Schule, falls es eine gibt, und ob sie ihn nach aussen geteilt hat, automatische Übersetzungen in die drei anderen Sprachen samt der Quellversion, aus der sie stammen, anonyme Zähler (Nutzungen, generierte Tokens, Summe und Anzahl der Bewertungen).</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Promptagogen- / Lehrpersonen-Konto</td><td className="pr-2">Datenbank</td><td>Öffentlicher Name, E-Mail (nie angezeigt), Rollen, Sync-Option und die <b>Schulen, zu denen das Konto gehört</b> — mehrere sind möglich, mit dem Administrationsrecht Zuordnung für Zuordnung und einer Hauptschule. Wer seine Adresse aus dem Netz einer Schule verifiziert, wird ihr zugeordnet, <b>ohne jedes Administrationsrecht</b>. Der Verbrauch über den Schlüssel einer Schule hält die E-Mail der Lehrperson fest, die den Raum geöffnet hat. <b>Es existiert kein Passwort.</b></td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Schulen & Verbrauch</td><td className="pr-2">Datenbank</td><td>Name, IP-Adressen des Netzes, Zeiten des freien Zugangs, Kontingente, der von der Schule gewählte Beitragssatz, Rechnungsadresse, ob der Katalog der anderen Schulen geöffnet ist, und das Verbrauchsprotokoll pro Schul-IP — keine personenbezogenen Schülerdaten. Im Detail im <Link className="underline" href="/etablissements#donnees">Schul-Leitfaden</Link>.</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Guthaben und Rechnungen</td><td className="pr-2">Datenbank</td><td>Der Saldo jeder Schule und das datierte Register all ihrer Bewegungen: Aufladung, Verbrauch oder Korrektur, vorzeichenbehafteter Betrag, Saldo danach und wer sie ausgelöst hat. Eine ausgestellte Rechnung friert ihren Betrag ein, damit eine Tarifänderung die Vergangenheit nicht umschreibt; die administrativen Angaben, die eine Schule ergänzt, leben getrennt davon, damit eine erneute Ausstellung sie nie löscht.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Synchronisiertes Profil (Option)</td><td className="pr-2">Datenbank</td><td>Kopie Ihres Browser-Profils, jederzeit über /verifier löschbar.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">Gemerkter API-Schlüssel (auf Wunsch, Konten)</td><td className="pr-2">Datenbank</td><td>Nur wenn Sie im Chat „Schlüssel merken“ ankreuzen: Ihr Schlüssel wird <b>verschlüsselt</b> (AES-256-GCM) aufbewahrt, gelangt nie zurück in den Browser und verschwindet, sobald Sie abwählen.</td></tr>
               <tr className="border-b border-white/5"><td className="py-1.5 pr-2">„Online“-Zähler der Startseite</td><td className="pr-2">Datenbank</td><td>Ein nicht umkehrbarer technischer Fingerabdruck des Browsers (nie die IP im Klartext) und der Zeitpunkt der letzten Aktivität, nach fünfzehn Minuten gelöscht.</td></tr>
@@ -205,11 +233,15 @@ export default function GuideDE() {
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/publier">/publier</Link></td><td className="pr-2">Promptagogen</td><td>Einen Tutor erstellen (geführte Vorlage, Varianten mit Herkunft)</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2">/p/essai/[Link]</td><td className="pr-2">Promptagogen + Gäste</td><td>Werkstatt eines Entwurfs: lesen, bearbeiten, testen, einreichen</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/verifier">/verifier</Link></td><td className="pr-2">Autoren, Lehrpersonen, Admins</td><td>Identifikation per E-Mail-Code, ohne Passwort</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/compte">/compte</Link></td><td className="pr-2">Konten</td><td>Meine Daten: Verbrauch, Schlüssel, Gespräche, Tutoren — alles exportieren oder löschen</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/compte">/compte</Link></td><td className="pr-2">Konten</td><td>DAS KONTO: Verbrauch, Schlüssel, Gespräche, Tutoren — alles exportieren oder löschen</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/enseignant">/enseignant</Link></td><td className="pr-2">Lehrpersonen</td><td>DIE KLASSE: den Raum öffnen, einen Tutor bereitstellen, die Tutoren der eigenen Schule prüfen (die alte Adresse /session führt dorthin)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/school">/school</Link></td><td className="pr-2">Schüler einer Schule</td><td>Chat mit dem Schlüssel der Schule, hinter der Lehrpersonen-Entsperrung</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/etablissement">/etablissement</Link></td><td className="pr-2">Schulen</td><td>DIE SCHULE: Startseite für alle, die aus ihrem Netz kommen, Anmeldung einer Schule und — für ihre Administratoren — Zeiten, Kontingente, Guthaben, Konten, Tutoren und Rechnung</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/etablissements">/etablissements</Link></td><td className="pr-2">Schulen</td><td>Eigener Leitfaden: Zugang, Kontingente, Abrechnung, Abläufe</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/school">/school</Link></td><td className="pr-2">Schulen</td><td>Chat mit internem Schlüssel, hinter der Lehrpersonen-Entsperrung</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/etablissement">/etablissement</Link></td><td className="pr-2">Schulverantwortliche</td><td>Zeiten, Kontingente und Verbrauch in Selbstverwaltung</td></tr>
-              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/admin">/admin</Link></td><td className="pr-2">Administration</td><td>Moderation, Schulen, Lehrpersonen, Abrechnung</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/facture">/facture</Link></td><td className="pr-2">Schulen, Website</td><td>Die Rechnung eines Monats als druckbare Seite (ohne Konto leer)</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/assistance">/assistance</Link></td><td className="pr-2">Alle</td><td>Kontakt, und was ein in der Schule aufgestellter Server bedeuten würde — ohne Konto lesbar</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/admin">/admin</Link></td><td className="pr-2">Super-Administratoren</td><td>DIE PLATTFORM: Schulen anlegen, Tarife, offene Rechnungen, das Guthaben aller Schulen, die Modell-Leiter. Ihre Liste lebt in der Serverkonfiguration — keine Oberfläche legt einen an</td></tr>
+              <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/admin-demo">/admin-demo</Link></td><td className="pr-2">Alle</td><td>Schaufenster der Verwaltung, vollständig erfunden: keine echten Daten</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/rgpd">/rgpd</Link></td><td className="pr-2">Alle</td><td>Datenschutz (DSGVO/nDSG), in 4 Sprachen</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2"><Link className="underline" href="/tutoriel">/tutoriel</Link></td><td className="pr-2">Alle</td><td>Dieser Leitfaden, in 4 Sprachen</td></tr>
               <tr className="border-b border-white/5"><td className="py-1 pr-2">/police</td><td className="pr-2">Lehrpersonen</td><td>Unabhängiges Klassenführungs-Tool (ausserhalb des Chats)</td></tr>

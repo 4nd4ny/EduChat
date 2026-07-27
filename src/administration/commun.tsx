@@ -195,12 +195,12 @@ export function StatusBadge({ status }: { status: string }) {
  * quand il projette son écran. D'où un liseré orange et une pastille : la même
  * partout, pour qu'elle se reconnaisse sans être relue.
  */
-export function ZoneAdmin({ titre, aide, children }: {
-  titre: string; aide?: string; children: React.ReactNode;
+export function ZoneAdmin({ titre, aide, tour, children }: {
+  titre: string; aide?: string; tour?: string; children: React.ReactNode;
 }) {
   const t = useT();
   return (
-    <section className="mt-8 rounded-lg border border-[#DC6521]/40 bg-[#DC6521]/[0.04] p-4">
+    <section data-tour={tour} className="mt-8 rounded-lg border border-[#DC6521]/40 bg-[#DC6521]/[0.04] p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-bold">{titre}</h2>
         <span className="flex items-center gap-1 rounded bg-[#DC6521]/25 px-1.5 text-xs text-[#DC6521]"

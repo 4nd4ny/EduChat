@@ -112,6 +112,31 @@ export function useEcoles(): EtatEcoles {
 }
 
 /**
+ * UN ÉTAT D'ÉCOLES FICTIF, pour les démonstrations (?visite=1).
+ *
+ * Qu'un même compte enseigne dans plusieurs écoles est la nouveauté qui change
+ * le plus de choses à l'écran : c'est le sélecteur qui décide de quelle école
+ * parlent le porte-monnaie, la facture, les comptes et le catalogue. Le taire
+ * en démonstration le rendait invisible à tous ceux qui n'ont pas encore de
+ * compte — c'est-à-dire au public de l'aide.
+ *
+ * Rien n'est lu, rien n'est écrit : `choisir` ne fait rien, et aucune requête
+ * ne part. La deuxième école est délibérément une école où l'on enseigne SANS
+ * l'administrer : c'est la situation la plus fréquente, et celle qui explique
+ * pourquoi la moitié des sections apparaît ou disparaît en changeant d'école.
+ */
+export function ecolesDemo(principale: string, seconde: string): EtatEcoles {
+  return {
+    pret: true, active: 1, administre: true, isSuper: false,
+    isTeacher: true, identifie: true, choisir: () => { /* démonstration inerte */ },
+    ecoles: [
+      { id: 1, name: principale, isAdmin: true, principale: true },
+      { id: 2, name: seconde, isAdmin: false, principale: false },
+    ],
+  };
+}
+
+/**
  * La barre du haut de l'espace enseignant.
  *
  * Un menu déroulant d'UNE entrée n'est pas un choix, c'est un obstacle : avec

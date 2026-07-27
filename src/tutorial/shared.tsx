@@ -151,12 +151,24 @@ export const Section = ({ id, title, children }: { id: string; title: string; ch
 export type DemoButton = { label: string; note: string; href: string; color: string; icon: React.ReactNode };
 
 /**
- * Les quatre portes de l'aide, calquées sur la ligne de profils de l'accueil.
+ * Les six portes de l'aide, calquées sur la ligne de profils de l'accueil.
+ *
+ * ELLES SUIVENT LES QUATRE NIVEAUX, un par endroit : le chat pour l'apprenant,
+ * /enseignant pour la CLASSE, /etablissement pour l'ÉCOLE, /admin-demo pour la
+ * plateforme — plus le duel du promptagogue et « Mes données ». Enseignant et
+ * Établissement sont deux portes distinctes parce que ce sont deux écrans, deux
+ * publics et deux rangs : ouvrir la salle est un geste de cours, régler le
+ * porte-monnaie une décision de direction.
  *
  * Chacune ouvre la vraie page dans son mode DÉMONSTRATION (?visite=1) : la
  * visite guidée s'y lance, l'interface est celle d'un utilisateur autorisé,
  * et tout est inerte. Montrer l'écran réel vaut mieux que le décrire — mais
  * il ne fallait pas pour autant ouvrir des droits.
+ *
+ * CONSÉQUENCE POUR LA VISITE GUIDÉE : ce qu'une page ne peint pas en
+ * démonstration, la visite ne peut pas le montrer. Une section réservée qu'on
+ * cache derrière `!demo` doit donc avoir sa doublure fictive si l'on veut
+ * pouvoir en parler (voir src/chat/tourSteps.ts).
  */
 export function DemoButtons({ titre, chapeau, boutons }: {
   titre: string; chapeau: string; boutons: DemoButton[];

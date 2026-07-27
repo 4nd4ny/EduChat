@@ -8,7 +8,7 @@ import { useT } from "../i18n/useT";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 import PourquoiEduChat from "../site/PourquoiEduChat";
-import SelecteurEcole, { useEcoles } from "../site/SelecteurEcole";
+import SelecteurEcole, { ecolesDemo, useEcoles } from "../site/SelecteurEcole";
 import { ZoneAdmin } from "../administration/commun";
 import Comptes from "../administration/Comptes";
 import Factures from "../administration/Factures";
@@ -494,8 +494,11 @@ export default function EtablissementPage() {
           dans deux collèges, et TOUT ce que cette page montre — horaires,
           consommation, porte-monnaie, comptes, facture — répond d'abord à la
           question « laquelle ? ». La poser une fois, visiblement, vaut mieux
-          que de la laisser deviner section par section. */}
-      {!demo && <SelecteurEcole etat={ecoles} />}
+          que de la laisser deviner section par section.
+          En démonstration il est peint AUSSI, avec deux écoles fictives : la
+          visite guidée ne peut désigner que ce qui existe à l'écran, et c'est
+          la première chose qu'un responsable doit comprendre. */}
+      <SelecteurEcole etat={demo ? ecolesDemo(t("etab.demo.school"), t("ecole.demo.second")) : ecoles} />
 
       <h1 data-tour="etab-identite" className="flex items-center gap-2 text-2xl font-bold"><MdSchool /> {demo ? t("etab.demo.school") : etab.name}</h1>
       <p className="mt-1 text-xs opacity-60"><Link href="/etablissements" className="underline">{t("etab.guide.link")}</Link> — {t("etab.guide.hint")}</p>
@@ -615,26 +618,35 @@ export default function EtablissementPage() {
           sont les décisions d'un établissement sur lui-même. Elles ne
           s'affichent qu'aux enseignants-ADMINISTRATEURS de l'école ACTIVE,
           et le disent (liseré orange + pastille de ZoneAdmin).
-          En démonstration, elles ne sont pas montées du tout : chacune
-          interroge le serveur, ce qu'une page qui se dit fictive ne fait pas. */}
+          En démonstration, trois d'entre elles ne sont pas montées : elles
+          interrogeraient le serveur, ce qu'une page qui se dit fictive ne fait
+          pas. Le PORTE-MONNAIE, lui, se montre avec des chiffres inventés
+          (voir COMPTE_DEMO) : c'est la pièce que personne ne peut voir avant
+          d'y avoir droit, et donc la seule qu'il fallait absolument peindre. */}
       {!demo && administre && (
         <>
-          <ZoneAdmin titre={t("etab.zone.wallet")}>
+          <ZoneAdmin titre={t("etab.zone.wallet")} tour="etab-portemonnaie">
             <PorteMonnaie ecole={ecoles.active} variante="ecole" />
           </ZoneAdmin>
 
-          <ZoneAdmin titre={t("etab.zone.invoice")}>
+          <ZoneAdmin titre={t("etab.zone.invoice")} tour="etab-facture">
             <Factures ecole={ecoles.active} variante="ecole" />
           </ZoneAdmin>
 
-          <ZoneAdmin titre={t("etab.zone.accounts")} aide={t("etab.zone.accountsHelp")}>
+          <ZoneAdmin titre={t("etab.zone.accounts")} aide={t("etab.zone.accountsHelp")} tour="etab-comptes">
             <Comptes ecole={ecoles.active} isSuper={ecoles.isSuper} />
           </ZoneAdmin>
 
-          <ZoneAdmin titre={t("etab.zone.tutors")} aide={t("etab.zone.tutorsHelp")}>
+          <ZoneAdmin titre={t("etab.zone.tutors")} aide={t("etab.zone.tutorsHelp")} tour="etab-tuteurs">
             <TuteursEcole ecole={ecoles.active} />
           </ZoneAdmin>
         </>
+      )}
+
+      {demo && (
+        <ZoneAdmin titre={t("etab.zone.wallet")} tour="etab-portemonnaie">
+          <PorteMonnaie ecole={null} variante="ecole" demo />
+        </ZoneAdmin>
       )}
 
       {/* --- Informations gérées par l'administration --- */}

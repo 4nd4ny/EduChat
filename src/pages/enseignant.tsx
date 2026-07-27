@@ -6,7 +6,7 @@ import InterfaceTour from "../chat/InterfaceTour";
 import { useT } from "../i18n/useT";
 import { getAccount } from "../utils/account";
 import { useListeSeule } from "../site/ListePaginee";
-import SelecteurEcole, { useEcoles } from "../site/SelecteurEcole";
+import SelecteurEcole, { ecolesDemo, useEcoles } from "../site/SelecteurEcole";
 import { ZoneAdmin, ZoneEnseignant } from "../administration/commun";
 import { ModerationCommentaires, ModerationTuteurs } from "../administration/Moderation";
 import { providerDefaults, SCHOOL_PROVIDER_IDS, type ProviderId } from "../shared/providers";
@@ -294,7 +294,7 @@ export default function EnseignantPage() {
           <b>{t("session.demo.badge")}</b> {t("session.demo.text")}
         </p>
       )}
-      {tour && <InterfaceTour parcours="session" onClose={() => setTour(false)} />}
+      {tour && <InterfaceTour parcours="enseignant" onClose={() => setTour(false)} />}
 
       <h1 className="flex items-center gap-2 pt-6 text-2xl font-bold">
         <MdSchool /> {t("session.title")}
@@ -303,8 +303,12 @@ export default function EnseignantPage() {
       {/* LE SÉLECTEUR D'ÉCOLE ACTIVE, en haut de l'espace enseignant : c'est
           lui qui décide de quelle école parlent la modération plus bas et
           l'espace /etablissement. La séance de classe, elle, reste réglée par
-          l'IP de la salle — les deux ne répondent pas à la même question. */}
-      {!demo && <div className="mt-4"><SelecteurEcole etat={ecoles} /></div>}
+          l'IP de la salle — les deux ne répondent pas à la même question.
+          En démonstration, deux écoles fictives : c'est là qu'on comprend
+          qu'un même compte peut enseigner dans plusieurs établissements. */}
+      <div className="mt-4">
+        <SelecteurEcole etat={demo ? ecolesDemo(t("session.demo.school"), t("ecole.demo.second")) : ecoles} />
+      </div>
 
       {!seule && (<>
       <p className="mt-2 text-sm opacity-80">{t("session.intro")}</p>
@@ -434,7 +438,7 @@ export default function EnseignantPage() {
             ne sert plus rien pendant la séance. Le texte d'aide le dit, parce
             que c'est la seule case dont l'effet ne se devine pas. */}
         {(status.schoolProviders?.length ?? 0) > 0 && (
-          <fieldset className="mt-4">
+          <fieldset data-tour="session-fournisseurs" className="mt-4">
             <legend className="text-sm">{t("session.deploy.providers")}</legend>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
               {status.schoolProviders.map(id => (
@@ -466,7 +470,7 @@ export default function EnseignantPage() {
           gestes d'enseignement, pas d'exploitation de plateforme. Le serveur
           borne déjà ce qui remonte — d'où l'absence de tout filtre ici. */}
       {peutModerer && (
-        <ZoneEnseignant titre={t("ens.moderation.title")} aide={t("ens.moderation.help")}>
+        <ZoneEnseignant titre={t("ens.moderation.title")} aide={t("ens.moderation.help")} tour="ens-moderation">
           <ModerationTuteurs ecole={ecoles.active} />
           <ModerationCommentaires ecole={ecoles.active} />
         </ZoneEnseignant>
@@ -477,9 +481,13 @@ export default function EnseignantPage() {
           hors des murs vivent sur /etablissement (décision A). Les taire aurait
           laissé un administrateur les chercher sur la page où ils étaient
           hier ; les copier ici aurait fait deux écrans à corriger. On les
-          nomme, avec leur porte. */}
-      {administre && !seule && (
-        <ZoneAdmin titre={t("ens.school.title")} aide={t("ens.school.help")}>
+          nomme, avec leur porte.
+          En démonstration, ce panneau est peint lui aussi : il ne contient
+          qu'un lien, il n'interroge rien, et c'est la réponse à la question
+          que se pose tout responsable en découvrant cette console — « et
+          l'argent, et les comptes, ils sont où ? ». */}
+      {(administre || demo) && !seule && (
+        <ZoneAdmin titre={t("ens.school.title")} aide={t("ens.school.help")} tour="ens-etablissement">
           <Link href="/etablissement"
             className="mt-3 inline-block rounded bg-[#DC6521] px-4 py-2 text-sm font-bold hover:opacity-90">
             {t("ens.school.cta")}

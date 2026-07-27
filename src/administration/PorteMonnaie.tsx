@@ -19,6 +19,24 @@ import { BTN, type Compte, type MouvementRow } from "./commun";
 
 type Bornes = { min: number; max: number; frais: number; paypal: boolean };
 
+// LE PORTE-MONNAIE FICTIF DE LA DÉMONSTRATION (/etablissement?visite=1).
+//
+// La visite guidée ne peut désigner que ce qui est réellement peint : une
+// étape dont l'ancre n'existe pas est sautée en silence, et le porte-monnaie
+// serait resté le seul écran d'école que personne ne voit jamais avant d'y
+// avoir droit. On montre donc l'écran, avec des chiffres qui n'appartiennent à
+// aucune école — aucun appel au serveur, aucun bouton vivant.
+const COMPTE_DEMO: Compte = {
+  etablissementId: -1, etablissement: "", respire: false, solde: 128.4,
+  devise: "CHF", billingEmail: "", depense30: 41.2, jours: 93,
+  recharge: 100, aSec: false, contributionPct: 5,
+};
+const MOUVEMENTS_DEMO: MouvementRow[] = [
+  { id: 3, ts: Date.UTC(2026, 4, 12), genre: "consommation", montant: -14.6, solde: 128.4, detail: "mistral", par: "" },
+  { id: 2, ts: Date.UTC(2026, 3, 30), genre: "consommation", montant: -26.6, solde: 143.0, detail: "anthropic", par: "" },
+  { id: 1, ts: Date.UTC(2026, 3, 2), genre: "recharge", montant: 169.6, solde: 169.6, detail: "virement", par: "" },
+];
+
 export default function PorteMonnaie({ ecole, variante, demo }: {
   /** École active — DÉCLENCHEUR de relecture (elle voyage dans l'en-tête). */
   ecole: number | null;
@@ -26,8 +44,8 @@ export default function PorteMonnaie({ ecole, variante, demo }: {
   demo?: boolean;
 }) {
   const t = useT();
-  const [comptes, setComptes] = useState<Compte[]>([]);
-  const [mouvements, setMouvements] = useState<MouvementRow[]>([]);
+  const [comptes, setComptes] = useState<Compte[]>(demo ? [COMPTE_DEMO] : []);
+  const [mouvements, setMouvements] = useState<MouvementRow[]>(demo ? MOUVEMENTS_DEMO : []);
   const [bornes, setBornes] = useState<Bornes>({ min: 3.5, max: 10, frais: 3.5, paypal: false });
   const [message, setMessage] = useState("");
 
@@ -87,10 +105,13 @@ export default function PorteMonnaie({ ecole, variante, demo }: {
   const curseurTaux = (c: Compte) => (
     <label className="mt-1 flex items-center gap-2 text-xs opacity-70">
       <span>{t("admin.credit.rate")}</span>
+      {/* En démonstration, le curseur se voit et se manipule, mais n'écrit
+          rien : `disabled` l'aurait grisé au point de le rendre illisible,
+          alors que c'est justement le réglage qu'on vient montrer. */}
       <input type="range" min={bornes.min} max={bornes.max} step={0.5}
         defaultValue={c.contributionPct}
-        onMouseUp={e => void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value))}
-        onTouchEnd={e => void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value))}
+        onMouseUp={e => { if (!demo) void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value)); }}
+        onTouchEnd={e => { if (!demo) void reglerContribution(c.etablissementId, Number((e.target as HTMLInputElement).value)); }}
         className="w-28" />
       <span className="w-24 text-left font-mono">
         {c.contributionPct.toFixed(1)} %
@@ -138,7 +159,10 @@ export default function PorteMonnaie({ ecole, variante, demo }: {
           )}
         </div>
         {!c.respire && curseurTaux(c)}
-        {!c.respire && c.solde > 0 && (
+        {/* Le remboursement passe par PayPal, qui n'est pas ouvert : un bouton
+            grisé dans une démonstration ne promet rien de bon. On ne le montre
+            donc pas ici — l'école le trouvera le jour où il servira. */}
+        {!demo && !c.respire && c.solde > 0 && (
           <button onClick={() => void rembourser(c)} disabled={!bornes.paypal}
             title={bornes.paypal ? t("admin.credit.refundTitle", { pct: bornes.frais }) : t("admin.credit.refundOff")}
             className={`${BTN} mt-3 disabled:opacity-40`}>
