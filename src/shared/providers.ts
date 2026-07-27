@@ -54,7 +54,7 @@ export const providerDefaults: Record<ProviderId, {
   anthropic: { label: "Claude", model: "claude-sonnet-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
   gemini: { label: "Gemini", model: "gemini-3.5-flash", adultOnly: true },
-  grok: { label: "Grok", model: "grok-4.5", adultOnly: true, images: true },
+  grok: { label: "Grok", model: "grok-4.5", adultOnly: true, wrng: true, images: true },
   // OpenRouter est un INTERMÉDIAIRE : même en routant vers un modèle dont
   // l'éditeur offre un cadre correct, les échanges transitent par lui et
   // peuvent y être exploités. Drapeau rouge, donc — il reste le moteur du
