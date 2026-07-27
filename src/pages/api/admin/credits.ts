@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireAdmin, requireSuperAdmin } from '../../../server/admin';
-import { etatDesComptes, mouvements, bouger, reglerContribution,
+import { etatDesComptes, mouvements, bouger, reglerContribution, commissionRecharge,
   CONTRIBUTION_MIN, CONTRIBUTION_MAX } from '../../../server/porteMonnaie';
 import { paypalActif, rembourser, FRAIS_PAYPAL_PCT } from '../../../server/paypal';
 import { ERR } from '../../../shared/providers';
@@ -70,10 +70,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     // Une recharge est toujours positive ; un ajustement peut corriger dans les
     // deux sens (une erreur de saisie, un geste commercial).
-    const signe = genre === 'recharge' ? Math.abs(montant) : montant;
-    const solde = bouger(etablissementId, genre, signe,
-      String(req.body?.detail ?? '').slice(0, 200), scope.auth.email);
-    return res.status(200).json({ ok: true, solde });
+    if (genre === 'ajustement') {
+      const solde = bouger(etablissementId, 'ajustement', montant,
+        String(req.body?.detail ?? '').slice(0, 200), scope.auth.email);
+      return res.status(200).json({ ok: true, solde });
+    }
+    // RECHARGE : la contribution se prélève ICI, une fois, et non sur chaque
+    // jeton. Deux mouvements distincts pour qu'on lise ce qui est entré et ce
+    // qui a été retenu — un solde net sans sa ligne de commission serait un
+    // chiffre qu'on ne peut pas recalculer.
+    const { commission, credite, pct } = commissionRecharge(etablissementId, Math.abs(montant));
+    bouger(etablissementId, 'recharge', Math.abs(montant),
+      String(req.body?.detail ?? '').slice(0, 200) || 'versement', scope.auth.email);
+    const solde = bouger(etablissementId, 'ajustement', -commission,
+      `Contribution aux frais (${pct} %)`, scope.auth.email);
+    return res.status(200).json({ ok: true, solde, commission, credite, pct });
   }
 
   res.setHeader('Allow', ['GET', 'POST']);

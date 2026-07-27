@@ -26,7 +26,7 @@
 
 import { getDb } from './db';
 import { BillingCurrency } from '../utils/env';
-import { bouger } from './porteMonnaie';
+import { bouger, commissionRecharge } from './porteMonnaie';
 
 const ID = (process.env.SECRET_PAYPAL_CLIENT_ID || '').trim();
 const SECRET = (process.env.SECRET_PAYPAL_SECRET || '').trim();
@@ -197,6 +197,11 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
     try {
       solde = bouger(intention.etablissement_id, 'recharge', capture.montant,
         `PayPal ${captureId}`, 'paypal', captureId);
+      // La contribution se prélève sur le versement, au taux choisi par
+      // l'école — jamais sur les jetons, qui passent à prix coûtant.
+      const { commission, pct } = commissionRecharge(intention.etablissement_id, capture.montant);
+      solde = bouger(intention.etablissement_id, 'ajustement', -commission,
+        `Contribution aux frais (${pct} %) — ${captureId}`, 'paypal');
     } catch {
       return { creditee: false, raison: 'Déjà créditée (idempotence).' };
     }

@@ -48,6 +48,34 @@ function prixDe(provider: string): { entree: number; sortie: number } {
   return { entree: row.prix_entree_mtok, sortie: row.prix_sortie_mtok };
 }
 
+// ─── OÙ SE PRÉLÈVE LA CONTRIBUTION : À LA RECHARGE, PAS SUR LES JETONS ──────
+//
+// Règle reprise d'OpenRouter, qui l'énonce ainsi : « We pass through the
+// pricing of the underlying providers without any markup on inference
+// pricing », et prélève sa commission sur l'ACHAT DE CRÉDIT (5,5 %, minimum
+// 0,80 $ chez Stripe). EduChat fait désormais pareil.
+//
+// POURQUOI C'EST MEILLEUR ICI, et pas seulement conforme à un usage : une
+// école peut VÉRIFIER sa facture. Le décompte d'un appel est exactement le
+// prix publié par Anthropic, OpenAI ou Mistral — elle ouvre leur tarif, elle
+// retrouve notre chiffre. Pour un service qui se présente comme TIERS DE
+// CONFIANCE, c'est l'argument le plus fort qu'on puisse offrir : rien à croire
+// sur parole. Une marge fondue dans le prix du jeton, à l'inverse, se vérifie
+// mal et se soupçonne bien.
+//
+// Et la commission tombe au moment où l'argent arrive vraiment — au même
+// instant que les frais PayPal, qu'elle est là pour couvrir. Le plancher de
+// 3,5 % s'aligne alors exactement sur ce qu'ils coûtent.
+//
+// CE QU'ON N'A PAS REPRIS D'OPENROUTER, et pourquoi :
+//   · leur commission de 5 % sur les clés PERSONNELLES. La mesurer supposerait
+//     de journaliser l'usage d'une clé privée — or /rgpd promet le contraire,
+//     noir sur blanc. Une promesse de confidentialité ne se reprend pas pour
+//     encaisser cinq pour cent.
+//   · l'expiration des crédits au bout d'un an. Sur un budget scolaire voté
+//     puis dépensé lentement, c'est une confiscation. À trancher par le
+//     gestionnaire, pas par le code.
+
 /** Bornes du taux de contribution. Le plancher couvre les frais PayPal, rien de plus. */
 export const CONTRIBUTION_MIN = 3.5;
 export const CONTRIBUTION_MAX = 10;
@@ -80,10 +108,30 @@ export function contributionDe(etablissementId: number): number {
  * de son auteur ne peut pas se permettre de perdre un demi-centime une fois
  * sur deux.
  */
-export function coutDe(provider: string, tokensIn: number, tokensOut: number, pct: number): number {
+export function coutDe(provider: string, tokensIn: number, tokensOut: number, pct = 0): number {
   const prix = prixDe(provider);
   const brut = (tokensIn * prix.entree + tokensOut * prix.sortie) / 1_000_000;
+  // pct vaut 0 pour tout ce qui est facturé : PASSAGE À PRIX COÛTANT. Le
+  // paramètre survit pour les simulations et les relevés qui veulent montrer
+  // ce qu'un taux donnerait — jamais pour décompter.
   return versLeHaut(brut * (1 + pct / 100));
+}
+
+/**
+ * Commission prélevée sur une RECHARGE, au taux choisi par l'école.
+ *
+ * Un minimum en valeur absolue, parce que les frais de transaction ont une
+ * part fixe : sans lui, une recharge de dix francs coûterait plus cher à
+ * encaisser qu'elle ne rapporte. OpenRouter fait de même (0,80 $ chez Stripe).
+ */
+export const COMMISSION_MIN = 0.5;
+
+export function commissionRecharge(etablissementId: number, montant: number):
+  { commission: number; credite: number; pct: number } {
+  const pct = contributionDe(etablissementId);
+  const commission = Math.max(COMMISSION_MIN, versLeHaut(montant * pct / 100));
+  // Le crédit descend au centime, la commission monte : jamais l'inverse.
+  return { commission, credite: Math.max(0, versLeBas(montant - commission)), pct };
 }
 
 /** La part de participation dans un coût — pour la dire, mouvement par mouvement. */
@@ -167,15 +215,13 @@ export function decompter(
   const ecole = getDb().prepare('SELECT respire FROM etablissements WHERE id = ?')
     .get(etablissementId) as { respire: number } | undefined;
   if (!ecole || ecole.respire) return 0;
-  const pct = contributionDe(etablissementId);
-  const cout = coutDe(provider, tokensIn, tokensOut, pct);
+  // PRIX COÛTANT : plus aucune marge sur l'inférence. Ce que l'école paie ici
+  // est exactement ce que le fournisseur nous facture, et elle peut le
+  // vérifier contre le tarif public de Claude, ChatGPT ou Mistral. La
+  // contribution, elle, a été prélevée à la recharge.
+  const cout = coutDe(provider, tokensIn, tokensOut, 0);
   if (!cout) return 0;
-  // La participation est NOMMÉE dans le mouvement : une école qui lit son
-  // historique voit ligne à ligne ce qu'elle finance pour les autres — et au
-  // taux QU'ELLE a choisi, ce qui rend le chiffre discutable plutôt que subi.
-  const part = partParticipation(cout, pct);
-  return bouger(etablissementId, 'consommation', -cout,
-    `${provider} · ${modele} · dont ${part.toFixed(2)} de participation`, '');
+  return bouger(etablissementId, 'consommation', -cout, `${provider} · ${modele}`, '');
 }
 
 export function mouvements(etablissementId: number, limite = 50): Mouvement[] {

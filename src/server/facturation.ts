@@ -213,8 +213,11 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     const consommation = respire ? 0 : Math.ceil(lignes.reduce((n, l) => n + l.montant, 0) * 100 - 1e-9) / 100;
     // Le taux est celui que CETTE école a choisi — la facture ne peut pas
     // annoncer un pourcentage différent de celui qui a été décompté.
+    // PLUS DE PARTICIPATION SUR LA CONSOMMATION : elle a été prélevée à la
+    // recharge. Le relevé montre donc le PRIX COÛTANT, celui que l'école peut
+    // confronter au tarif public du fournisseur — c'est tout l'intérêt.
     const pct = contributionDe(ecole.id);
-    const participation = respire ? 0 : Math.ceil(consommation * pct - 1e-7) / 100;
+    const participation = 0;
     const emise = emises.find(f => f.etablissement_id === ecole.id);
 
     return {
