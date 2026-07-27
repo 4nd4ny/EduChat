@@ -6,10 +6,14 @@ type PromptOption = { name: string; description: string };
 
 type Props = { onDone: () => void };
 
-// Écran de réglages de session, présenté à l'enseignant juste après le
-// déverrouillage par mot de passe (étape 14) : il « déploie » un tuteur sur sa
+// Écran de réglages de session, présenté à l'enseignant juste après avoir
+// ouvert la salle par mot de passe (étape 14) : il « déploie » un tuteur sur sa
 // classe (pré-sélectionné pour tous les élèves de l'IP de l'établissement) et
 // décide de la recherche web. « Passer » n'écrit rien.
+//
+// Cet écran hérité n'est pas encore traduit — d'où le français en dur. Ce qu'il
+// dit doit néanmoins rester VRAI : le mot de passe ouvre la salle de l'école du
+// réseau appelant, jamais « le site ».
 export default function SessionSetup({ onDone }: Props) {
   const [prompts, setPrompts] = useState<PromptOption[]>([]);
   const [promptName, setPromptName] = useState('');
@@ -34,9 +38,11 @@ export default function SessionSetup({ onDone }: Props) {
     setBusy(false);
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
+      // « Le site est tout de même déverrouillé » n'était plus vrai : ce n'est
+      // pas le SITE qui s'ouvre mais la SALLE de l'école du réseau appelant.
       setError(data?.error?.code === 'ERR_NO_ETABLISSEMENT'
-        ? "Cette IP n'est rattachée à aucun établissement : les réglages de session ne s'appliquent pas ici (le site est tout de même déverrouillé)."
-        : 'Les réglages n\'ont pas pu être enregistrés (le site est tout de même déverrouillé).');
+        ? "Cette IP n'est rattachée à aucun établissement : les réglages de session ne s'appliquent pas ici (l'accès reste ouvert pour la salle)."
+        : "Les réglages n'ont pas pu être enregistrés (l'accès reste ouvert pour la salle).");
       return;
     }
     onDone();
@@ -45,9 +51,10 @@ export default function SessionSetup({ onDone }: Props) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-primary p-4 text-primary">
       <div className="w-full max-w-md rounded-lg border border-white/10 bg-secondary p-6">
-        <h2 className="flex items-center gap-2 text-xl font-bold"><MdSchool /> Session déverrouillée</h2>
+        <h2 className="flex items-center gap-2 text-xl font-bold"><MdSchool /> Salle ouverte</h2>
         <p className="mt-2 text-sm opacity-80">
-          Réglages pour les élèves de votre établissement, le temps de la session :
+          Réglages pour les élèves connectés depuis le réseau de votre établissement,
+          le temps de la séance :
         </p>
 
         <label className="mt-4 flex flex-col gap-1 text-sm">

@@ -89,10 +89,45 @@ CREATE TABLE IF NOT EXISTS prompt_translations (
 -- dans la monnaie du gestionnaire. Réglé par le site, jamais par une école.
 -- Un fournisseur absent de cette table vaut zéro : on ne facture pas ce dont
 -- on ne connaît pas le prix.
+--
+-- CETTE TABLE N'EST PLUS CE QUI FACTURE — voir tarifs_modeles juste dessous.
+-- Elle SURVIT (les migrations sont additives) et garde deux emplois précis :
+-- elle est le DERNIER RECOURS quand aucun prix par modèle n'est relevé, et
+-- elle est ce qui permet de relire à l'identique les factures antérieures au
+-- changement, dont les lignes de journal ne portent pas de prix figé.
 CREATE TABLE IF NOT EXISTS tarifs (
   provider   TEXT PRIMARY KEY,
   prix_mtok  REAL NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL
+);
+
+-- LE PRIX D'UN MODÈLE, ENTRÉE ET SORTIE — ce qui facture désormais.
+--
+-- POURQUOI PAR MODÈLE ET PLUS PAR FOURNISSEUR. Un fournisseur n'a pas UN prix :
+-- chez Anthropic, un million de jetons coûte de 1 à 15 selon le barreau, et le
+-- rapport entrée/sortie va de 1 à 5 chez tout le monde. Un prix unique par
+-- fournisseur ne pouvait donc être juste pour aucun des trois barreaux à la
+-- fois, et il était appliqué à l'entrée comme à la sortie — la promesse d'un
+-- prix coûtant « recalculable au centime » ne pouvait pas tenir.
+--
+-- QUI L'ÉCRIT : la sonde (src/server/sondeTarifs.ts), depuis le catalogue
+-- public d'OpenRouter, pour les seuls barreaux des trois fournisseurs qu'une
+-- clé d'école paie. « modele » est le nom tel que L'ÉCHELLE le désigne — celui
+-- que /api/completion enverra réellement à l'éditeur (effModel) —, jamais le
+-- nom normalisé d'OpenRouter, qui vit dans « source » pour qu'on puisse recouper.
+--
+-- LA DEVISE EST UNE DONNÉE DE LA MESURE, écrite avec elle : le taux de change
+-- peut avoir manqué le jour de la sonde. Une ligne dont la devise n'est pas
+-- celle de facturation n'est PAS appliquée — voir tarifDuModele.
+CREATE TABLE IF NOT EXISTS tarifs_modeles (
+  provider         TEXT NOT NULL,
+  modele           TEXT NOT NULL,          -- le barreau, tel que l'échelle le nomme
+  prix_entree_mtok REAL NOT NULL DEFAULT 0,
+  prix_sortie_mtok REAL NOT NULL DEFAULT 0,
+  devise           TEXT NOT NULL DEFAULT '',
+  source           TEXT NOT NULL DEFAULT '', -- le modèle OpenRouter d'où le prix vient
+  updated_at       INTEGER NOT NULL,
+  PRIMARY KEY (provider, modele)
 );
 
 -- FACTURES ÉMISES. La consommation se recalcule à tout moment depuis
@@ -597,6 +632,38 @@ export function getDb(): Database.Database {
     // gestionnaire » — c'est-à-dire affichait « 4.00 CHF » sur une valeur en
     // dollars, un écart d'environ 20 % annoncé comme un fait.
     "ALTER TABLE tarifs ADD COLUMN propose_devise TEXT NOT NULL DEFAULT ''",
+    // ─── LE PRIX APPLIQUÉ, FIGÉ SUR LA LIGNE DE JOURNAL ────────────────────
+    //
+    // C'EST CE QUI REND UNE FACTURE RECALCULABLE, et c'est aussi ce qui rend
+    // sans danger le fait que la sonde écrive désormais les tarifs. Une facture
+    // ne se recalcule plus au prix D'AUJOURD'HUI : chaque appel emporte les
+    // deux prix qu'on lui a réellement appliqués. Un tarif qui change demain ne
+    // peut donc plus réécrire ce qu'une école devait hier — l'objection qui
+    // interdisait à la sonde d'appliquer quoi que ce soit tombe ici, pas
+    // ailleurs.
+    //
+    // `montant` est LE MONTANT RÉELLEMENT DÉBITÉ de ce porte-monnaie, écrit par
+    // le même calcul et dans la même transaction que le mouvement de registre.
+    // La facture l'ADDITIONNE au lieu de refaire la multiplication : l'arrondi
+    // vers le haut a lieu APPEL PAR APPEL (règle du porte-monnaie), et sommer
+    // des jetons pour ne monter qu'une fois à la fin rendait un total inférieur
+    // d'un centime par appel à ce qui avait été prélevé. Les jetons et les deux
+    // prix restent là POUR VÉRIFIER — une direction refait la multiplication et
+    // retrouve le chiffre —, mais le total est celui du registre, jamais un
+    // second calcul.
+    //
+    // `tarif_repli` est vide quand le modèle avait son propre prix ; sinon il
+    // NOMME ce qui a servi à sa place, et c'est cette colonne que
+    // l'administration interroge pour voir qu'un modèle est facturé à l'aveugle.
+    //
+    // `tarif_at` distingue « pas de prix » de « ligne écrite avant tout ceci » :
+    // 0 = antérieure, et ces lignes-là se relisent à l'ancienne formule pour que
+    // les factures déjà émises ne bougent pas d'un centime.
+    "ALTER TABLE usage_log ADD COLUMN prix_entree_mtok REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_log ADD COLUMN prix_sortie_mtok REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_log ADD COLUMN montant REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE usage_log ADD COLUMN tarif_repli TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE usage_log ADD COLUMN tarif_at INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

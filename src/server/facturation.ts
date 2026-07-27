@@ -1,8 +1,32 @@
 // LA FACTURE D'UNE ÉCOLE — AU PRIX COÛTANT, ET RIEN D'AUTRE.
 //
-// La consommation se recalcule à tout moment depuis usage_log : jetons par
-// fournisseur, multipliés par le tarif du fournisseur. ET C'EST TOUT : le
-// total d'une facture est celui de sa consommation.
+// UNE LIGNE PAR MODÈLE, ET QUATRE CHIFFRES QUI SE REFONT À LA MAIN : les
+// jetons d'entrée, les jetons de sortie, le prix de l'un et le prix de l'autre.
+// Une direction rouvre le tarif public du modèle nommé sur la ligne, multiplie,
+// et retrouve notre montant. C'est toute la promesse du prix coûtant, et c'est
+// tout ce qu'une direction demande.
+//
+// CE QUI ÉTAIT : une ligne par FOURNISSEUR, à un prix unique appliqué à
+// l'entrée comme à la sortie, là où les éditeurs en publient deux dont le
+// rapport va de 1 à 5. Le chiffre ne se retrouvait donc nulle part, et une
+// facture qu'on ne peut pas recouper n'est pas une facture, c'est une demande
+// de confiance.
+//
+// LE MONTANT NE SE RECALCULE PAS, IL S'ADDITIONNE — et cette distinction vaut
+// de l'argent. L'arrondi du porte-monnaie monte APPEL PAR APPEL (versLeHaut,
+// jamais au plus proche) ; sommer les jetons d'un mois pour ne monter qu'une
+// fois à la fin rendrait un total inférieur d'un centime par appel à ce qui a
+// réellement été prélevé, et le relevé démentirait le solde. Chaque appel a donc
+// figé son montant sur sa ligne de journal, et la facture les additionne. Les
+// jetons et les prix restent là pour que le calcul se REFASSE, jamais pour
+// qu'il se remplace.
+//
+// CE COMMENTAIRE DISAIT AUSSI QUE LA CONSOMMATION « SE RECALCULE À TOUT
+// MOMENT ». Elle ne le fait plus au tarif du JOUR, et c'est voulu : un tarif
+// qui change ce soir ne doit pas déplacer d'un centime ce qu'une école devait
+// ce matin. Les factures antérieures au prix par modèle, dont les lignes de
+// journal ne portent aucun prix figé (tarif_at = 0), se relisent à l'ancienne
+// formule — au prix unique du fournisseur, exactement comme hier.
 //
 // CE COMMENTAIRE DISAIT LE CONTRAIRE, ET IL AVAIT CESSÉ D'ÊTRE VRAI. Il
 // annonçait « une participation aux frais, dix pour cent, qui s'ajoute ».
@@ -21,9 +45,50 @@
 import { getDb } from './db';
 import { monthStartUtc } from './admin';
 import { BillingCurrency } from '../utils/env';
-import { contributionDe, coutDe, titulaireEcole, DETAIL_COMMISSION } from './porteMonnaie';
+import { contributionDe, coutAuTarif, titulaireEcole, DETAIL_COMMISSION } from './porteMonnaie';
 
-export type LigneFournisseur = { provider: string; tokens: number; prixMtok: number; montant: number };
+/**
+ * UNE LIGNE DE FACTURE — tout ce qu'il faut pour la refaire soi-même.
+ *
+ * Le modèle est nommé (un prix sans le nom du modèle ne se vérifie nulle part),
+ * les jetons sont séparés, les deux prix sont ceux QU'ON A APPLIQUÉS ce
+ * mois-là — pas ceux d'aujourd'hui.
+ */
+export type LigneFacture = {
+  provider: string;
+  /** Le modèle réellement appelé. C'est lui qui porte le prix. */
+  modele: string;
+  /** La somme des deux, conservée : tous les écrans existants la lisent. */
+  tokens: number;
+  tokensIn: number;
+  tokensOut: number;
+  /**
+   * LE NOMBRE D'APPELS, ET IL EST INDISPENSABLE À LA VÉRIFICATION.
+   *
+   * Sans lui, la ligne ne se recoupe PAS : le montant est la somme d'arrondis
+   * pris appel par appel (règle du porte-monnaie, toujours vers le haut), et il
+   * dépasse donc le simple produit jetons × prix. Une direction qui multiplie
+   * et trouve moins conclurait à une erreur. Avec le compte d'appels, elle sait
+   * exactement d'où vient l'écart et peut l'encadrer : jamais plus d'un centime
+   * par appel. Un chiffre qui explique un écart vaut mieux qu'un écart tu.
+   */
+  appels: number;
+  /** Prix du million de jetons appliqués à CES appels-là, entrée et sortie. */
+  prixEntreeMtok: number;
+  prixSortieMtok: number;
+  montant: number;
+  /**
+   * Vide quand le prix est celui du modèle appelé. Sinon, ce qui a servi à sa
+   * place, dit en clair — une ligne facturée au repli ne doit pas ressembler à
+   * une ligne ordinaire.
+   */
+  repli: string;
+  /**
+   * Ligne antérieure au prix par modèle : relue au prix unique du fournisseur,
+   * comme elle l'a toujours été. Le passé ne se réécrit pas en silence.
+   */
+  ancien: boolean;
+};
 
 /**
  * LES MENTIONS ADMINISTRATIVES — ce que l'école ajoute pour pouvoir payer.
@@ -116,7 +181,7 @@ export type Facture = {
   etablissement: string;
   respire: boolean;
   periode: string;
-  lignes: LigneFournisseur[];
+  lignes: LigneFacture[];
   jetons: number;
   /** Consommation au tarif, avant participation. */
   consommation: number;
@@ -140,7 +205,14 @@ export function periodeDe(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-/** Le tarif courant, par fournisseur. Un fournisseur absent vaut zéro. */
+/**
+ * Le prix UNIQUE par fournisseur, réglé à la main. CE N'EST PLUS CE QUI
+ * FACTURE : le prix vient désormais du modèle appelé (tarifs_modeles, écrit par
+ * la sonde). Il ne sert plus qu'à deux choses, toutes deux nécessaires — de
+ * dernier recours quand aucun prix par modèle n'a pu être relevé, et de clé de
+ * relecture pour les lignes de journal antérieures au changement, qui ne
+ * portent pas de prix figé.
+ */
 export function tarifs(): Record<string, number> {
   const rows = getDb().prepare('SELECT provider, prix_mtok FROM tarifs').all() as
     { provider: string; prix_mtok: number }[];
@@ -158,6 +230,46 @@ export function reglerTarif(provider: string, prixMtok: number): void {
 const centimes = (x: number) => Math.round(x * 100) / 100;
 
 /**
+ * CE QUI A DÉJÀ ÉTÉ FACTURÉ À L'AVEUGLE — la trace que l'administration doit
+ * voir, et la seule qui parle d'argent réellement bougé.
+ *
+ * Un repli protège le budget dans le bon sens, mais il ne doit jamais devenir
+ * l'état normal : ce que cette liste montre, c'est un modèle dont personne n'a
+ * relevé le prix et que des classes emploient tous les jours. Elle se dérive du
+ * journal, sans table supplémentaire — donc elle ne peut pas se désaccorder de
+ * ce qui a été prélevé, et elle disparaît d'elle-même dès que la sonde relève
+ * le prix manquant.
+ *
+ * Les trente derniers jours : au-delà, un modèle retiré du catalogue il y a six
+ * mois resterait signalé pour toujours, et une alerte perpétuelle ne se lit
+ * plus.
+ */
+export function repliObserves() {
+  const depuis = Date.now() - 30 * 86_400_000;
+  return getDb().prepare(`
+    SELECT provider, model AS modele, tarif_repli AS repli,
+           COUNT(*) AS appels, COALESCE(SUM(montant), 0) AS montant, MAX(ts) AS dernier
+    FROM usage_log
+    WHERE ts >= ? AND tarif_at > 0 AND tarif_repli <> ''
+      -- LA DÉMONSTRATION PUBLIQUE RESTE DEHORS. Elle tourne sur un modèle que
+      -- la sonde n'interroge pas (hors des trois fournisseurs d'école) : elle
+      -- figurerait donc ici à jamais, et une alerte perpétuelle ne se lit plus.
+      -- Le tri se fait sur ce qui distingue vraiment ces lignes — de l'argent
+      -- prélevé, ou une école identifiée (une école RESPIRE prélève zéro et
+      -- doit tout de même apparaître : c'est la plateforme qui paie pour elle).
+      -- Reste hors du compte un porte-monnaie personnel dont le tarif vaudrait
+      -- zéro : ce cas-là, le journal d'erreurs le crie et « barreaux sans
+      -- tarif » le prévient.
+      AND (montant > 0 OR etablissement_id IS NOT NULL)
+    GROUP BY provider, model, tarif_repli
+    ORDER BY montant DESC, appels DESC
+  `).all(depuis) as Array<{
+    provider: string; modele: string; repli: string;
+    appels: number; montant: number; dernier: number;
+  }>;
+}
+
+/**
  * La facture d'un mois. `etablissementId` null = toutes les écoles, une
  * facture par école (réservé au site).
  */
@@ -170,17 +282,33 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
 
   // Seule la clé INTERNE se facture, et seulement rattachée à un
   // établissement : le repli gratuit public n'a pas de client.
+  //
+  // LE REGROUPEMENT PORTE AUSSI SUR LES DEUX PRIX, et c'est délibéré : si le
+  // tarif d'un modèle a changé au milieu du mois, l'école lit DEUX lignes pour
+  // ce modèle, chacune avec le prix qui lui a été appliqué. Une ligne unique
+  // portant l'un des deux prix serait invérifiable — la multiplication ne
+  // tomberait juste ni avec l'ancien ni avec le nouveau.
+  //
+  // `tarif_at > 0` sépare les lignes d'AVANT le prix par modèle, qui ne portent
+  // aucun prix figé et se relisent à l'ancienne formule.
   const brut = db.prepare(`
-    SELECT u.etablissement_id AS id, e.name AS nom, COALESCE(e.respire, 0) AS respire,
-           u.provider AS provider, SUM(u.tokens) AS tokens,
-           SUM(u.tokens_in) AS tokensIn, SUM(u.tokens_out) AS tokensOut
+    SELECT u.etablissement_id AS id,
+           u.provider AS provider, u.model AS modele,
+           SUM(u.tokens) AS tokens,
+           SUM(u.tokens_in) AS tokensIn, SUM(u.tokens_out) AS tokensOut,
+           COUNT(*) AS appels, SUM(u.montant) AS montant,
+           u.prix_entree_mtok AS prixEntree, u.prix_sortie_mtok AS prixSortie,
+           MAX(u.tarif_repli) AS repli,
+           MAX(u.tarif_at) AS tarifAt
     FROM usage_log u JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1
       AND (? IS NULL OR u.etablissement_id = ?)
-    GROUP BY u.etablissement_id, u.provider
+    GROUP BY u.etablissement_id, u.provider, u.model,
+             u.prix_entree_mtok, u.prix_sortie_mtok, u.tarif_at > 0
   `).all(debut, fin, etablissementId, etablissementId) as
-    { id: number; nom: string; respire: number; provider: string;
-      tokens: number; tokensIn: number; tokensOut: number }[];
+    { id: number; provider: string; modele: string;
+      tokens: number; tokensIn: number; tokensOut: number; appels: number; montant: number;
+      prixEntree: number; prixSortie: number; repli: string; tarifAt: number }[];
 
   // Une école sans consommation doit tout de même apparaître : « rien à payer »
   // est une information, l'absence de ligne est un doute.
@@ -194,27 +322,43 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     { etablissement_id: number; total: number; emise_at: number; payee_at: number | null }[];
 
   return ecoles.map(ecole => {
-    // UNE SEULE FORMULE, celle du porte-monnaie (coutDe, avec un taux de 0 pour
-    // obtenir la consommation nue). La facture recalculait naguère à partir du
-    // prix UNIQUE tandis que le porte-monnaie décomptait aux prix ENTRÉE et
-    // SORTIE : le relevé affichait 0.00 pendant que le solde baissait
-    // réellement. Deux formules pour un même chiffre finissent toujours par
-    // diverger — celle-ci n'existe plus qu'à un seul endroit.
-    const lignes = brut.filter(b => b.id === ecole.id).map(b => ({
-      provider: b.provider,
-      tokens: b.tokens,
-      prixMtok: prix[b.provider] ?? 0,
-      montant: coutDe(b.provider, b.tokensIn, b.tokensOut, 0),
-    })).sort((a, b) => b.tokens - a.tokens);
+    // LE MONTANT VIENT DU REGISTRE, PAS D'UN SECOND CALCUL. Chaque appel a figé
+    // ce qu'il a coûté sur sa ligne de journal, au moment même où il était
+    // prélevé du porte-monnaie : additionner ces montants est la SEULE façon
+    // que le relevé et le solde disent le même franc. Refaire la
+    // multiplication à partir des jetons du mois donnerait un centime de moins
+    // par appel, parce que l'arrondi du porte-monnaie monte appel par appel.
+    //
+    // LES LIGNES ANCIENNES (tarif_at = 0) N'ONT RIEN FIGÉ : elles datent d'avant
+    // le prix par modèle. On les relit exactement comme hier — au prix unique du
+    // fournisseur, appliqué à l'entrée comme à la sortie —, et on le DIT
+    // (`ancien`). Réévaluer le passé au tarif d'aujourd'hui changerait des
+    // factures déjà émises et déjà payées.
+    const lignes: LigneFacture[] = brut.filter(b => b.id === ecole.id).map(b => {
+      const ancien = !b.tarifAt;
+      const unique = prix[b.provider] ?? 0;
+      const prixEntree = ancien ? unique : b.prixEntree;
+      const prixSortie = ancien ? unique : b.prixSortie;
+      return {
+        provider: b.provider, modele: b.modele,
+        tokens: b.tokens, tokensIn: b.tokensIn, tokensOut: b.tokensOut, appels: b.appels,
+        prixEntreeMtok: prixEntree, prixSortieMtok: prixSortie,
+        montant: ancien
+          ? coutAuTarif({ entree: prixEntree, sortie: prixSortie }, b.tokensIn, b.tokensOut, 0)
+          : centimes(b.montant),
+        repli: b.repli ?? '', ancien,
+      };
+    }).sort((a, b) => b.montant - a.montant || b.tokens - a.tokens);
 
     const jetons = lignes.reduce((n, l) => n + l.tokens, 0);
     const respire = !!ecole.respire;
     // RESPIRE : zéro, participation comprise. Ces écoles sont la destination
     // des 10 %, pas leur source.
-    // MÊME RÈGLE QUE LE PORTE-MONNAIE, arrondi vers le haut compris : la
-    // facture est le RELEVÉ de ce qui a été décompté, pas un second calcul.
-    // Deux calculs parallèles finissent toujours par diverger d'un centime,
-    // et c'est l'écart inexpliqué qui ruine la confiance.
+    // L'ARRONDI RESTE DIRECTIONNEL — vers le haut, jamais au plus proche : le
+    // service ne doit pas passer dans le rouge par arrondi. Il ne fait plus ici
+    // qu'absorber le bruit des flottants, chaque montant additionné étant déjà
+    // arrondi au centime, mais garder la direction ne coûte rien et perdre la
+    // règle de vue coûterait un jour un demi-centime une fois sur deux.
     const consommation = respire ? 0 : Math.ceil(lignes.reduce((n, l) => n + l.montant, 0) * 100 - 1e-9) / 100;
     // Le taux est celui que CETTE école a choisi — la facture ne peut pas
     // annoncer un pourcentage différent de celui qui a été décompté.

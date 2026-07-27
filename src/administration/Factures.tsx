@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
 import { authHeaders } from "../utils/account";
-import { BTN, type FactureRow, type Participation, type TarifRow } from "./commun";
+import { BTN, type BarreauSansTarif, type FactureRow, type Participation, type RepliObserve,
+  type TarifRow } from "./commun";
 import { MentionsFacture } from "./MentionsFacture";
 import TarifEcole from "./TarifEcole";
 
@@ -39,6 +40,12 @@ export default function Factures({ ecole, variante, demo }: {
   const [impayees, setImpayees] = useState<Impayee[]>([]);
   const [participation, setParticipation] = useState<Participation | null>(null);
   const [tarifsListe, setTarifsListe] = useState<TarifRow[]>([]);
+  // CE QUI MANQUE POUR FACTURER, ET CE QUI A DÉJÀ ÉTÉ FACTURÉ SANS. Les deux
+  // séparément : le premier prévient avant qu'une classe consomme, le second
+  // constate après que l'argent a bougé. Fondre les deux en un seul compteur
+  // ferait disparaître celui qui prévient dès que le second est vide.
+  const [manquants, setManquants] = useState<BarreauSansTarif[]>([]);
+  const [replis, setReplis] = useState<RepliObserve[]>([]);
   const [sondeEnCours, setSondeEnCours] = useState(false);
   const [message, setMessage] = useState("");
   const site = variante === "site";
@@ -60,11 +67,15 @@ export default function Factures({ ecole, variante, demo }: {
     // fournisseur, sans tarif retenu ni mélange) : c'est TarifEcole qui la lit
     // alors, et lire deux fois la même réponse pour n'en afficher qu'une
     // moitié à chaque endroit brouillerait qui montre quoi.
-    if (!site) { setTarifsListe([]); return; }
+    if (!site) { setTarifsListe([]); setManquants([]); setReplis([]); return; }
     fetch("/api/admin/tarifs", { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(d => setTarifsListe(d.tarifs ?? []))
-      .catch(() => setTarifsListe([]));
+      .then(d => {
+        setTarifsListe(d.tarifs ?? []);
+        setManquants(d.manquants ?? []);
+        setReplis(d.replis ?? []);
+      })
+      .catch(() => { setTarifsListe([]); setManquants([]); setReplis([]); });
   }, [demo, period, site]);
 
   useEffect(() => { relire(); }, [relire, ecole]);
@@ -99,6 +110,11 @@ export default function Factures({ ecole, variante, demo }: {
       });
       const d = await fetch("/api/admin/tarifs", { headers: authHeaders() }).then(r => r.json());
       setTarifsListe(d.tarifs ?? []);
+      // La sonde ÉCRIT désormais les prix : la liste des barreaux sans tarif
+      // doit se relire dans la foulée, sans quoi l'écran continuerait d'alerter
+      // sur un trou que le bouton vient de combler.
+      setManquants(d.manquants ?? []);
+      setReplis(d.replis ?? []);
     } finally { setSondeEnCours(false); }
   };
 
@@ -129,14 +145,47 @@ export default function Factures({ ecole, variante, demo }: {
                   </button>
                 )}
               </div>
+              {/* UNE LIGNE PAR MODÈLE, avec les deux jeux de jetons et les deux
+                  prix appliqués : c'est ce qui rend le total refaisable à la
+                  main. La clé est composite — un même modèle peut apparaître
+                  deux fois si son prix a changé en cours de mois, et c'est
+                  précisément ce qu'on veut rendre visible. */}
               {f.lignes.length > 0 && (
                 <table className="mt-2 w-full text-left text-xs">
                   <tbody>
                     {f.lignes.map(l => (
-                      <tr key={l.provider} className="opacity-70">
-                        <td className="py-0.5">{l.provider}</td>
-                        <td className="text-right">{l.tokens.toLocaleString("fr-CH")} {t("admin.facture.tokens")}</td>
-                        <td className="text-right">× {l.prixMtok.toFixed(2)} / M</td>
+                      <tr key={`${l.provider}·${l.modele}·${l.prixEntreeMtok}·${l.prixSortieMtok}`} className="opacity-70">
+                        <td className="py-0.5">
+                          {l.modele || l.provider}
+                          <span className="ml-1 opacity-50">{l.provider}</span>
+                          {/* LE REPLI SE VOIT, ou il ne sert à rien. Une ligne
+                              facturée au prix d'un autre modèle ne doit pas
+                              ressembler à une ligne mesurée. */}
+                          {l.repli && (
+                            <span className="ml-1 rounded bg-amber-500/25 px-1 text-amber-200" title={l.repli}>
+                              {t("admin.facture.fallback")}
+                            </span>
+                          )}
+                          {l.ancien && !l.repli && (
+                            <span className="ml-1 rounded bg-white/10 px-1" title={t("admin.facture.legacyTitle")}>
+                              {t("admin.facture.legacy")}
+                            </span>
+                          )}
+                        </td>
+                        {/* LE NOMBRE D'APPELS EST CE QUI EXPLIQUE L'ÉCART entre
+                            le produit jetons × prix et le montant : l'arrondi
+                            monte appel par appel, jamais plus d'un centime
+                            chacun. Sans ce chiffre, qui refait le calcul trouve
+                            moins et croit à une erreur. */}
+                        <td className="text-right whitespace-nowrap">
+                          {t("admin.facture.calls", { n: l.appels })}
+                        </td>
+                        <td className="text-right whitespace-nowrap">
+                          {l.tokensIn.toLocaleString("fr-CH")} × {l.prixEntreeMtok.toFixed(2)}
+                        </td>
+                        <td className="text-right whitespace-nowrap">
+                          {l.tokensOut.toLocaleString("fr-CH")} × {l.prixSortieMtok.toFixed(2)}
+                        </td>
                         <td className="text-right">{l.montant.toFixed(2)}</td>
                       </tr>
                     ))}
@@ -329,6 +378,49 @@ export default function Factures({ ecole, variante, demo }: {
           </table>
           <p className="mt-1 text-xs opacity-50">{t("admin.sonde.caveat")}</p>
         </>
+      )}
+
+      {/* ─── LES DEUX TRACES DU REPLI, ET ELLES NE DISENT PAS LA MÊME CHOSE ───
+          Un modèle sans prix relevé n'arrête rien : il est facturé au prix du
+          barreau le plus cher connu de son fournisseur, ce qui protège le
+          budget dans le bon sens et laisse une classe finir sa séance. Mais un
+          décompte approximatif qui ne se voit pas est un décompte faux qu'on
+          découvre à la fin de l'année. D'où deux blocs, jamais fondus en un :
+          celui-ci PRÉVIENT — un barreau de l'échelle sans prix, avant même
+          qu'une classe consomme dedans. */}
+      {site && manquants.length > 0 && (
+        <div className="mt-6 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+          <b>{t("admin.tarif.missingHeading", { n: manquants.length })}</b>
+          <p className="mt-1 opacity-80">{t("admin.tarif.missingHelp")}</p>
+          <ul className="mt-1 list-inside list-disc font-mono opacity-90">
+            {manquants.map(m => <li key={`${m.provider}·${m.barreau}`}>{m.provider} · {m.barreau}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* … et celui-là CONSTATE : de l'argent déjà prélevé au prix d'un autre
+          modèle. Le montant est là parce que c'est lui qui dit si le trou est
+          une curiosité ou un problème. */}
+      {site && replis.length > 0 && (
+        <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+          <b>{t("admin.tarif.fallbackHeading", { n: replis.length })}</b>
+          <p className="mt-1 opacity-80">{t("admin.tarif.fallbackHelp")}</p>
+          <table className="mt-1 w-full text-left">
+            <tbody>
+              {replis.map(r => (
+                <tr key={`${r.provider}·${r.modele}·${r.repli}`} className="align-top">
+                  <td className="py-0.5 pr-2 font-mono">{r.provider} · {r.modele}</td>
+                  <td className="pr-2 text-right">{t("admin.tarif.fallbackCalls", { n: r.appels })}</td>
+                  <td className="pr-2 text-right font-mono">{r.montant.toFixed(2)}</td>
+                  {/* LA RAISON EN CLAIR, telle qu'elle a été écrite sur la
+                      ligne de journal et sur le registre du porte-monnaie :
+                      trois endroits, une seule phrase, aucun décalage possible. */}
+                  <td className="opacity-70">{r.repli}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Ce que la participation a rapporté, face à ce qu'elle a financé.

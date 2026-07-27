@@ -61,7 +61,31 @@ export type AdminComment = {
   createdAt: number; moderatedAt: number | null; moderatedBy: string | null;
   promptName: string; promptAuthorEmail: string | null;
 };
-export type LigneFacture = { provider: string; tokens: number; prixMtok: number; montant: number };
+/**
+ * UNE LIGNE DE FACTURE — de quoi la refaire soi-même, et rien de moins.
+ *
+ * Le MODÈLE la porte, plus le fournisseur : un éditeur n'a pas un prix, il en a
+ * un par barreau, et deux par barreau (entrée, sortie) dont le rapport va de 1
+ * à 5. Les deux prix sont ceux QUI ONT ÉTÉ APPLIQUÉS à ces appels-là, jamais
+ * ceux d'aujourd'hui — c'est ce qui permet de rouvrir une facture de mars sans
+ * qu'un changement de tarif d'avril la déplace.
+ */
+export type LigneFacture = {
+  provider: string; modele: string;
+  tokens: number; tokensIn: number; tokensOut: number;
+  /**
+   * Le nombre d'appels — sans lui la ligne ne se recoupe pas. Le montant est la
+   * somme d'arrondis pris appel par appel (toujours vers le haut) : il dépasse
+   * donc le produit jetons × prix, d'au plus un centime par appel.
+   */
+  appels: number;
+  prixEntreeMtok: number; prixSortieMtok: number;
+  montant: number;
+  /** Vide quand le prix est celui du modèle ; sinon ce qui a servi à sa place. */
+  repli: string;
+  /** Ligne antérieure au prix par modèle, relue au prix unique du fournisseur. */
+  ancien: boolean;
+};
 /**
  * Les mentions administratives d'un mois : ce que l'école ajoute pour que sa
  * comptabilité puisse payer. AUCUNE n'entre dans un calcul — le montant reste
@@ -104,6 +128,26 @@ export type TarifRow = {
   provider: string; prixMtok: number; proposition: PropositionTarif | null;
   /** Page du catalogue public où recouper ce tarif ; null hors fournisseurs d'école. */
   verifier: string | null;
+};
+/**
+ * UN PRIX QUI FACTURE — par modèle, entrée et sortie, dans la monnaie de la
+ * mesure. À ne pas confondre avec `PropositionTarif`, qui n'est qu'un repère
+ * d'arbitrage : celui-ci est appliqué.
+ */
+export type TarifApplique = {
+  provider: string; modele: string;
+  entreeMtok: number; sortieMtok: number;
+  devise: string;
+  /** Le modèle du catalogue public d'où le prix vient — c'est là qu'on recoupe. */
+  source: string;
+  at: number;
+};
+/** Un barreau d'échelle qu'aucun prix ne couvre : il sera facturé au repli. */
+export type BarreauSansTarif = { provider: string; barreau: string };
+/** Un repli DÉJÀ appliqué à de l'argent réel, sur les trente derniers jours. */
+export type RepliObserve = {
+  provider: string; modele: string; repli: string;
+  appels: number; montant: number; dernier: number;
 };
 export type CatalogueRow = { provider: string; source: string; count: number; at: number };
 export type LadderRow = {

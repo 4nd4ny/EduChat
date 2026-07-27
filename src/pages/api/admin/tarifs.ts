@@ -1,8 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { PORTEE_ECOLE, porteeEcoleActive, requireAdmin, requireSuperAdmin } from '../../../server/admin';
 import { getEtablissementById } from '../../../server/etablissements';
-import { tarifs, reglerTarif } from '../../../server/facturation';
-import { propositions, sonderTarifs, lienVerification, RATIO_ENTREE } from '../../../server/sondeTarifs';
+import { tarifs, reglerTarif, repliObserves } from '../../../server/facturation';
+import { propositions, sonderTarifs, lienVerification, tarifsAppliques, RATIO_ENTREE }
+  from '../../../server/sondeTarifs';
 import { BillingCurrency, BillingSurchargePct } from '../../../utils/env';
 import { PROVIDER_IDS, type ProviderId } from '../../../shared/providers';
 import { ERR } from '../../../shared/providers';
@@ -30,6 +31,14 @@ import { ERR } from '../../../shared/providers';
 //
 // ÉCRITURE réservée au site : le tarif vaut pour toutes les écoles, une seule
 // d'entre elles ne peut pas le fixer.
+//
+// CE QUE LE POST ÉCRIT N'EST PLUS CE QUI FACTURE. `prixMtok` est le prix UNIQUE
+// par fournisseur : il ne sert désormais que de dernier recours, là où la sonde
+// n'a relevé aucun prix par modèle (voir tarifDuModele). Ce qui facture, ce sont
+// les deux prix du MODÈLE appelé — servis ici sous `appliques`, et écrits par la
+// sonde, jamais à la main : un chiffre recopié à la main pour onze fournisseurs
+// et trente-trois barreaux serait périmé le mois suivant, et personne ne le
+// saurait.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     const scope = requireAdmin(req);
@@ -94,10 +103,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // n'a jamais rien répondu à personne.
     if (scope.niveau !== 'super') return res.status(403).json({ error: { code: 'ERR_SUPER_ONLY' } });
     const courants = tarifs();
+    const { prix, manquants } = tarifsAppliques();
     return res.status(200).json({
       devise: BillingCurrency,
       participationPct: BillingSurchargePct,
       ratioEntree: RATIO_ENTREE,
+      // ─── CE QUI FACTURE VRAIMENT, ET CE QUI MANQUE POUR FACTURER ───
+      //
+      // `appliques` est la table des prix par modèle : c'est elle, et non plus
+      // `prixMtok`, qui décide de ce qu'une école paie. `manquants` liste les
+      // barreaux d'échelle qu'aucun prix ne couvre — ils seront facturés au
+      // repli, et il faut le savoir AVANT qu'une classe consomme dedans.
+      // `replis` dit, lui, ce qui l'a DÉJÀ été : l'un prévient, l'autre
+      // constate, et aucun des deux ne remplace l'autre.
+      appliques: prix, manquants, replis: repliObserves(),
       tarifs: PROVIDER_IDS.map(provider => ({
         provider,
         prixMtok: courants[provider] ?? 0,

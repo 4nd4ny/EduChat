@@ -11,7 +11,7 @@ import { getPublishedByName, getByShareToken, porteeAppelant, PorteeCatalogue } 
 import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { seanceActive, seanceAutoriseFournisseur } from "../../server/seance";
-import { aDuCredit, aUnPorteMonnaie, decompter, titulaireCompte, titulaireEcole }
+import { aDuCredit, aUnPorteMonnaie, decompter, tarifDuModele, titulaireCompte, titulaireEcole }
   from "../../server/porteMonnaie";
 import { notifyAdmin } from "../../server/mail";
 import { touchPresence } from "../../server/stats";
@@ -317,8 +317,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Règle d'accès, par ordre de priorité :
   //  1. clé personnelle (BYOK) → toujours acceptée, avec le fournisseur/modèle du client ;
-  //  2. site déverrouillé OU IP d'établissement en plage horaire → clé interne
-  //     du fournisseur choisi, soumise aux quotas (facturée, journalisée avec l'IP).
+  //  2. SALLE OUVERTE PAR SON ÉCOLE, ou IP d'établissement en plage horaire →
+  //     clé interne du fournisseur choisi, soumise aux quotas (facturée,
+  //     journalisée avec l'IP). Les deux branches parlent du MÊME lieu : le
+  //     verrou de salle ne vaut plus que pour le réseau qui l'a ouvert.
   //     JAMAIS pour un anonyme hors campus : voir la garde, plus bas ;
   //  3. PORTE-MONNAIE PERSONNEL → clé interne, décomptée sur le crédit du
   //     compte. Journalisée SANS IP ni établissement : la consommation d'une
@@ -332,10 +334,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // L'ORDRE 2 AVANT 3 EST UNE DÉCISION D'ARGENT, PAS UN HASARD. Là où l'école
   // finance déjà (son réseau, ses horaires, son porte-monnaie), elle continue
   // de payer : déplacer silencieusement la dépense sur le crédit d'un élève
-  // parce qu'il en a un serait lui faire payer le cours. De même quand le site
-  // est GLOBALEMENT déverrouillé (verrou /api/auth) : la plateforme offre alors
-  // le service à tout le monde, et on ne prélève pas un crédit personnel pour
-  // ce qu'on donne au même instant à l'anonyme d'à côté.
+  // parce qu'il en a un serait lui faire payer le cours. De même quand la salle
+  // est ouverte (verrou /api/auth, posé depuis /enseignant) : c'est l'école qui
+  // vient de dire « je paie pour cette heure », et on ne prélève pas le crédit
+  // d'un élève pour ce qu'elle offre au même instant à son voisin de table.
   let apiKey = personalKey;
   let effProvider: ProviderId = provider;   // fournisseur RÉELLEMENT utilisé
   let effModel = model;                      // modèle RÉELLEMENT utilisé
@@ -372,33 +374,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // et c'est exactement le défaut que accesFournisseurs.ts existe pour
     // supprimer — « c'est toujours la copie la plus permissive qui survit ».
     //
-    // LA REQUÊTE FORGÉE, EN UNE LIGNE. Site globalement déverrouillé (verrou
-    // /api/auth, posé depuis /school), visiteur sans compte et hors du réseau
-    // de toute école, `POST {provider:"anthropic"}` sans clé : mayUseServerKeys
-    // répondait `true` sur le seul verrou global, `anthropic` n'est ni écarté
-    // ni drapeau rouge, et `etablissementId` étant nul, ni le porte-monnaie ni
-    // les quotas ne mordaient. C'était Claude, sur la clé de la plateforme, à
-    // un inconnu, sans que rien ne soit décompté à personne. Sa liste, elle,
-    // ne contenait que le repli gratuit : l'écran promettait moins que ce que
-    // le serveur donnait — l'écart qu'on ne remarque jamais, puisqu'il ne
-    // produit aucune erreur.
+    // LA REQUÊTE FORGÉE, EN UNE LIGNE. Une école ouvrait sa salle (verrou
+    // /api/auth), un visiteur sans compte et hors du réseau de toute école
+    // postait `{provider:"anthropic"}` sans clé : mayUseServerKeys répondait
+    // `true` sur le seul verrou, alors GLOBAL, `anthropic` n'est ni écarté ni
+    // drapeau rouge, et `etablissementId` étant nul, ni le porte-monnaie ni les
+    // quotas ne mordaient. C'était Claude, sur la clé de la plateforme, à un
+    // inconnu, sans que rien ne soit décompté à personne — pas même à l'école
+    // qui avait ouvert. Sa liste, elle, ne contenait que le repli gratuit :
+    // l'écran promettait moins que ce que le serveur donnait — l'écart qu'on ne
+    // remarque jamais, puisqu'il ne produit aucune erreur.
+    //
+    // LA CAUSE EST RÉPARÉE EN AMONT : le verrou porte l'école qui l'a ouvert et
+    // ne s'ouvre que pour ses adresses (salleDepuisIp), si bien que
+    // mayUseServerKeys rend désormais `false` à ce visiteur. Le test ci-dessous
+    // reste : deux gardes qui disent la même chose, dont une seule dépend de
+    // l'état d'un fichier sur disque.
     //
     // LE MÊME TEST RÉPARE L'INVERSE. La liste d'un anonyme hors campus se
     // réduit désormais au seul fournisseur du repli gratuit, et ChatSettings
     // aligne le menu dessus — or ce fournisseur est OpenRouter, à drapeau
-    // rouge, que la branche ci-dessous refuse tout net. Site déverrouillé, ce
-    // visiteur ne recevait donc plus RIEN (403) là où il recevait hier la
-    // démonstration. Il tombe maintenant sur le repli gratuit, verrou ouvert
-    // ou fermé — c'est-à-dire sur ce que la matrice lui promet, et sur la même
-    // chose dans les deux états du site.
+    // rouge, que la branche ci-dessous refuse tout net. Du temps du verrou
+    // global, ce visiteur ne recevait donc plus RIEN (403) dès qu'une salle
+    // était ouverte quelque part, là où il recevait hier la démonstration. Il
+    // tombe maintenant sur le repli gratuit, qu'une salle soit ouverte ou non
+    // — c'est-à-dire sur ce que la matrice lui promet, et sur la même chose
+    // quoi qu'il arrive ailleurs.
     //
-    // CE QUE CELA COÛTE, ET POURQUOI C'EST LE BON PRIX. Une école
-    // mono-établissement qui s'appuierait sur le verrou global SANS avoir
-    // déclaré son adresse (ni en base, ni dans SECRET_ALLOWED_IPS) retombe sur
-    // le modèle gratuit : `surLeCampus` ne la reconnaît pas. Le remède existe
-    // et il est le bon — déclarer l'adresse, ce que la fonction honore déjà —,
-    // et une adresse ILLISIBLE compte de toute façon pour une école, si bien
-    // qu'un proxy cassé n'enferme personne. Payer la clé de la plateforme pour
+    // CE QUE CELA COÛTE, ET POURQUOI C'EST LE BON PRIX. Une école qui
+    // s'appuierait sur le verrou SANS avoir déclaré son adresse (ni en base, ni
+    // dans SECRET_ALLOWED_IPS) retombe sur le modèle gratuit : `surLeCampus` ne
+    // la reconnaît pas — et depuis que le verrou lui-même exige une adresse
+    // reconnue pour s'ouvrir, elle ne pourrait de toute façon plus ouvrir sa
+    // salle. Le remède existe et il est le bon : déclarer l'adresse. Une
+    // adresse ILLISIBLE compte de toute façon pour une école, si bien qu'un
+    // proxy cassé n'enferme personne. Payer la clé de la plateforme pour
     // n'importe qui, au motif qu'une école a oublié de se déclarer, serait
     // l'échange inverse.
     if (perimetre.motif !== 'demo' && await mayUseServerKeys(clientIp)) {
@@ -583,20 +593,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           db.prepare('UPDATE prompts SET usage_count = usage_count + 1, tokens_total = tokens_total + ? WHERE id = ?')
             .run(tokenUsage, promptRow.id);
         }
+        // ─── LE TARIF DU MODÈLE RÉELLEMENT APPELÉ, RÉSOLU UNE SEULE FOIS ───
+        //
+        // `effModel` — pas le fournisseur, pas le modèle demandé : celui qui a
+        // effectivement produit la réponse, après repli de barreau ou passage
+        // au petit modèle gratuit. C'est lui que l'éditeur facture, c'est donc
+        // lui qui fixe les deux prix.
+        //
+        // UNE SEULE RÉSOLUTION POUR LES DEUX ÉCRITURES. La ligne de journal
+        // porte le prix appliqué, le registre porte le montant prélevé : les
+        // résoudre séparément suffirait à ce qu'une sonde tombée entre les deux
+        // fasse dire à la facture autre chose qu'au solde.
+        //
+        // RIEN N'EST RÉSOLU POUR UNE CLÉ PERSONNELLE. Aucune des trois branches
+        // ci-dessous ne s'exécute alors — pas de ligne de journal, pas de
+        // décompte — et interroger le tarif d'un modèle que personne ne nous
+        // facture n'aurait servi qu'à sonder la base pour rien.
+        if (!usedServerKey && !payeurCompte && !usedFreeKey) return;
+        const tarif = tarifDuModele(effProvider, effModel);
+        // `tarif_repli` est borné : c'est une phrase composée par le serveur,
+        // mais une colonne de journal n'a pas à accueillir un texte sans fin.
+        const repli = tarif.repli.slice(0, 200);
         if (usedServerKey) {
           // Clé interne : journalisée AVEC l'IP d'établissement (facturation).
-          db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          const ligne = db.prepare(`
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id, prix_entree_mtok, prix_sortie_mtok, tarif_repli, tarif_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
           `).run(Date.now(), clientIp, etablissementId, teacherEmail, promptRow?.id ?? null, effProvider, effModel,
-                 tokenUsage, detail.entree, detail.sortie, studentBucket);
+                 tokenUsage, detail.entree, detail.sortie, studentBucket,
+                 tarif.entree, tarif.sortie, repli, tarif.at);
           // Décompte du porte-monnaie DANS LA MÊME TRANSACTION que la ligne de
           // journal : séparés, le registre et le solde finiraient par diverger,
           // et plus rien ne se réconcilierait. L'exonération RESPIRE est
           // vérifiée dans decompter, pas ici : une règle de gratuité ne se
           // répète pas à chaque point d'appel.
           if (etablissementId) {
-            decompter(titulaireEcole(etablissementId), effProvider, detail.entree, detail.sortie, effModel);
+            const cout = decompter(titulaireEcole(etablissementId), tarif, detail.entree, detail.sortie);
+            // LE MONTANT PRÉLEVÉ, RECOPIÉ SUR LA LIGNE DE JOURNAL — et c'est ce
+            // qui rend la facture égale au registre, au centime près. L'arrondi
+            // du porte-monnaie monte APPEL PAR APPEL ; une facture qui
+            // additionnerait les jetons du mois pour ne monter qu'une fois à la
+            // fin rendrait un total inférieur d'un centime par appel à ce qui a
+            // été réellement débité. On additionne donc des prélèvements, pas
+            // des jetons — les jetons et les deux prix restent là pour que le
+            // calcul se REFASSE, jamais pour qu'il se remplace.
+            //
+            // Une écriture de plus dans la même transaction : ou les trois
+            // tiennent, ou aucune.
+            //
+            // UN ZÉRO ICI VEUT DIRE « RIEN N'A ÉTÉ PRÉLEVÉ », et c'est la
+            // vérité pour une école RESPIRE — exonérée, mais dont l'appel a
+            // bien un coût, que les deux prix de la ligne continuent de dire.
+            // Ce n'est PAS l'aveu d'une facturation ratée : decompter ne rend
+            // zéro que pour l'exonération, et un porte-monnaie introuvable
+            // ferait lever bouger() avant d'arriver jusqu'ici.
+            db.prepare('UPDATE usage_log SET montant = ? WHERE id = ?')
+              .run(cout, ligne.lastInsertRowid);
           }
         } else if (payeurCompte) {
           // PORTE-MONNAIE PERSONNEL : journal SANS IP, SANS établissement et
@@ -615,20 +667,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // ce que fait déjà le repli gratuit. L'alerte « IP gourmande », elle,
           // ne se déclenche pas : elle est gardée par la variable usedServerKey,
           // restée fausse, et interroge de toute façon une IP réelle.
-          db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
-            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '')
-          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie);
+          const ligne = db.prepare(`
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id, prix_entree_mtok, prix_sortie_mtok, tarif_repli, tarif_at)
+            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '', ?, ?, ?, ?)
+          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie,
+                 tarif.entree, tarif.sortie, repli, tarif.at);
           // Décompte dans la MÊME transaction que la ligne de journal, comme
           // pour une école : séparés, le registre et le solde divergent.
-          decompter(titulaireCompte(payeurCompte), effProvider, detail.entree, detail.sortie, effModel);
+          const cout = decompter(titulaireCompte(payeurCompte), tarif, detail.entree, detail.sortie);
+          db.prepare('UPDATE usage_log SET montant = ? WHERE id = ?').run(cout, ligne.lastInsertRowid);
         } else if (usedFreeKey) {
           // Clé gratuite publique : journalisée SANS IP ni établissement (suivi
           // du budget gratuit uniquement, aucune donnée personnelle).
+          //
+          // LES DEUX PRIX Y FIGURENT QUAND MÊME, `montant` restant à zéro : la
+          // démonstration est offerte, elle n'est pas gratuite pour autant, et
+          // ce qu'elle COÛTE ne se retrouve plus après coup si la ligne ne
+          // porte pas le tarif du jour. La distinction est nette et voulue —
+          // les prix disent ce que ça a coûté, `montant` dit ce qui a été
+          // prélevé à quelqu'un.
           db.prepare(`
-            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
-            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '')
-          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie);
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id, prix_entree_mtok, prix_sortie_mtok, tarif_repli, tarif_at)
+            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '', ?, ?, ?, ?)
+          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie,
+                 tarif.entree, tarif.sortie, repli, tarif.at);
         }
       })();
     } catch (statsError) {

@@ -1,6 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
-import { getClientIp, getAuthLockExpiry, isRateLimited } from '../../server/access';
+import {
+  getClientIp, getAuthLockExpiry, isRateLimited, salleDepuisIp, porteeEtablissement,
+} from '../../server/access';
 import { requireAuth } from '../../server/token';
 import { ecoleEnseignante } from '../../server/appartenance';
 import { DeveloperKeys, MaxUnlockMinutes } from '../../utils/env';
@@ -75,7 +77,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // la preuve enseignante — modèle de confiance de la classe), ou avec un
   // compte enseignant vérifié (rôle ET rattachement relus en base).
   const auth = requireAuth(req);
-  const lockExpiry = await getAuthLockExpiry();
+  // LE VERROU DE LA SALLE D'OÙ L'ON ÉCRIT — un TITRE, pas une horloge. Depuis
+  // que le verrou porte une école, celui d'un autre établissement n'autorise
+  // plus rien ici : le mot de passe de salle prouve l'enseignant DE CETTE
+  // SALLE. Avant, n'importe quelle ouverture, n'importe où, valait laissez-passer.
+  const porteeAppelante = await salleDepuisIp(ip);
+  const salleOuverte = await getAuthLockExpiry(porteeAppelante?.cle ?? null);
   // L'ÉCOLE ACTIVE, ET UN TITRE POUR ELLE — la garde commune à toutes les vues
   // où le compte l'emporte sur l'IP (ecoleEnseignante, src/server/appartenance.ts).
   //
@@ -90,7 +97,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Le chemin sans compte n'est pas touché : le mot de passe de salle reste la
   // preuve enseignante de la classe, et il vise l'école de l'IP.
   const teacherEtabId = ecoleEnseignante(req);
-  if (!lockExpiry && teacherEtabId === null) {
+  if (!salleOuverte && teacherEtabId === null) {
     return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   }
   // La CIBLE de l'écriture est l'établissement DU PROF (son rattachement, relu
@@ -163,7 +170,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       : seanceRestreinte(encours?.providers) ? SEANCE_SANS_FOURNISSEUR : '';
   }
 
-  const expiresAt = lockExpiry || Date.now() + MaxUnlockMinutes * 60_000;
+  // DEUX VERROUS, DEUX QUESTIONS. Celui de la salle appelante a AUTORISÉ
+  // l'écriture (plus haut) ; celui de l'école CIBLE en fixe l'échéance — « tout
+  // expire avec le verrou de la salle », et la salle dont il s'agit est celle
+  // où le tuteur va s'afficher. Les confondre datait la séance d'une école sur
+  // le cours d'une autre ; et pour l'enseignant qui prépare de chez lui, où
+  // aucune salle n'est ouverte, seule la lecture sur la cible peut aligner la
+  // séance sur le cours qui l'attend. Sans verrou en cours là-bas, on retombe
+  // sur le plafond, comme avant.
+  const expiresAt = await getAuthLockExpiry(porteeEtablissement(targetEtabId))
+    || Date.now() + MaxUnlockMinutes * 60_000;
   getDb().prepare(`
     INSERT INTO session_settings (etablissement_id, default_prompt_id, web_search, providers, set_by_email, expires_at)
     VALUES (@id, @promptId, @webSearch, @providers, @email, @expires)

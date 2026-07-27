@@ -76,6 +76,19 @@ const ProtectedPage: React.FC<ProtectedPageProps> = ({ children }) => {
       if (data.success) {
         setIsAuthorized(true);
         setShowSetup(true);
+      } else if (data?.error?.code === 'ERR_NO_ETABLISSEMENT') {
+        // BON MOT DE PASSE, MAUVAIS RÉSEAU. Le verrou porte l'école du réseau
+        // appelant : hors d'un réseau scolaire déclaré, il n'y a pas de salle à
+        // ouvrir, et le mot de passe n'y peut rien. Dire « incorrect » ici
+        // enverrait toute une classe le retaper.
+        // (Cet écran hérité n'est pas encore traduit — d'où le français en dur,
+        // comme les deux messages voisins.)
+        alert("Cette adresse n'est rattachée à aucun établissement : l'accès ne peut être ouvert que depuis le réseau de l'école.");
+      } else if (data?.error?.code === 'ERR_LOCK_WRITE') {
+        // Le mot de passe était bon et le réseau aussi : c'est le serveur qui
+        // n'a pas su enregistrer l'ouverture. Dire « incorrect » ferait retaper
+        // indéfiniment un mot de passe qui n'y est pour rien.
+        alert("L'ouverture n'a pas pu être enregistrée par le serveur. Réessayez dans un instant.");
       } else {
         alert('Mot de passe incorrect');
       }

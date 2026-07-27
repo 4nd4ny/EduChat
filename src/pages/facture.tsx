@@ -150,28 +150,88 @@ export default function FacturePage() {
             <p className="mt-6 rounded border border-black/20 p-3 text-sm">{t("facture.respire")}</p>
           ) : (
             <>
+              {/* SIX COLONNES, ET C'EST LE DOCUMENT ENTIER QUI CHANGE DE NATURE.
+                  Le modèle est nommé, les jetons sont séparés, et chacun porte
+                  le prix qu'on lui a appliqué. Une intendance rouvre le tarif
+                  public du modèle, multiplie, et retrouve le montant : plus
+                  rien ici ne se prend sur parole. Le tableau précédent donnait
+                  un fournisseur, un total de jetons et UN prix — appliqué à
+                  l'entrée comme à la sortie, là où l'éditeur en publie deux
+                  dont le rapport va de 1 à 5. Aucun de ses chiffres ne se
+                  retrouvait nulle part. */}
               <table className="mt-6 w-full text-left text-sm">
                 <thead className="border-b border-black/20 text-xs uppercase opacity-60">
                   <tr>
-                    <th className="py-1">{t("admin.col.provider")}</th>
-                    <th className="text-right">{t("admin.col.tokens")}</th>
-                    <th className="text-right">{t("facture.col.price")}</th>
+                    <th className="py-1">{t("facture.col.model")}</th>
+                    <th className="text-right">{t("facture.col.calls")}</th>
+                    <th className="text-right">{t("facture.col.tokensIn")}</th>
+                    <th className="text-right">{t("facture.col.priceIn")}</th>
+                    <th className="text-right">{t("facture.col.tokensOut")}</th>
+                    <th className="text-right">{t("facture.col.priceOut")}</th>
                     <th className="text-right">{t("facture.col.amount")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {facture.lignes.length === 0 && (
-                    <tr><td colSpan={4} className="py-2 opacity-60">{t("facture.emptyLines")}</td></tr>
+                    <tr><td colSpan={7} className="py-2 opacity-60">{t("facture.emptyLines")}</td></tr>
                   )}
                   {/* AUCUN FILTRE ICI. Une ligne de cette table est de l'argent
                       déjà décompté : la retirer parce que le fournisseur n'est
                       plus servi aujourd'hui ferait un total que ses propres
                       lignes ne justifient plus. */}
                   {facture.lignes.map(l => (
-                    <tr key={l.provider} className="border-b border-black/10">
-                      <td className="py-1">{l.provider}</td>
-                      <td className="text-right">{l.tokens.toLocaleString(router.locale || "fr-CH")}</td>
-                      <td className="text-right">{l.prixMtok.toFixed(2)} / M</td>
+                    /* LA CLÉ EST COMPOSITE, et il le faut : deux lignes peuvent
+                       porter le même modèle si son prix a changé en cours de
+                       mois — c'est même exactement ce qu'on veut montrer. */
+                    <tr key={`${l.provider}·${l.modele}·${l.prixEntreeMtok}·${l.prixSortieMtok}`}
+                      className="border-b border-black/10">
+                      <td className="py-1">
+                        {l.modele || l.provider}
+                        <span className="block text-[10px] opacity-60">{l.provider}</span>
+                        {/* CE QUI N'A PAS ÉTÉ FACTURÉ AU PRIX DU MODÈLE SE DIT
+                            SUR LA FACTURE ELLE-MÊME. Un repli tu sur un
+                            document comptable, c'est une approximation qu'on
+                            fait passer pour une mesure.
+
+                            LA MENTION EST TRADUITE, LA RAISON EXACTE EST AU
+                            SURVOL — et l'ordre des deux n'est pas indifférent.
+                            `l.repli` est une phrase composée par le serveur EN
+                            FRANÇAIS et figée sur la ligne de journal le jour de
+                            l'appel : l'afficher telle quelle mettait du français
+                            dans le corps d'une facture qu'une direction
+                            italienne ou alémanique doit pouvoir lire et
+                            transmettre à son intendance. On dit donc DANS SA
+                            LANGUE qu'un repli a joué — le fait, qui décide de la
+                            lecture du chiffre — et on garde la phrase d'origine
+                            en `title`, où elle nomme le barreau substitué sans
+                            qu'on ait eu à retraduire un texte déjà écrit en
+                            base. Même partage que dans l'administration
+                            (Factures.tsx), pour que les deux écrans ne se
+                            contredisent pas.
+
+                            LA MENTION TRADUITE NE NOMME PAS LE SUBSTITUT, et
+                            c'est délibéré : `l.repli` recouvre TROIS cas — le
+                            barreau le plus cher du fournisseur, le prix unique
+                            réglé à la main, et « aucun tarif connu », où rien
+                            n'a été décompté. Une mention qui annoncerait le
+                            premier des trois mentirait sur les deux autres, et
+                            la troisième se lirait à côté d'un montant à 0.00 sur
+                            la même ligne — une facture qui se contredit d'une
+                            colonne à l'autre. On dit donc LE FAIT COMMUN aux
+                            trois (aucun tarif n'était relevé pour ce modèle) et
+                            on renvoie au survol pour lequel des trois a joué. */}
+                        {(l.repli || l.ancien) && (
+                          <span className="block text-[10px] italic opacity-70"
+                            title={l.repli || undefined}>
+                            {l.repli ? t("facture.line.fallback") : t("facture.line.legacy")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right">{l.appels.toLocaleString(router.locale || "fr-CH")}</td>
+                      <td className="text-right">{l.tokensIn.toLocaleString(router.locale || "fr-CH")}</td>
+                      <td className="text-right">{l.prixEntreeMtok.toFixed(2)} / M</td>
+                      <td className="text-right">{l.tokensOut.toLocaleString(router.locale || "fr-CH")}</td>
+                      <td className="text-right">{l.prixSortieMtok.toFixed(2)} / M</td>
                       <td className="text-right">{l.montant.toFixed(2)}</td>
                     </tr>
                   ))}

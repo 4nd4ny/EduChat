@@ -47,6 +47,13 @@ type Status = {
   /** Est-on physiquement sur le réseau de `ecole` ? */
   surPlace: boolean;
   open: boolean;
+  /**
+   * Une salle peut-elle être ouverte DEPUIS CETTE ADRESSE ? Le mot de passe ne
+   * suffit plus : le verrou porte l'école du réseau appelant, et hors d'un
+   * réseau scolaire il n'y a rien à ouvrir. Vrai aussi pour une adresse
+   * d'amorçage, qui n'a pourtant pas de nom (`etablissement` reste null).
+   */
+  salleOuvrable: boolean;
   lockExpiresAt: number | null;
   withinSchedule: boolean;
   maxUnlockMinutes: number;
@@ -119,7 +126,7 @@ export default function EnseignantPage() {
       setStatus({
         ip: "203.0.113.10",
         etablissement: { name: t("session.demo.school"), hasOwnHours: true },
-        ecole: { id: 1, name: t("session.demo.school") }, surPlace: true,
+        ecole: { id: 1, name: t("session.demo.school") }, surPlace: true, salleOuvrable: true,
         open: false, lockExpiresAt: null, withinSchedule: true, maxUnlockMinutes: 240,
         // Salle fictive : on montre TOUTE la liste scolaire, sans regarder
         // quelles clés la plateforme détient réellement.
@@ -192,9 +199,20 @@ export default function EnseignantPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success) {
-        setError(response.status === 429
-          ? t("session.error.tooManyAttempts")
-          : t("session.error.badPassword"));
+        // QUATRE REFUS, QUATRE PHRASES. « Hors réseau » n'est pas « mot de
+        // passe faux » : le second se corrige en retapant, le premier ne se
+        // corrige pas du tout depuis là où l'on est. Et « l'état n'a pas pu
+        // s'écrire » n'est ni l'un ni l'autre — le mot de passe était bon, le
+        // réseau aussi, c'est le serveur qui a échoué et il faut réessayer. Les
+        // confondre enverrait un enseignant vérifier un mot de passe correct
+        // pendant que sa classe attend.
+        setError(data?.error?.code === "ERR_NO_ETABLISSEMENT"
+          ? t("session.error.openNeedsSchoolNetwork")
+          : data?.error?.code === "ERR_LOCK_WRITE"
+            ? t("session.error.lockWrite")
+            : response.status === 429
+              ? t("session.error.tooManyAttempts")
+              : t("session.error.badPassword"));
         return;
       }
       setMessage(t("session.msg.opened", { n: minutes }));
@@ -214,7 +232,19 @@ export default function EnseignantPage() {
         body: JSON.stringify({ action: "close", password }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.success) { setError(t("session.error.badPassword")); return; }
+      if (!response.ok || !data.success) {
+        // LE CAS QUI COMPTE LE PLUS ICI. Une fermeture qui échoue laisse la
+        // salle OUVERTE jusqu'à son échéance : c'est l'unique message de cet
+        // écran qu'il ne faut surtout pas confondre avec « mot de passe
+        // incorrect », lequel laisse croire que rien n'a bougé alors que tout
+        // est resté comme avant — ouvert.
+        setError(data?.error?.code === "ERR_NO_ETABLISSEMENT"
+          ? t("session.error.openNeedsSchoolNetwork")
+          : data?.error?.code === "ERR_LOCK_WRITE"
+            ? t("session.error.closeFailed")
+            : t("session.error.badPassword"));
+        return;
+      }
       setMessage(t("session.msg.closed"));
       setPassword("");
       refresh();
@@ -491,6 +521,39 @@ export default function EnseignantPage() {
       {/* --- Ouvrir / fermer --- */}
       <section className="mt-5 rounded-lg border border-white/15 bg-secondary p-4">
         <h2 className="font-bold">{t("session.open.title")}</h2>
+        {/* JUSQU'OÙ PORTE CE QU'ON S'APPRÊTE À OUVRIR, écrit avant le champ de
+            mot de passe et non après le refus. Le verrou ne vaut que pour
+            l'école du réseau appelant : le dire ici est ce qui distingue
+            « ouvrir sa salle » de « ouvrir le site », et l'enseignant a le droit
+            de savoir ce que son geste engage avant de le faire.
+            Quand aucune salle n'est ouvrable — on écrit de chez soi, ou d'un
+            réseau non déclaré —, on l'annonce et on désactive le bouton :
+            laisser tenter, c'est laisser conclure qu'on a mal retenu le mot de
+            passe. Le cas de l'amorçage (salle ouvrable, mais aucune école
+            nommée en base) a sa propre phrase : promettre un nom qu'on n'a pas
+            serait pire que de n'en promettre aucun.
+            UNE SEULE CLÉ, COUPÉE SUR SON GABARIT — et non deux moitiés de
+            phrase encadrant le nom. Deux moitiés figent l'ordre des mots du
+            français : en allemand le nom d'école ne tombe pas au même endroit
+            de la phrase, et le traducteur n'aurait eu aucun moyen de le
+            déplacer. Le gras survit parce qu'on découpe sur « {name} » plutôt
+            que d'interpoler — et le découpage reste en ES5 (pas de flatMap) :
+            ce sont des postes de salle de classe qui affichent cette page. */}
+        {status.salleOuvrable
+          ? (status.etablissement
+              ? (() => {
+                  // Une seule occurrence attendue ; `?? ""` couvre le jour où
+                  // une traduction oublierait le gabarit — la phrase s'affiche
+                  // alors sans le nom, plutôt que « undefined ».
+                  const morceaux = t("session.open.scope").split("{name}");
+                  return <p className="mt-1 text-sm">
+                    {morceaux[0]}<b>{status.etablissement.name}</b>{morceaux[1] ?? ""}
+                  </p>;
+                })()
+              : <p className="mt-1 text-sm">{t("session.open.scopeUnnamed")}</p>)
+          : <p className="mt-2 rounded border border-[#DC6521]/50 bg-[#DC6521]/10 p-3 text-sm">
+              {t("session.open.noScope")}
+            </p>}
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-1 text-sm md:col-span-2">
             {t("session.open.password")}
@@ -513,7 +576,8 @@ export default function EnseignantPage() {
           </label>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button data-tour="session-ouvrir" onClick={openAccess} disabled={fige || !password.trim()}
+          <button data-tour="session-ouvrir" onClick={openAccess}
+            disabled={fige || !password.trim() || !status.salleOuvrable}
             className="rounded bg-[#DC6521] px-4 py-2 font-bold text-[#111827] hover:opacity-90 disabled:opacity-50">
             {t("session.open.cta")}
           </button>

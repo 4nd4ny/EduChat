@@ -16,23 +16,46 @@
 // le seul miroir lisible qui existe. « Sonnet 3/15 » figurait ici : c'était le
 // prix de Sonnet 4.5, resté écrit après le changement de barreau.
 //
-// TROIS RAISONS DE NE RIEN APPLIQUER AUTOMATIQUEMENT :
+// ─── CE QU'ELLE APPLIQUE DÉSORMAIS, ET CE QU'ELLE SE CONTENTE DE PROPOSER ───
 //
-//   1. Le catalogue est en DOLLARS, la facturation est dans la monnaie du
-//      gestionnaire. La sonde convertit — à un taux du jour, approximatif et
-//      assumé — pour épargner la calculette, et écrit AVEC le montant la
-//      monnaie obtenue (`devise`, colonne propose_devise). Ce qu'elle ne fait
-//      pas, c'est appliquer : un taux implicite de 1:1, ou celui d'hier gelé
-//      dans une facture, fausserait ce que chaque école doit.
-//   2. Il y a DEUX prix — entrée et sortie — et le journal ne compte qu'UN
-//      nombre de jetons (tokensFromUsage additionne les deux). Aucun prix
-//      unique n'est donc exact : il dépend d'un rapport entrée/sortie qu'on
-//      ne mesure pas. La sonde propose un mélange, en disant lequel.
-//   3. Un tarif fabrique une FACTURE. Le changer tout seul modifierait
-//      silencieusement ce qu'une école doit.
+// Ce fichier a longtemps porté « TROIS RAISONS DE NE RIEN APPLIQUER
+// AUTOMATIQUEMENT ». Deux de ces trois raisons ont cessé d'exister, et il faut
+// le dire ici même, sous peine de laisser un lecteur croire que le code
+// ci-dessous contredit son propre en-tête :
 //
-// Elle PROPOSE donc, à côté du choix de l'administration — le même partage que
-// pour l'échelle des modèles. Un clic applique, ou pas.
+//   · « Le journal ne compte qu'UN nombre de jetons, aucun prix unique n'est
+//     donc exact. » — usage_log porte tokens_in et tokens_out SÉPARÉMENT depuis
+//     qu'on a cessé de les additionner. Les deux prix relevés ici s'appliquent
+//     chacun aux jetons qui lui correspondent : il n'y a plus de mélange à
+//     deviner, donc plus rien d'inexact à appliquer. Le mélange survit
+//     UNIQUEMENT comme repère d'arbitrage à l'écran, jamais comme prix.
+//   · « Un tarif fabrique une FACTURE : le changer tout seul modifierait
+//     silencieusement ce qu'une école doit. » — c'était vrai tant que la facture
+//     se RECALCULAIT au tarif du jour. Elle ne le fait plus : chaque appel
+//     emporte les deux prix qu'on lui a appliqués (usage_log.prix_*_mtok) et le
+//     montant réellement prélevé. Une sonde qui tourne ce soir ne peut plus
+//     déplacer d'un centime ce qu'une école devait ce matin. C'est ce gel-là,
+//     et lui seul, qui autorise l'écriture automatique.
+//
+// LA TROISIÈME RAISON, ELLE, TIENT TOUJOURS — la monnaie. Le catalogue est en
+// DOLLARS, la facturation est dans la monnaie du gestionnaire. La sonde
+// convertit à un taux du jour, approximatif et assumé, et écrit AVEC le montant
+// la monnaie obtenue. Quand ce taux est injoignable, elle laisse ses montants en
+// dollars — et n'écrit alors AUCUN tarif applicable : appliquer des dollars à
+// une facture en francs serait une erreur de 20 % annoncée comme un fait, et
+// écraser les prix corrects de la veille par des dollars serait pire encore que
+// ne rien écrire.
+//
+// LE PARTAGE EST DONC CELUI-CI :
+//   · tarifs_modeles — CE QUI FACTURE. Écrit par la sonde, un prix d'entrée et
+//     un prix de sortie par barreau, pour les trois fournisseurs qu'une clé
+//     d'école paie. C'est ce que /api/completion applique au modèle qu'il vient
+//     réellement d'appeler.
+//   · tarifs.prix_mtok — LE CHOIX DE L'ADMINISTRATION, jamais touché ici, et
+//     désormais un simple filet : il ne sert que là où aucun prix par modèle
+//     n'a pu être relevé (voir tarifDuModele, src/server/porteMonnaie.ts).
+//   · les colonnes propose_* — CE QU'ON MONTRE pour arbitrer l'échelle : les
+//     trois barreaux côte à côte, leur prix, leur mélange indicatif.
 
 import { getDb } from './db';
 import { getLadder } from './ladder';
@@ -213,9 +236,11 @@ export function lienVerification(provider: ProviderId): string | null {
 }
 
 /**
- * Interroge le catalogue public d'OpenRouter et propose un tarif pour chacun
- * des fournisseurs qu'une école peut réellement utiliser. N'écrit JAMAIS
- * `prix_mtok` : uniquement les colonnes de proposition.
+ * Interroge le catalogue public d'OpenRouter, ÉCRIT le prix d'entrée et le prix
+ * de sortie de chaque barreau (tarifs_modeles) et propose un tarif de synthèse
+ * pour chacun des fournisseurs qu'une école peut réellement utiliser.
+ *
+ * N'écrit JAMAIS `prix_mtok`, qui reste le choix de l'administration.
  */
 export async function sonderTarifs(): Promise<Proposition[]> {
   let catalogue: ModeleOpenRouter[] = [];
@@ -243,6 +268,26 @@ export async function sonderTarifs(): Promise<Proposition[]> {
       propose_melange = excluded.propose_melange, propose_modele = excluded.propose_modele,
       propose_detail = excluded.propose_detail, propose_barreaux = excluded.propose_barreaux,
       propose_devise = excluded.propose_devise, propose_at = excluded.propose_at
+  `);
+
+  // LE CHAÎNON QUI MANQUAIT : le prix relevé s'ÉCRIT, barreau par barreau.
+  //
+  // La clé est (provider, barreau) — le nom que l'ÉCHELLE donne au modèle,
+  // c'est-à-dire exactement ce que /api/completion enverra à l'éditeur
+  // (effModel). L'identifiant d'OpenRouter, lui, va dans `source` : il ne sert
+  // pas à retrouver le prix, il sert à recouper d'où il vient.
+  //
+  // ON N'ÉCRASE QUE CE QU'ON A LU. Une entrée sans prix n'écrit rien plutôt que
+  // d'écrire deux zéros : un zéro écrit ici serait un modèle facturé gratuit,
+  // c'est-à-dire la seule chose dont on soit certain qu'elle est fausse. Sans
+  // ligne, la chaîne de repli du porte-monnaie prend la main — et elle, elle
+  // laisse une trace.
+  const ecrireTarif = db.prepare(`
+    INSERT INTO tarifs_modeles (provider, modele, prix_entree_mtok, prix_sortie_mtok, devise, source, updated_at)
+    VALUES (@provider, @modele, @entree, @sortie, @devise, @source, @at)
+    ON CONFLICT(provider, modele) DO UPDATE SET
+      prix_entree_mtok = excluded.prix_entree_mtok, prix_sortie_mtok = excluded.prix_sortie_mtok,
+      devise = excluded.devise, source = excluded.source, updated_at = excluded.updated_at
   `);
 
   const at = Date.now();
@@ -303,6 +348,33 @@ export async function sonderTarifs(): Promise<Proposition[]> {
       detail: retenu?.detail ?? 'Aucun barreau réglé pour ce fournisseur.',
       at, barreaux, rangRetenu: retenu?.rang ?? 0,
     };
+    // ─── L'ÉCRITURE DES TARIFS APPLICABLES ───
+    //
+    // DEUX CONDITIONS, ET AUCUNE N'EST NÉGOCIABLE :
+    //   · le taux de change a été lu (`taux`), donc les montants sont dans la
+    //     monnaie de facturation. Sinon on ne touche à rien : les prix corrects
+    //     de la dernière sonde valent mieux que des dollars appliqués comme des
+    //     francs, et bien mieux qu'une table vidée.
+    //   · le barreau a un prix. Un barreau sans correspondance au catalogue
+    //     n'écrit pas de ligne — c'est ce qui déclenche le repli explicite du
+    //     porte-monnaie plutôt qu'une facturation à zéro.
+    if (taux) {
+      for (const b of barreaux) {
+        if (!b.barreau || (!b.entreeMtok && !b.sortieMtok)) continue;
+        try {
+          ecrireTarif.run({
+            provider, modele: b.barreau, entree: b.entreeMtok, sortie: b.sortieMtok,
+            devise: BillingCurrency, source: b.modele, at,
+          });
+        } catch (erreur) {
+          // Un tarif non enregistré n'interrompt pas les autres : chaque
+          // barreau est indépendant, et un fournisseur muet ne doit pas rendre
+          // les deux autres muets avec lui.
+          console.error(`Tarif non enregistré (${provider} · ${b.barreau}) :`, erreur);
+        }
+      }
+    }
+
     try {
       ecrire.run({
         provider, at,
@@ -319,6 +391,53 @@ export async function sonderTarifs(): Promise<Proposition[]> {
     }
     return proposition;
   });
+}
+
+/** Un prix APPLIQUÉ, tel qu'il facture aujourd'hui. */
+export type TarifModele = {
+  provider: string; modele: string;
+  entreeMtok: number; sortieMtok: number;
+  devise: string;
+  /** Le modèle du catalogue d'où le prix vient — c'est là qu'on le recoupe. */
+  source: string;
+  at: number;
+};
+
+/**
+ * LES PRIX QUI FACTURENT, ET LES BARREAUX QUI N'EN ONT PAS.
+ *
+ * Les deux dans la même réponse, et c'est tout l'objet : un tableau de prix ne
+ * dit rien de ce qui MANQUE, et ce qui manque est précisément ce qui sera
+ * facturé au repli. L'administration doit voir le trou AVANT qu'une classe
+ * consomme dedans — la trace laissée sur les lignes déjà décomptées arrive,
+ * elle, après que l'argent a bougé.
+ *
+ * Le périmètre est celui de l'échelle : trois barreaux pour chacun des trois
+ * fournisseurs qu'une clé d'école paie. Un modèle relevé qui ne serait plus au
+ * barreau d'aucune échelle n'intéresse personne, et une échelle sans prix est
+ * exactement ce qu'on cherche à montrer.
+ */
+export function tarifsAppliques(): { prix: TarifModele[]; manquants: Array<{ provider: string; barreau: string }> } {
+  const rows = getDb().prepare(`
+    SELECT provider, modele, prix_entree_mtok AS entreeMtok, prix_sortie_mtok AS sortieMtok,
+           devise, source, updated_at AS at
+    FROM tarifs_modeles ORDER BY provider, prix_sortie_mtok
+  `).all() as TarifModele[];
+
+  const manquants: Array<{ provider: string; barreau: string }> = [];
+  for (const provider of SCHOOL_PROVIDER_IDS) {
+    for (const barreau of getLadder(provider).slice(0, 3)) {
+      if (!barreau) continue;
+      // MÊME CONDITION QU'À L'APPLICATION (tarifDuModele) : une ligne dans une
+      // autre monnaie que celle de facturation ne facture pas, donc elle ne
+      // comble pas ce trou-là. L'écran mentirait s'il la comptait présente.
+      const a = rows.some(r => r.provider === provider && r.modele === barreau
+        && r.devise.toUpperCase() === BillingCurrency.toUpperCase()
+        && (r.entreeMtok > 0 || r.sortieMtok > 0));
+      if (!a) manquants.push({ provider, barreau });
+    }
+  }
+  return { prix: rows, manquants };
 }
 
 /** Ce que la dernière sonde a proposé, pour l'administration. */

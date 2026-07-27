@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getAuthLockExpiry, getClientIp, isAccessAllowed, isKnownIp, mayUseServerKeys } from '../../server/access';
-import { getDb } from '../../server/db';
 import {
-  getEtablissementById, isWithinSchedule, parseHours, resolveEtablissementByIp,
-} from '../../server/etablissements';
+  getAuthLockExpiry, getClientIp, isAccessAllowed, isKnownIp, mayUseServerKeys, salleDepuisIp,
+} from '../../server/access';
+import { getDb } from '../../server/db';
+import { getEtablissementById, isWithinSchedule, parseHours } from '../../server/etablissements';
 import { ecoleEnseignante } from '../../server/appartenance';
 import { DeveloperKeys, MaxUnlockMinutes } from '../../utils/env';
 import { ERR, SCHOOL_PROVIDER_IDS } from '../../shared/providers';
@@ -46,8 +46,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const ip = getClientIp(req);
-  const etab = resolveEtablissementByIp(ip);
-  const lockExpiry = await getAuthLockExpiry();
+  // LA SALLE, résolue UNE fois — et la même résolution que celle qui commande
+  // la dépense (salleDepuisIp, src/server/access.ts). L'école en base est
+  // `portee.etablissement` ; une adresse d'amorçage SECRET_ALLOWED_IPS a bien
+  // une salle mais aucune ligne en base, exactement comme avant.
+  const portee = await salleDepuisIp(ip);
+  const etab = portee?.etablissement ?? null;
+  // L'échéance de CETTE salle, jamais celle d'une autre école : c'est un fait
+  // sur le lieu d'où part la requête (voir l'en-tête), et c'est aussi lui qui
+  // fait apparaître le bouton « Refermer maintenant » quand il y a quelque
+  // chose à refermer ici.
+  const lockExpiry = await getAuthLockExpiry(portee?.cle ?? null);
   const ownHours = etab ? parseHours(etab.hours) : [];
   // Fenêtre horaire applicable : celle de l'établissement s'il en a une,
   // sinon les horaires globaux du serveur.
@@ -101,6 +110,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // C'EST UN FAIT SUR LA SALLE, jamais sur l'école active : hors du réseau,
     // il vaut faux même pour un enseignant dont l'école est grande ouverte.
     open: await mayUseServerKeys(ip),
+    // Y A-T-IL UNE SALLE À OUVRIR D'ICI ? Depuis que le verrou porte une école,
+    // le mot de passe ne suffit plus : il faut aussi que l'adresse appelante
+    // désigne un réseau scolaire. L'écran doit pouvoir le dire AVANT que
+    // l'enseignant tape son mot de passe, plutôt que de le laisser conclure
+    // qu'il l'a mal retenu.
+    // Ce n'est PAS `etablissement !== null` : une adresse d'amorçage
+    // (SECRET_ALLOWED_IPS, déploiement mono-établissement sans ligne en base)
+    // ouvre bel et bien une salle, sans avoir de nom à afficher.
+    salleOuvrable: !!portee,
     lockExpiresAt: lockExpiry || null,
     withinSchedule,
     maxUnlockMinutes: MaxUnlockMinutes,

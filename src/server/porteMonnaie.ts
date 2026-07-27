@@ -76,18 +76,115 @@ const versLeHaut = (x: number) => Math.ceil(x * 100 - 1e-9) / 100;
 const versLeBas = (x: number) => Math.floor(x * 100 + 1e-9) / 100;
 const centimes = (x: number) => Math.round(x * 100) / 100;   // affichage seul
 
-/** Prix du million de jetons, entrée et sortie, dans la monnaie de facturation. */
-function prixDe(provider: string): { entree: number; sortie: number } {
-  const row = getDb().prepare(
+// ─── LE PRIX D'UN APPEL SE LIT SUR LE MODÈLE, PAS SUR LE FOURNISSEUR ────────
+//
+// CE QUI ÉTAIT, ET POURQUOI ÇA NE POUVAIT PAS TENIR. Un seul prix était lu par
+// FOURNISSEUR, et il était appliqué à l'entrée comme à la sortie. Or les trois
+// barreaux d'un même éditeur vont de 1 à 15 le million de jetons, et le rapport
+// entrée/sortie va de 1 à 5 chez tous. Aucun prix unique ne pouvait donc être
+// juste, et la promesse d'un prix coûtant « recalculable au centime » — la
+// seule chose que ce service ait à offrir à une école qui doit justifier un
+// budget — ne pouvait pas être tenue.
+//
+// CE QUI EST : le prix vient de tarifs_modeles, écrit par la sonde depuis le
+// catalogue public d'OpenRouter, POUR LE MODÈLE RÉELLEMENT APPELÉ. Une école
+// rouvre le tarif public du barreau qu'elle emploie et retrouve nos deux
+// chiffres.
+
+/** Ce qu'on a réellement appliqué à un appel — et d'où ça vient. */
+export type TarifApplique = {
+  provider: string;
+  /** Le modèle réellement appelé (effModel) : c'est lui qui fixe le prix. */
+  modele: string;
+  /** Prix du million de jetons, dans la monnaie de facturation. */
+  entree: number;
+  sortie: number;
+  /**
+   * VIDE quand ce modèle a son propre prix relevé. Sinon, ce qui a servi à sa
+   * place, dit en clair : la phrase voyage jusqu'au registre du porte-monnaie
+   * et jusqu'à l'administration, parce qu'un décompte approximatif qui ne se
+   * dit pas est un décompte faux qu'on découvrira trop tard.
+   */
+  repli: string;
+  /** Date de la résolution. 0 n'existe pas ici : il marque les lignes anciennes. */
+  at: number;
+};
+
+/**
+ * LE TARIF D'UN APPEL, ET LA CHAÎNE DE REPLI QUI GARANTIT QU'IL N'EST PAS NUL.
+ *
+ * PREMIÈRE RÈGLE, AVANT TOUTES LES AUTRES : NE JAMAIS FACTURER ZÉRO EN SILENCE.
+ * Un zéro muet, c'est le service qui travaille à perte sans que personne le
+ * voie — et comme rien ne casse, on s'en aperçoit à la fin de l'année. Mais un
+ * refus de servir n'est pas une option non plus : on ne bloque pas une classe
+ * en pleine séance parce qu'un nom de modèle a changé chez l'éditeur.
+ *
+ * D'où quatre niveaux, chacun faisant un travail que le suivant ne fait pas :
+ *
+ *   1. LE PRIX DU MODÈLE, relevé au catalogue. Le cas normal.
+ *   2. LE BARREAU LE PLUS CHER CONNU DU MÊME FOURNISSEUR. C'est un tarif RÉEL,
+ *      celui d'un modèle qui existe et dont le prix se recoupe — et non un
+ *      maximum colonne par colonne, qui fabriquerait un tarif chimérique que
+ *      personne ne pourrait vérifier nulle part. Il protège le budget dans le
+ *      bon sens : on surestime le coût d'un modèle inconnu plutôt que de le
+ *      sous-estimer, et l'école consomme un peu moins que ce qu'elle a payé
+ *      plutôt qu'un peu plus.
+ *   3. LE PRIX UNIQUE DU FOURNISSEUR (table `tarifs`), s'il est réglé à la
+ *      main. C'est l'ancien comportement, conservé pour les fournisseurs que la
+ *      sonde n'interroge pas.
+ *   4. ZÉRO, ET SEULEMENT ALORS — parce qu'on ne peut pas inventer un prix. Il
+ *      part au journal d'erreurs et il est nommé sur chaque ligne qu'il touche.
+ *
+ * LA DEVISE EST UNE CONDITION D'APPLICATION, pas un détail d'affichage. La
+ * sonde laisse ses montants EN DOLLARS le jour où le taux de change est
+ * injoignable ; les appliquer tels quels à une facture en francs serait une
+ * erreur de 20 % annoncée comme un fait. Une ligne dont la devise n'est pas
+ * celle de facturation est donc traitée comme absente.
+ */
+export function tarifDuModele(provider: string, modele: string): TarifApplique {
+  const db = getDb();
+  const at = Date.now();
+  const base = { provider, modele, at };
+  const devise = BillingCurrency.toUpperCase();
+
+  const lu = db.prepare(`
+    SELECT prix_entree_mtok AS entree, prix_sortie_mtok AS sortie FROM tarifs_modeles
+    WHERE provider = ? AND modele = ? AND UPPER(devise) = ?
+      AND (prix_entree_mtok > 0 OR prix_sortie_mtok > 0)
+  `).get(provider, modele, devise) as { entree: number; sortie: number } | undefined;
+  if (lu) return { ...base, entree: lu.entree, sortie: lu.sortie, repli: '' };
+
+  // Le plus cher se mesure sur la SORTIE d'abord : c'est elle qui domine le
+  // coût d'un tuteur socratique, qui écrit plus qu'il ne lit.
+  const cher = db.prepare(`
+    SELECT modele, prix_entree_mtok AS entree, prix_sortie_mtok AS sortie FROM tarifs_modeles
+    WHERE provider = ? AND UPPER(devise) = ? AND (prix_entree_mtok > 0 OR prix_sortie_mtok > 0)
+    ORDER BY prix_sortie_mtok DESC, prix_entree_mtok DESC LIMIT 1
+  `).get(provider, devise) as { modele: string; entree: number; sortie: number } | undefined;
+  if (cher) {
+    return {
+      ...base, entree: cher.entree, sortie: cher.sortie,
+      repli: `Aucun tarif relevé pour « ${modele} » : prix du barreau le plus cher (${cher.modele}).`,
+    };
+  }
+
+  const unique = db.prepare(
     'SELECT prix_mtok, prix_entree_mtok, prix_sortie_mtok FROM tarifs WHERE provider = ?')
     .get(provider) as { prix_mtok: number; prix_entree_mtok: number; prix_sortie_mtok: number } | undefined;
-  if (!row) return { entree: 0, sortie: 0 };
-  // Repli sur le prix unique tant que le détail n'a pas été réglé : mieux vaut
-  // décompter approximativement que ne rien décompter du tout.
-  if (!row.prix_entree_mtok && !row.prix_sortie_mtok) {
-    return { entree: row.prix_mtok, sortie: row.prix_mtok };
+  const entree = unique?.prix_entree_mtok || unique?.prix_mtok || 0;
+  const sortie = unique?.prix_sortie_mtok || unique?.prix_mtok || 0;
+  if (entree || sortie) {
+    return { ...base, entree, sortie, repli: `Aucun tarif relevé pour « ${modele} » : prix unique du fournisseur.` };
   }
-  return { entree: row.prix_entree_mtok, sortie: row.prix_sortie_mtok };
+
+  // DERNIER NIVEAU, et il ne crie PAS ICI. La démonstration publique gratuite
+  // passe par cette même fonction sur un modèle que la sonde n'interroge pas :
+  // hurler à chaque appel de démonstration noierait l'anomalie qu'on cherche
+  // sous du bruit quotidien, ce qui revient exactement à se taire. C'est
+  // `decompter` qui alerte — là où de l'argent aurait dû bouger et n'a pas
+  // bougé. La colonne tarif_repli, elle, porte la raison aussi longtemps que
+  // la ligne, démonstration comprise.
+  return { ...base, entree: 0, sortie: 0, repli: `Aucun tarif connu pour « ${modele} » : rien n'a été décompté.` };
 }
 
 // ─── OÙ SE PRÉLÈVE LA CONTRIBUTION : À LA RECHARGE, PAS SUR LES JETONS ──────
@@ -169,9 +266,10 @@ export function contributionDe(t: Titulaire): number {
  * de son auteur ne peut pas se permettre de perdre un demi-centime une fois
  * sur deux.
  */
-export function coutDe(provider: string, tokensIn: number, tokensOut: number, pct = 0): number {
-  const prix = prixDe(provider);
-  const brut = (tokensIn * prix.entree + tokensOut * prix.sortie) / 1_000_000;
+export function coutAuTarif(
+  tarif: { entree: number; sortie: number }, tokensIn: number, tokensOut: number, pct = 0,
+): number {
+  const brut = (tokensIn * tarif.entree + tokensOut * tarif.sortie) / 1_000_000;
   // pct vaut 0 pour tout ce qui est facturé : PASSAGE À PRIX COÛTANT. Le
   // paramètre survit pour les simulations et les relevés qui veulent montrer
   // ce qu'un taux donnerait — jamais pour décompter.
@@ -392,9 +490,18 @@ export function bouger(
  * sous zéro. Le dépassement d'un appel est borné par la taille d'une réponse ;
  * c'est le prix d'un décompte qui n'interrompt jamais quelqu'un en train de
  * lire.
+ *
+ * LE TARIF ARRIVE DÉJÀ RÉSOLU, et ce n'est pas un détail de signature : la
+ * même valeur est écrite sur la ligne de journal (usage_log) et prélevée ici,
+ * dans une seule transaction. Le résoudre deux fois — une fois pour journaliser
+ * et une fois pour prélever — suffirait à ce qu'une sonde tombée entre les deux
+ * fasse dire à la facture autre chose qu'au solde.
+ *
+ * REND LE MONTANT DÉBITÉ, et non le solde qui suit : c'est ce montant que la
+ * facture additionnera, donc c'est lui que l'appelant doit pouvoir figer.
  */
 export function decompter(
-  t: Titulaire, provider: string, tokensIn: number, tokensOut: number, modele: string,
+  t: Titulaire, tarif: TarifApplique, tokensIn: number, tokensOut: number,
 ): number {
   // RESPIRE ne se décompte pas. Le tarif, lui, n'est PAS nul — il est le même
   // pour tout le monde : c'est l'ÉCOLE qui est exonérée, pas le fournisseur.
@@ -411,11 +518,40 @@ export function decompter(
   }
   // PRIX COÛTANT : plus aucune marge sur l'inférence. Ce que le titulaire paie
   // ici est exactement ce que le fournisseur nous facture, et il peut le
-  // vérifier contre le tarif public de Claude, ChatGPT ou Mistral. La
-  // contribution, elle, a été prélevée à la recharge.
-  const cout = coutDe(provider, tokensIn, tokensOut, 0);
+  // vérifier contre le tarif public du modèle qu'il a employé. La contribution,
+  // elle, a été prélevée à la recharge.
+  const cout = coutAuTarif(tarif, tokensIn, tokensOut, 0);
+  // UN DÉCOMPTE NUL SUR UN APPEL QUI A EU LIEU EST UNE ANOMALIE, ET C'EST ICI
+  // QU'ELLE SE DIT — au seul endroit où l'on sait qu'un titulaire aurait dû
+  // payer. Le service travaillerait sinon à perte sans que rien ne casse, et
+  // on s'en apercevrait à la fin de l'année.
+  if (!cout && (tokensIn || tokensOut)) {
+    console.error(
+      `CONSOMMATION DÉCOMPTÉE À ZÉRO — ${tarif.provider} · ${tarif.modele} · `
+      + `${tokensIn}+${tokensOut} jetons : ${tarif.repli || 'tarif nul'}.`);
+  }
   if (!cout) return 0;
-  return bouger(t, 'consommation', -cout, `${provider} · ${modele}`, '');
+  // LE REPLI SE LIT SUR LE RELEVÉ, pas seulement dans un tableau de bord. Qui
+  // relit son registre six mois plus tard doit voir, sur la ligne elle-même,
+  // que ce montant-là n'a pas été calculé au prix du modèle appelé.
+  //
+  // On ne rend PAS ce que bouger() rend (le solde qui suit) : c'est le MONTANT
+  // que l'appelant doit figer sur sa ligne de journal. bouger() lève si le
+  // titulaire est introuvable — cette ligne n'est donc atteinte que si le
+  // prélèvement a bien eu lieu.
+  bouger(t, 'consommation', -cout, detailConsommation(tarif), '');
+  return cout;
+}
+
+/**
+ * Le libellé d'une consommation au registre. Composé ici, en un seul endroit,
+ * parce qu'il est la SEULE trace durable du repli pour le titulaire — la
+ * colonne tarif_repli, elle, vit sur le journal d'usage, que personne d'autre
+ * que l'administration ne lit.
+ */
+function detailConsommation(tarif: TarifApplique): string {
+  const base = `${tarif.provider} · ${tarif.modele}`;
+  return tarif.repli ? `${base} · ${tarif.repli}` : base;
 }
 
 export function mouvements(t: Titulaire, limite = 50): Mouvement[] {

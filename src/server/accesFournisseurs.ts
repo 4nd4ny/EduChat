@@ -134,10 +134,16 @@ export type Perimetre = {
  * SECRET_ALLOWED_IPS, qui sont littéralement celles de l'école dans un
  * déploiement mono-établissement.
  *
- * ON NE REGARDE PAS LE VERROU GLOBAL (mayUseServerKeys → auth_lock.json) : ce
- * verrou n'est pas un lieu mais un interrupteur de portée mondiale, et il
- * commande la DÉPENSE de la clé interne. D'où l'on appelle est une autre
- * question, et elle se lit sur l'adresse.
+ * ON NE REGARDE PAS LE VERROU DE SALLE (mayUseServerKeys → auth_lock.json) :
+ * il commande la DÉPENSE de la clé interne, pendant une heure de cours. D'où
+ * l'on appelle est une autre question — un lieu, pas un moment —, et elle se
+ * lit sur l'adresse.
+ *
+ * LES DEUX LECTURES COÏNCIDENT DÉSORMAIS, et c'est heureux : depuis que le
+ * verrou porte l'école qui l'a ouvert, il ne peut s'ouvrir ni se lire que pour
+ * les adresses reconnues ici même (salleDepuisIp reprend terme pour terme
+ * « établissement en base OU isKnownIp »). Tant qu'il était global, le
+ * consulter ici aurait dit « école » à tout Internet une heure durant.
  *
  * UNE ADRESSE ILLISIBLE COMPTE POUR UNE ÉCOLE, et c'est le seul endroit du
  * fichier où l'on répond sans savoir. getClientIp rend « unknown » quand il n'a
