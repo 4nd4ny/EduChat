@@ -137,10 +137,12 @@ export async function sonderTarifs(): Promise<Proposition[]> {
 
   const at = Date.now();
   return SCHOOL_PROVIDER_IDS.map(provider => {
-    // Le barreau du MILIEU : ni le plus économe ni le plus cher, c'est celui
-    // qu'une classe rencontre le plus souvent.
+    // LE BARREAU LE PLUS CHER, et non le plus fréquent. Une école provisionne
+    // son porte-monnaie sur ce tarif : le sous-estimer, c'est lui promettre une
+    // autonomie qu'elle n'aura pas, et la bloquer en pleine leçon le jour où un
+    // enseignant monte d'un cran. Mieux vaut une bonne surprise.
     const echelle = getLadder(provider);
-    const barreau = echelle[Math.min(1, echelle.length - 1)] ?? '';
+    const barreau = echelle[echelle.length - 1] ?? '';
     const trouve = panne || !barreau ? undefined : correspond(barreau, catalogue);
     // Converti dans la monnaie de facturation quand le taux a pu être lu :
     // une proposition en dollars oblige l'administration à sortir une

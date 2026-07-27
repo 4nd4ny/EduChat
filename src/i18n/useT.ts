@@ -10,7 +10,11 @@ export function translate(locale: string | undefined, key: TranslationKey, vars?
   let text: string = dict[key] ?? fr[key] ?? key;
   if (vars) {
     for (const [name, value] of Object.entries(vars)) {
-      text = text.replace(`{${name}}`, String(value));
+      // TOUTES les occurrences, pas la première. String.replace avec un motif
+      // CHAÎNE n'en remplace qu'une : « … 0.00 CHF … 0.00 {devise} … 0.00
+      // {devise} » s'affichait tel quel dans l'administration, et le défaut
+      // était invisible partout où un gabarit n'apparaissait qu'une fois.
+      text = text.split(`{${name}}`).join(String(value));
     }
   }
   return text;
