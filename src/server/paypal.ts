@@ -29,7 +29,7 @@
 import { getDb } from './db';
 import { BillingCurrency } from '../utils/env';
 import { bouger, commissionRecharge, soldeDe, titulaireCompte, titulaireEcole,
-  DETAIL_COMMISSION, type Titulaire } from './porteMonnaie';
+  detailCommission, type Titulaire } from './porteMonnaie';
 
 const ID = (process.env.SECRET_PAYPAL_CLIENT_ID || '').trim();
 const SECRET = (process.env.SECRET_PAYPAL_SECRET || '').trim();
@@ -220,11 +220,13 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
       solde = bouger(titulaire, 'recharge', capture.montant,
         `PayPal ${captureId}`, 'paypal', captureId);
       // La contribution se prélève sur le versement — au taux choisi par
-      // l'école, à celui de la plateforme pour une personne — jamais sur les
-      // jetons, qui passent à prix coûtant.
-      const { commission, pct } = commissionRecharge(titulaire, capture.montant);
-      solde = bouger(titulaire, 'ajustement', -commission,
-        `${DETAIL_COMMISSION} (${pct} %) — ${captureId}`, 'paypal');
+      // l'école, au PLANCHER pour une personne (zéro marge : il ne couvre que
+      // les frais PayPal) — jamais sur les jetons, qui passent à prix coûtant.
+      // Le libellé nomme ce qui a réellement joué, pourcentage ou forfait :
+      // c'est ce relevé-ci que le titulaire relira dans six mois.
+      const retenue = commissionRecharge(titulaire, capture.montant);
+      solde = bouger(titulaire, 'ajustement', -retenue.commission,
+        `${detailCommission(retenue, BillingCurrency)} — ${captureId}`, 'paypal');
     } catch {
       return { creditee: false, raison: 'Déjà créditée (idempotence).' };
     }

@@ -28,7 +28,21 @@ export default function ChatPlaceholder({}: Props) {
   // à arbitrer, rien à réparer, aucun réglage à trouver. Elle dispose d'une
   // démonstration gratuite, on le lui dit ; un compte ouvre le reste avec sa
   // propre clé ou ses propres crédits, on le lui dit aussi. Rien de plus.
-  const { demonstration } = useFournisseurs();
+  //
+  // `campus` sert au lien ci-dessous, et il vient du MÊME appel : le fait
+  // « sur le réseau d'une école » est établi par le serveur
+  // (src/server/accesFournisseurs.ts → /api/providers), jamais recalculé ici.
+  const { demonstration, campus } = useFournisseurs();
+
+  // OÙ MÈNE « Parcourir les tuteurs » — LES TUTEURS QU'ON CHERCHE NE SONT PAS
+  // AU MÊME ENDROIT SELON L'ENDROIT D'OÙ L'ON PARLE.
+  //
+  // Depuis le réseau d'un établissement, ceux qui comptent sont les siens :
+  // ils vivent sur /etablissement, qui est l'accueil de l'école pour l'élève
+  // de la salle 12 — le catalogue commun l'aurait fait repartir de zéro pour
+  // revenir au même point. Partout ailleurs, le lien ne bouge pas d'un pixel :
+  // l'accueil du site EST le catalogue.
+  const tuteurs = campus ? "/etablissement" : "/";
 
   return (
     <div className="flex h-full w-full items-center justify-center">
@@ -47,7 +61,7 @@ export default function ChatPlaceholder({}: Props) {
               {isSchool ? t("chat.placeholder.school") : t("chat.placeholder.free")}
             </p>
             <p className="mt-6">
-              <Link href="/" className="inline-flex items-center gap-2 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
+              <Link href={tuteurs} className="inline-flex items-center gap-2 rounded border border-white/20 px-4 py-2 text-sm hover:bg-tertiary">
                 <MdArrowBack /> {t("chat.placeholder.browse")}
               </Link>
             </p>

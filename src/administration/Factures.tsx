@@ -3,6 +3,7 @@ import { useT } from "../i18n/useT";
 import { authHeaders } from "../utils/account";
 import { BTN, type FactureRow, type Participation, type TarifRow } from "./commun";
 import { MentionsFacture } from "./MentionsFacture";
+import TarifEcole from "./TarifEcole";
 
 // LA FACTURE, EN MONNAIE, AVEC SA PARTICIPATION EN CLAIR.
 //
@@ -54,11 +55,17 @@ export default function Factures({ ecole, variante, demo }: {
         setParticipation(d.participation ?? null);
       })
       .catch(() => { setFactures([]); setImpayees([]); setParticipation(null); });
+    // LE TABLEAU DES TARIFS N'EST PLUS DEMANDÉ QUE PAR LE SITE. Servie à une
+    // école, cette route ne rend plus la même chose (les barreaux de son seul
+    // fournisseur, sans tarif retenu ni mélange) : c'est TarifEcole qui la lit
+    // alors, et lire deux fois la même réponse pour n'en afficher qu'une
+    // moitié à chaque endroit brouillerait qui montre quoi.
+    if (!site) { setTarifsListe([]); return; }
     fetch("/api/admin/tarifs", { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(d => setTarifsListe(d.tarifs ?? []))
       .catch(() => setTarifsListe([]));
-  }, [demo, period]);
+  }, [demo, period, site]);
 
   useEffect(() => { relire(); }, [relire, ecole]);
 
@@ -197,17 +204,28 @@ export default function Factures({ ecole, variante, demo }: {
         </>
       )}
 
-      {/* Le tarif : lisible par l'école qu'il facture, modifiable par le
-          site seul — il vaut pour toutes, une seule ne peut pas le fixer. */}
-      {tarifsListe.length > 0 && (
+      {/* ─── LE PRIX DES JETONS, ET IL NE SE DIT PAS PAREIL DES DEUX CÔTÉS ───
+          Une ÉCOLE lit six chiffres : entrée et sortie des trois barreaux de
+          SON fournisseur actif (TarifEcole). Elle y lisait naguère le tableau
+          ci-dessous, tronqué — tarif retenu, mélange, une ligne par
+          fournisseur, la plupart vides. Trois défauts, et le premier suffit :
+          le mélange suppose un rapport entrée/sortie que personne ne mesure,
+          donc il ne se vérifie pas ; les dix autres fournisseurs ne concernent
+          pas cette école ; et le champ « retenu » y était grisé, c'est-à-dire
+          qu'on montrait un réglage pour dire qu'il n'était pas à elle.
+          Le SITE, lui, garde tout : c'est ICI que l'échelle s'arbitre, et on
+          n'arbitre pas entre des niveaux dont on ne voit qu'un prix. */}
+      {!site && !demo && <TarifEcole ecole={ecole} />}
+
+      {/* Le tarif du site : une ligne par fournisseur, modifiable par lui
+          seul — il vaut pour toutes les écoles, une seule ne peut pas le fixer. */}
+      {site && tarifsListe.length > 0 && (
         <>
           <h3 className="mt-6 font-bold">{t("admin.tarif.heading")}</h3>
-          <p className="mt-1 text-xs opacity-60">{site ? t("admin.tarif.helpSuper") : t("admin.tarif.helpSchool")}</p>
-          {site && (
-            <button onClick={() => void sonder()} disabled={sondeEnCours} className={`${BTN} mt-2`}>
-              {sondeEnCours ? t("admin.sonde.working") : t("admin.sonde.run")}
-            </button>
-          )}
+          <p className="mt-1 text-xs opacity-60">{t("admin.tarif.helpSuper")}</p>
+          <button onClick={() => void sonder()} disabled={sondeEnCours} className={`${BTN} mt-2`}>
+            {sondeEnCours ? t("admin.sonde.working") : t("admin.sonde.run")}
+          </button>
           <table className="mt-2 w-full text-left text-sm">
             <thead className="text-xs uppercase opacity-60">
               <tr><th className="py-1">{t("admin.col.provider")}</th>
@@ -219,29 +237,93 @@ export default function Factures({ ecole, variante, demo }: {
             </thead>
             <tbody>
               {tarifsListe.map(tr => (
-                <tr key={tr.provider} className="border-b border-white/5">
-                  <td className="py-1">{tr.provider}</td>
-                  <td className="text-right">
-                    <input type="number" min={0} step="0.01" defaultValue={tr.prixMtok} disabled={!site}
-                      onBlur={e => { const v = Number(e.target.value);
-                        if (site && Number.isFinite(v) && v !== tr.prixMtok) void reglerTarif(tr.provider, v); }}
-                      className="w-20 rounded bg-tertiary p-1 text-right text-xs disabled:opacity-50" />
-                  </td>
-                  {/* LA PROPOSITION, à côté du choix — jamais à sa place. Elle
-                      est en DOLLARS et le tarif retenu dans la monnaie du
-                      gestionnaire : la conversion reste un geste humain. */}
-                  <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.entreeMtok?.toFixed(2) ?? "—"}</td>
-                  <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.sortieMtok?.toFixed(2) ?? "—"}</td>
-                  <td className="text-right font-mono text-xs">
-                    {tr.proposition && !tr.proposition.detail
-                      ? `${tr.proposition.melangeMtok.toFixed(2)} ${tr.proposition.devise}` : "—"}
-                  </td>
-                  <td className="text-xs">
-                    {tr.proposition?.detail
-                      ? <span className="rounded bg-amber-500/25 px-1 text-amber-200" title={tr.proposition.detail}>{t("admin.sonde.notFound")}</span>
-                      : <span className="opacity-60">{tr.proposition?.modele || "—"}</span>}
-                  </td>
-                </tr>
+                <React.Fragment key={tr.provider}>
+                  <tr className="border-b border-white/5">
+                    <td className="py-1">
+                      {tr.provider}
+                      {/* RECOUPER EN UN CLIC. Un tarif qu'on ne peut pas
+                          vérifier est un tarif qu'il faut croire : ce lien
+                          ouvre la page même où la sonde a lu ce prix. */}
+                      {tr.verifier && (
+                        <a href={tr.verifier} target="_blank" rel="noopener noreferrer"
+                          className="ml-1 text-[10px] underline opacity-60 hover:opacity-100">
+                          {t("admin.sonde.verify")}
+                        </a>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      {/* Plus de `disabled={!site}` : ce tableau ne s'affiche
+                          plus que pour le site. Le serveur, lui, garde sa
+                          garde — /api/admin/tarifs refuse le POST à quiconque
+                          n'est pas super-administrateur, et c'est elle qui
+                          protège, pas l'attribut. */}
+                      <input type="number" min={0} step="0.01" defaultValue={tr.prixMtok}
+                        onBlur={e => { const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v !== tr.prixMtok) void reglerTarif(tr.provider, v); }}
+                        className="w-20 rounded bg-tertiary p-1 text-right text-xs" />
+                    </td>
+                    {/* LA PROPOSITION, à côté du choix — jamais à sa place. La
+                        sonde l'a DÉJÀ convertie dans la monnaie de facturation
+                        (elle reste en dollars le jour où le taux de change est
+                        injoignable, et le dit alors dans `devise`) : ce qui
+                        reste un geste humain, c'est de l'appliquer, pas de la
+                        convertir. La devise affichée est celle de la mesure. */}
+                    <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.entreeMtok?.toFixed(2) ?? "—"}</td>
+                    <td className="text-right font-mono text-xs opacity-70">{tr.proposition?.sortieMtok?.toFixed(2) ?? "—"}</td>
+                    <td className="text-right font-mono text-xs">
+                      {tr.proposition && !tr.proposition.detail
+                        ? `${tr.proposition.melangeMtok.toFixed(2)} ${tr.proposition.devise}` : "—"}
+                    </td>
+                    <td className="text-xs">
+                      {tr.proposition?.detail
+                        ? <span className="rounded bg-amber-500/25 px-1 text-amber-200" title={tr.proposition.detail}>{t("admin.sonde.notFound")}</span>
+                        : <span className="opacity-60">{tr.proposition?.modele || "—"}</span>}
+                    </td>
+                  </tr>
+                  {/* LES TROIS BARREAUX, ET LEUR PRIX. L'échelle décide du
+                      niveau d'intelligence ET du coût par élève : on n'arbitre
+                      pas entre trois niveaux dont un seul montre son prix. Le
+                      tarif proposé reste celui du barreau le plus haut — dit en
+                      clair sous les trois lignes, parce que « le plus haut »
+                      n'est plus « le plus cher » (Mistral Large 2512 coûte
+                      moins que Mistral Medium 3.5). */}
+                  {(tr.proposition?.barreaux?.length ?? 0) > 0 && tr.proposition!.barreaux.map(b => (
+                    <tr key={`${tr.provider}-${b.rang}`} className="text-xs opacity-70">
+                      {/* Le rang ET le nom du barreau dans UNE seule clé : le
+                          séparateur n'est pas une ponctuation universelle, et
+                          l'ordre des deux appartient à la langue. */}
+                      <td className="py-0.5 pl-4 font-mono">
+                        {t("admin.sonde.rung", { n: b.rang, barreau: b.barreau })}
+                      </td>
+                      <td></td>
+                      <td className="text-right font-mono">{b.entreeMtok.toFixed(2)}</td>
+                      <td className="text-right font-mono">{b.sortieMtok.toFixed(2)}</td>
+                      {/* Le mélange PORTE SA MONNAIE, comme celui de la ligne
+                          du dessus : c'est le seul montant de ce tableau qu'on
+                          recopie dans le champ « Retenu », et un nombre qu'on
+                          recopie sans son unité est un nombre qu'on convertit
+                          deux fois, ou pas du tout. */}
+                      <td className="text-right font-mono">
+                        {b.detail ? "—" : `${b.melangeMtok.toFixed(2)} ${tr.proposition!.devise}`}
+                      </td>
+                      <td>
+                        {b.detail
+                          ? <span className="rounded bg-amber-500/25 px-1 text-amber-200" title={b.detail}>{t("admin.sonde.notFound")}</span>
+                          : <span className="opacity-80">{b.modele}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                  {(tr.proposition?.rangRetenu ?? 0) > 0 && (
+                    <tr className="border-b border-white/5 text-xs">
+                      <td colSpan={6} className="pb-1 pl-4 opacity-70">
+                        {t("admin.sonde.retainedRung", {
+                          n: tr.proposition!.rangRetenu,
+                          barreau: tr.proposition!.barreaux[tr.proposition!.barreaux.length - 1]?.barreau ?? tr.proposition!.modele,
+                        })}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

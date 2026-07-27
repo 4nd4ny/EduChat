@@ -14,6 +14,19 @@ import { ERR, isProviderId } from '../../../shared/providers';
 //  PUT → { provider, rungs: string[] }. Trois barreaux vides = retour à la
 //        proposition du code.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // LE SUPER-ADMINISTRATEUR, ET LUI SEUL — lecture comprise.
+  //
+  // La raison n'est pas hiérarchique, elle est de fond : cette échelle
+  // détermine le niveau d'intelligence ET LE COÛT PAR ÉLÈVE, et elle vaut pour
+  // TOUTES les écoles à la fois. Un choix hâtif, ou simplement une mise à jour
+  // oubliée à la sortie d'une version, change donc d'un coup ce que chaque
+  // établissement dépense par élève — sans qu'aucun d'eux l'ait demandé et
+  // sans que rien ne le leur signale. Une école ne peut pas porter cette
+  // décision pour les autres ; le site la porte, et l'assume.
+  //
+  // Ce que le tarif proposé en face (src/server/sondeTarifs.ts) rend
+  // vérifiable : les trois barreaux y sont affichés avec leur prix, pour que
+  // ce réglage-ci se prenne en connaissance de ce qu'il coûte.
   if (!requireSuperAdmin(req)) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
 
   if (req.method === 'GET') {

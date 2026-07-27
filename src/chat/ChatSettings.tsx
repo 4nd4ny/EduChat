@@ -48,10 +48,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   const [hasAccount, setHasAccount] = useState(false);
   const [keysAvailable, setKeysAvailable] = useState(true);
   const [keyError, setKeyError] = useState("");
-  // Fournisseurs que le serveur peut servir sans clé personnelle, et lesquels
-  // ce visiteur a le droit de voir. La règle vit dans useFournisseurs — la même
-  // que celle appliquée sur la page « duel », et une seule fois écrite.
-  const { served, visibles, motifAIAct, demonstration, pret } = useFournisseurs();
+  // Les fournisseurs que ce visiteur a le droit de voir. La règle vit dans
+  // useFournisseurs — la même que celle appliquée sur la page « duel », et une
+  // seule fois écrite.
+  // `served` (qui paie ?) n'est plus lu ici : l'étiquette « clé perso » qu'il
+  // servait à poser a disparu du menu (voir plus bas).
+  const { visibles, motifAIAct, demonstration, pret } = useFournisseurs();
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
@@ -181,23 +183,27 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
                 Ailleurs, sans compte : la démonstration gratuite seule. */}
             {visibles.map(id => {
               const item = providerDefaults[id];
-              // « clé personnelle » ne se dit QUE là où l'information apprend
-              // quelque chose. Sur un fournisseur à drapeau rouge, elle est
-              // bavarde : hors d'un établissement, ces fournisseurs ne se
-              // montrent qu'à un compte, qui apporte forcément de quoi payer —
-              // la clé interne ne les paiera jamais. Le drapeau WRNG, lui,
-              // reste : c'est lui qui porte l'avertissement.
-              const cleRequise = served !== null && !served.includes(id) && !item.wrng;
               return (
                 <option key={id} value={id}>
                   {item.label}
                   {item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : item.wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
-                  {/* L'ÉTIQUETTE QUI MANQUAIT. Sans compte et hors campus, ce
-                      menu n'a plus qu'une ligne, « OpenRouter · WRNG » : le nom
-                      d'un intermédiaire que personne ne connaît, flanqué d'un
-                      drapeau rouge, pour désigner ce qui est en réalité une
-                      démonstration offerte. On le dit donc, là où on le lit. */}
-                  {demonstration ? ` · ${t("fournisseurs.demoTag")}` : cleRequise ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                  {/* PLUS D'ÉTIQUETTE « clé perso » ICI (décision du client).
+                      Une étiquette ne vaut que si elle DISTINGUE deux lignes du
+                      même menu. Ce n'était pas le cas : le visiteur anonyme hors
+                      campus doit apporter sa clé pour TOUS les fournisseurs de sa
+                      liste, et marquer chacun d'eux ne lui apprenait rien — cela
+                      lui faisait au contraire chercher la ligne qui, elle, serait
+                      gratuite, et qui n'existe pas. Gemini en donnait la lecture
+                      la plus fausse : ni RGPD ni WRNG, il n'affichait que ce
+                      « clé perso » solitaire, comme s'il était le seul concerné.
+                      Ce qui reste dit tout ce qu'il y a à dire : le drapeau, qui
+                      relève du droit, et l'étiquette de démonstration ci-dessous,
+                      qui est la seule information VRAIMENT distinctive — cette
+                      ligne-là ne coûte rien.
+                      /duel garde la sienne (chat.input.ownKeyOnly) : ce menu-ci
+                      n'est pas le sien, et l'auteur qui compare deux moteurs
+                      arbitre entre des lignes de statuts différents. */}
+                  {demonstration ? ` · ${t("fournisseurs.demoTag")}` : ""}
                 </option>
               );
             })}

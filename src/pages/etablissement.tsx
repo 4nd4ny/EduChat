@@ -8,6 +8,7 @@ import { useT } from "../i18n/useT";
 import { getAccount, authHeaders } from "../utils/account";
 import { formatTokens } from "../utils/formatTokens";
 import PourquoiEduChat from "../site/PourquoiEduChat";
+import { useLargeurPage } from "../site/ListePaginee";
 import SelecteurEcole, { ecolesDemo, useEcoles } from "../site/SelecteurEcole";
 import { ZoneAdmin } from "../administration/commun";
 import Comptes from "../administration/Comptes";
@@ -75,6 +76,10 @@ export default function EtablissementPage() {
   // ce que cette page affiche : l'en-tête qu'il pose (x-educhat-ecole) est
   // relu et REVÉRIFIÉ par chaque garde serveur (src/server/appartenance.ts).
   const ecoles = useEcoles();
+  // Une liste seule (comptes, tuteurs, mouvements du porte-monnaie) prend TOUTE
+  // la largeur de la page : voir useLargeurPage. Le hook est appelé ICI, avant
+  // les retours anticipés de chargement et de garde, comme l'exige React.
+  const largeur = useLargeurPage("max-w-3xl");
   const [data, setData] = useState<Data | null>(null);
   const [state, setState] = useState<"loading" | "auth" | "none" | "ready">("loading");
   // L'accueil public, chargé en parallèle de la garde : c'est lui qui décide
@@ -578,7 +583,7 @@ export default function EtablissementPage() {
 
   const etab = data!.etablissement;
   return (
-    <div className="mx-auto max-w-3xl px-4 pt-6 pb-20 text-primary">
+    <div className={`${largeur} px-4 pt-6 pb-20 text-primary`}>
       <Head><title>{`${t("etab.title")} — EduChat`}</title></Head>
 
       {demo && (
@@ -812,8 +817,15 @@ export default function EtablissementPage() {
           PAGE (et non à un panneau replié) parce que ce qu'elle contient —
           l'offre de serveur local — se transmet à une direction ou à un
           service informatique : il faut une adresse qu'on puisse coller dans
-          un courriel et une page qui s'imprime. */}
-      <section className="mt-6 flex flex-wrap items-center gap-3">
+          un courriel et une page qui s'imprime.
+          CENTRÉ, comme le sont déjà « Ce qui est conservé, et par qui » et
+          « Guide des établissements » (voir PourquoiEduChat) : ces trois
+          lignes sont les portes de sortie de la page, et une porte de sortie
+          au fer à gauche se lit comme la suite du paragraphe qui la précède.
+          `text-center` en plus de `justify-center` : sur écran étroit, la
+          phrase d'accompagnement passe SOUS le bouton, et seul le centrage du
+          texte la garde alignée avec lui. */}
+      <section className="mt-6 flex flex-wrap items-center justify-center gap-3 text-center">
         <Link href="/assistance"
           className="flex items-center gap-2 rounded border border-[#DC6521]/60 px-4 py-2 font-bold hover:bg-[#DC6521]/10">
           <MdSupportAgent className="text-[#DC6521]" /> {t("assistance.button")}

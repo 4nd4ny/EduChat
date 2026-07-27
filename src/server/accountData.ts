@@ -65,7 +65,8 @@ export type AccountData = {
    */
   porteMonnaie: {
     ouvert: boolean; solde: number; devise: string; depense30: number;
-    contributionPct: number; jours: number | null; aSec: boolean;
+    contributionPct: number; commissionPlancher: number;
+    jours: number | null; aSec: boolean;
     mouvements: { id: number; ts: number; genre: string; montant: number; solde: number; detail: string }[];
   };
   moderations: number;

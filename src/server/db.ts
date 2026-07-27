@@ -576,6 +576,27 @@ export function getDb(): Database.Database {
     // jamais un champ renvoyé par le navigateur, jamais le custom_id lu chez
     // PayPal — qui dira au retour quel porte-monnaie créditer.
     "ALTER TABLE recharges ADD COLUMN titulaire_email TEXT",
+    // LES TROIS BARREAUX SONDÉS, et non le seul retenu — JSON, un tableau de
+    // { rang, barreau, modele, entreeMtok, sortieMtok, melangeMtok, detail }.
+    //
+    // Pourquoi une colonne JSON et non trois triplets de colonnes : ces
+    // valeurs ne sont JAMAIS lues par un calcul ni par une facture, seulement
+    // affichées côte à côte pour arbitrer entre trois niveaux d'intelligence.
+    // Ce qui facture, c'est prix_mtok, réglé à la main et intouché ici.
+    //
+    // Vide pour toute ligne écrite avant cette migration, et jusqu'à la
+    // première sonde qui suit : la lecture doit donc survivre à une chaîne
+    // vide (JSON.parse('') lève) — c'est fait dans propositions().
+    "ALTER TABLE tarifs ADD COLUMN propose_barreaux TEXT NOT NULL DEFAULT ''",
+    // LA MONNAIE DANS LAQUELLE LA PROPOSITION A ÉTÉ ÉCRITE — et pourquoi elle
+    // ne se déduit pas. La sonde convertit les prix d'OpenRouter (dollars) vers
+    // la monnaie de facturation ; quand le taux de change est injoignable, elle
+    // laisse les montants EN DOLLARS plutôt que d'inventer un taux. Les deux
+    // cas produisent des nombres de même forme dans les mêmes colonnes : sans
+    // cette colonne, la relecture devait DEVINER, et devinait « monnaie du
+    // gestionnaire » — c'est-à-dire affichait « 4.00 CHF » sur une valeur en
+    // dollars, un écart d'environ 20 % annoncé comme un fait.
+    "ALTER TABLE tarifs ADD COLUMN propose_devise TEXT NOT NULL DEFAULT ''",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

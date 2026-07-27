@@ -3,7 +3,7 @@ import Link from "next/link";
 import React from "react";
 import { MdAdminPanelSettings } from "react-icons/md";
 import { useT } from "../i18n/useT";
-import { useListeSeule } from "../site/ListePaginee";
+import { useLargeurPage, useListeSeule } from "../site/ListePaginee";
 import { useEcoles } from "../site/SelecteurEcole";
 import Comptes from "../administration/Comptes";
 import Etablissements from "../administration/Etablissements";
@@ -43,6 +43,8 @@ export default function AdminPage() {
   // section décide elle-même de se taire quand une autre est demandée : le
   // gabarit ci-dessous n'a plus qu'à cacher les titres de zone.
   const seule = useListeSeule();
+  // Une liste seule prend TOUTE la largeur : voir useLargeurPage.
+  const largeur = useLargeurPage("max-w-5xl");
 
   if (!etat.pret) {
     return <div className="py-16 text-center text-primary opacity-60">{t("common.loading")}</div>;
@@ -82,7 +84,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-6 pb-16 text-primary">
+    <div className={`${largeur} px-4 pt-6 pb-16 text-primary`}>
       <Head><title>{`${t("admin.title")} — EduChat`}</title></Head>
       <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
       {!seule && (

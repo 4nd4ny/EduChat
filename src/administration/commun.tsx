@@ -88,11 +88,23 @@ export type Compte = {
 };
 export type MouvementRow = { id: number; ts: number; genre: string; montant: number; solde: number; detail: string; par: string };
 export type Participation = { devise: string; pct: number; collectee: number; demo: number; respire: number; jetonsOfferts: number };
+/** Un barreau de l'échelle, avec ce que son million de jetons coûte. */
+export type BarreauTarif = {
+  rang: number; barreau: string; modele: string;
+  entreeMtok: number; sortieMtok: number; melangeMtok: number; detail: string;
+};
 export type PropositionTarif = {
   modele: string; entreeMtok: number; sortieMtok: number;
   melangeMtok: number; devise: string; detail: string; at: number;
+  /** Les trois barreaux relevés ; vide tant que la sonde d'après migration n'a pas tourné. */
+  barreaux: BarreauTarif[];
+  rangRetenu: number;
 };
-export type TarifRow = { provider: string; prixMtok: number; proposition: PropositionTarif | null };
+export type TarifRow = {
+  provider: string; prixMtok: number; proposition: PropositionTarif | null;
+  /** Page du catalogue public où recouper ce tarif ; null hors fournisseurs d'école. */
+  verifier: string | null;
+};
 export type CatalogueRow = { provider: string; source: string; count: number; at: number };
 export type LadderRow = {
   provider: string; rungs: string[]; suggested: string[]; custom: boolean;

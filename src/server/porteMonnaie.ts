@@ -130,18 +130,25 @@ export const CONTRIBUTION_MAX = 10;
  * service, et une école qui choisit ce qu'elle donne n'a aucune raison d'aller
  * voir ailleurs. À défaut de choix, le réglage du serveur.
  *
- * UNE PERSONNE NE CHOISIT PAS, et c'est délibéré : le curseur a été donné aux
- * écoles parce qu'une direction arbitre un budget public et qu'on lui doit ce
- * geste. Un particulier achète quelques francs de jetons ; lui demander de
- * fixer lui-même sa contribution transformerait un achat de deux clics en une
- * question de conscience. Il paie le taux de la plateforme, annoncé avant la
- * recharge — bornes comprises, pour qu'un réglage de serveur aberrant ne se
- * traduise jamais en prélèvement aberrant.
+ * UNE PERSONNE NE CHOISIT PAS, ET N'A RIEN À CHOISIR : elle paie le PLANCHER,
+ * toujours, et le plancher ne couvre que les frais d'encaissement de PayPal.
+ * Ce n'est pas la même chose que « pas de curseur » — c'est ZÉRO MARGE.
+ *
+ * Le curseur de 3,5 à 10 % est l'affaire des ÉCOLES : une direction arbitre un
+ * budget public et décide ce qu'elle donne à la gratuité des autres. Un
+ * particulier, lui, n'a pas à financer les écoles — le site est fait pour lui,
+ * ce sont les écoles qui doivent aider les élèves et non l'inverse. Lui
+ * appliquer le réglage du serveur (BillingSurchargePct, 10 % par défaut !)
+ * revenait à lui faire payer une participation dont il n'est pas le
+ * bénéficiaire, et à laquelle il n'avait pas consenti.
+ *
+ * CONTRIBUTION_MIN vaut exactement FRAIS_PAYPAL_PCT (src/server/paypal.ts) :
+ * la constante n'est pas importée d'ici parce que paypal.ts importe ce
+ * module — le cycle serait pire que la duplication d'un 3,5 commenté des deux
+ * côtés. Voir COMMISSION_MIN pour la PART FIXE des mêmes frais.
  */
 export function contributionDe(t: Titulaire): number {
-  if (t.genre === 'compte') {
-    return Math.min(CONTRIBUTION_MAX, Math.max(CONTRIBUTION_MIN, BillingSurchargePct));
-  }
+  if (t.genre === 'compte') return CONTRIBUTION_MIN;
   const row = getDb().prepare('SELECT contribution_pct FROM etablissements WHERE id = ?')
     .get(t.id) as { contribution_pct: number } | undefined;
   const choisi = row?.contribution_pct ?? -1;
@@ -172,11 +179,19 @@ export function coutDe(provider: string, tokensIn: number, tokensOut: number, pc
 }
 
 /**
- * Commission prélevée sur une RECHARGE, au taux choisi par l'école.
+ * LA PART FIXE DES FRAIS D'ENCAISSEMENT, en valeur absolue.
  *
- * Un minimum en valeur absolue, parce que les frais de transaction ont une
- * part fixe : sans lui, une recharge de dix francs coûterait plus cher à
- * encaisser qu'elle ne rapporte. OpenRouter fait de même (0,80 $ chez Stripe).
+ * PayPal ne facture pas qu'un pourcentage : il prend aussi un forfait par
+ * transaction (de l'ordre d'un demi-franc en Suisse). Encaisser cinq francs
+ * coûte donc proportionnellement bien plus cher qu'en encaisser deux cents, et
+ * sans ce plancher une petite recharge coûterait à la plateforme plus qu'elle
+ * ne lui rapporte. OpenRouter fait de même (0,80 $ chez Stripe).
+ *
+ * CE PLANCHER MORD, ET IL DOIT SE DIRE. Sur 5 francs il prélève 0.50, soit
+ * 10 % — pas 3,5. Toute phrase affichée et toute ligne de registre qui
+ * annoncent « le pourcentage » sans nommer ce forfait promettent un chiffre
+ * que le relevé démentira : voir `plancher` ci-dessous, qui existe pour que
+ * l'écran et le registre puissent dire lequel des deux a joué.
  */
 export const COMMISSION_MIN = 0.5;
 
@@ -196,12 +211,49 @@ export const COMMISSION_MIN = 0.5;
  */
 export const DETAIL_COMMISSION = 'Contribution aux frais';
 
+/**
+ * LE LIBELLÉ D'UNE RETENUE, QUI DOIT SURVIVRE À LA LECTURE DU RELEVÉ.
+ *
+ * Écrire « (3,5 %) » en face de −0.50 sur une recharge de 5 francs est faux :
+ * c'est 10 %. Le titulaire ne le découvre pas à l'écran — où l'on peut encore
+ * nuancer — mais des mois plus tard, au relevé, seul, avec deux chiffres qui
+ * ne se recoupent pas. On nomme donc CE QUI A ÉTÉ APPLIQUÉ : le pourcentage
+ * quand c'est lui, le forfait quand c'est le forfait.
+ *
+ * L'EN-TÊTE NE BOUGE PAS. bilanParticipation (src/server/facturation.ts)
+ * retrouve ces lignes par `detail LIKE DETAIL_COMMISSION || '%'` : tout ce qui
+ * suit est libre, ce qui précède ne l'est pas. D'où la composition ici, en un
+ * seul endroit, plutôt que dans chacune des deux routes de recharge.
+ */
+export function detailCommission(
+  c: { pct: number; commission: number; plancher: boolean }, devise: string,
+): string {
+  return c.plancher
+    ? `${DETAIL_COMMISSION} (forfait ${c.commission.toFixed(2)} ${devise})`
+    : `${DETAIL_COMMISSION} (${c.pct} %)`;
+}
+
+/**
+ * Ce qu'une recharge retient, et LEQUEL DES DEUX CALCULS a gagné.
+ *
+ * `pct` reste le taux NOMINAL du titulaire — celui que l'école a choisi, le
+ * plancher pour une personne. `plancher` dit que le forfait a mordu, c'est-à-
+ * dire que la retenue n'est PAS ce pourcentage : sans ce booléen, chaque
+ * appelant refait la comparaison de son côté, et le jour où l'un d'eux
+ * l'oublie, l'écran ou le relevé annonce un taux que le montant dément.
+ */
 export function commissionRecharge(t: Titulaire, montant: number):
-  { commission: number; credite: number; pct: number } {
+  { commission: number; credite: number; pct: number; plancher: boolean } {
   const pct = contributionDe(t);
-  const commission = Math.max(COMMISSION_MIN, versLeHaut(montant * pct / 100));
+  const proportionnelle = versLeHaut(montant * pct / 100);
+  const commission = Math.max(COMMISSION_MIN, proportionnelle);
   // Le crédit descend au centime, la commission monte : jamais l'inverse.
-  return { commission, credite: Math.max(0, versLeBas(montant - commission)), pct };
+  return {
+    commission,
+    credite: Math.max(0, versLeBas(montant - commission)),
+    pct,
+    plancher: commission > proportionnelle,
+  };
 }
 
 /** La part de participation dans un coût — pour la dire, mouvement par mouvement. */
@@ -407,6 +459,14 @@ export function etatDuCompte(email: string) {
     devise: BillingCurrency,
     depense30: centimes(depense30),
     contributionPct: contributionDe(titulaireCompte(email)),
+    /**
+     * Le forfait, à côté du taux, PARCE QUE LA PHRASE AFFICHÉE A BESOIN DES
+     * DEUX. Dire « 3,5 % » seul serait faux dès la plus petite recharge, où
+     * c'est ce montant-ci qui est retenu. Il voyage avec le solde (/api/me/data)
+     * et non avec les bornes de paiement (/api/me/credits) : la phrase se lit
+     * même quand PayPal est éteint et que /api/me/credits n'a pas été appelé.
+     */
+    commissionPlancher: COMMISSION_MIN,
     /** Jours d'autonomie au rythme des trente derniers jours. null = inconnu. */
     jours: parJour > 0 ? Math.max(0, Math.floor(solde / parJour)) : null,
     aSec: solde <= 0,

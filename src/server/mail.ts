@@ -1,8 +1,12 @@
 // Envoi des codes de vérification par SMTP OVH (nodemailer).
 //
-// RÈGLE D'OR : le code voyage dans le CORPS de l'email et dans le FRAGMENT
-// du lien (#123-456) — jamais en query string ni en chemin, pour qu'aucun
-// journal (serveur, proxy) ne puisse le capter.
+// RÈGLE D'OR : le code voyage dans le CORPS de l'email, et le lien qui le
+// porte le met dans le FRAGMENT (#…) — jamais en query string ni en chemin.
+// Le fragment n'est pas transmis au serveur : ni les journaux (serveur, proxy)
+// ni l'en-tête Referer ne peuvent le capter. Depuis que le lien porte aussi
+// l'ADRESSE (sous forme signée et encodée, voir src/server/token.ts), cette
+// règle protège deux secrets au lieu d'un : le justificatif d'identité et
+// l'identité elle-même.
 //
 // En développement, sans SECRET_SMTP_HOST configuré (la boîte noreply@educh.at
 // n'existe pas encore), le code est journalisé côté serveur : le flux complet
@@ -115,27 +119,44 @@ export function sendEmailChangeWarning(oldEmail: string, newEmail: string): void
     .catch(error => console.error("Avertissement de changement d'adresse non envoyé :", error?.message));
 }
 
-export async function sendVerificationCode(email: string, name: string, code: string): Promise<void> {
-  const link = `${SITE_URL}/verifier#${code}`;
+/**
+ * Code de vérification, et LIEN QUI OUVRE LE COMPTE.
+ *
+ * `lien` est la charge signée fabriquée par signerLienVerification : elle porte
+ * l'adresse et le code. Cliquer ouvre donc la session sans rien redemander —
+ * c'est tout l'objet du procédé. Le code à six chiffres reste écrit en clair
+ * juste en dessous : qui lit ses courriels sur un autre appareil que celui où
+ * il travaille le recopie à la main, et n'a pas à se transmettre une URL de
+ * deux cents caractères.
+ */
+export async function sendVerificationCode(email: string, name: string, code: string, lien: string): Promise<void> {
+  const link = `${SITE_URL}/verifier#${lien}`;
   const subject = 'EduChat — votre code de vérification';
   const text = [
     `Bonjour ${name || ''},`.trim(),
     '',
-    `Votre code de vérification EduChat : ${code}`,
+    'Pour ouvrir votre compte EduChat, cliquez sur ce lien :',
+    // Seul sur sa ligne : les clients de messagerie coupent volontiers une URL
+    // longue collée à du texte, et un lien coupé ne s'ouvre plus.
+    link,
     '',
-    `Vous pouvez aussi cliquer sur ce lien puis confirmer votre adresse : ${link}`,
+    `Si vous préférez saisir le code à la main : ${code}`,
     '',
-    'Ce code expire dans 15 minutes. Si vous n\'êtes pas à l\'origine de cette demande, ignorez ce message.',
+    'Ce lien et ce code expirent dans 15 minutes et ne servent qu\'une fois.',
+    'Si vous n\'êtes pas à l\'origine de cette demande, ignorez ce message.',
   ].join('\n');
 
   if (!SmtpConfig.host) {
-    // Repli développement : pas de boîte SMTP → le code va dans les logs serveur.
-    console.log(`[DEV — SMTP non configuré] Code de vérification pour ${email} : ${code}`);
+    // Repli développement : pas de boîte SMTP → code ET lien vont dans les logs
+    // du serveur, pour que le flux complet (dont le rejeu du lien) reste
+    // testable sans boîte aux lettres.
+    console.log(`[DEV — SMTP non configuré] Code de vérification pour ${email} : ${code}\n  Lien : ${link}`);
     return;
   }
 
   await makeTransporter().sendMail({ from: SmtpConfig.from, to: email, subject, text });
   tracer("code de vérification demandé",
     `Un code de vérification vient d'être envoyé à ${email}${name ? ` (${name})` : ''}.\n`
-    + "Le code lui-même n'est pas reproduit ici : sans mot de passe sur EduChat, il suffirait à ouvrir ce compte.");
+    + "Ni le code ni le lien ne sont reproduits ici : sans mot de passe sur EduChat, l'un comme "
+    + "l'autre suffirait à ouvrir ce compte — le lien plus encore, puisqu'un simple clic l'ouvre.");
 }

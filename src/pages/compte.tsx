@@ -8,7 +8,7 @@ import { deleteServerConversations, deleteServerProfile } from "../utils/profile
 import { providerDefaults } from "../shared/providers";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
-import { useListe, useListeSeule } from "../site/ListePaginee";
+import { useLargeurPage, useListe, useListeSeule } from "../site/ListePaginee";
 import type { AccountData } from "../server/accountData";
 
 // Dossier FICTIF de la visite guidée : de quoi montrer chaque section — dont
@@ -28,13 +28,18 @@ const DOSSIER_DEMO: AccountData = {
     etablissement: { id: 1, name: "Collège de la Démonstration", monthTokens: 412350 },
   },
   keys: [{ provider: "mistral", updatedAt: Date.parse("2026-07-22T14:05:00Z"), readable: true }],
+  // LA RECHARGE DE DÉMONSTRATION SE RECALCULE, sans quoi elle apprendrait à
+  // lire de travers la seule page dont tout l'objet est qu'on puisse refaire
+  // l'addition : 21 versés, 3,5 % retenus — 0.735 monté au centime, donc
+  // 0.74 —, 20.26 crédités. Le taux affiché est le PLANCHER, celui d'un compte
+  // personnel ; l'autonomie suit la dépense (0.2067/jour → 96 jours).
   porteMonnaie: {
-    ouvert: true, solde: 18.4, devise: "CHF", depense30: 6.2,
-    contributionPct: 5, jours: 89, aSec: false,
+    ouvert: true, solde: 19.84, devise: "CHF", depense30: 6.2,
+    contributionPct: 3.5, commissionPlancher: 0.5, jours: 96, aSec: false,
     mouvements: [
-      { id: 3, ts: Date.parse("2026-07-24T10:00:00Z"), genre: "consommation", montant: -0.42, solde: 18.4, detail: "anthropic · claude-haiku" },
-      { id: 2, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "ajustement", montant: -1.05, solde: 18.82, detail: "Contribution aux frais (5 %)" },
-      { id: 1, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "recharge", montant: 21, solde: 19.87, detail: "PayPal" },
+      { id: 3, ts: Date.parse("2026-07-24T10:00:00Z"), genre: "consommation", montant: -0.42, solde: 19.84, detail: "anthropic · claude-haiku" },
+      { id: 2, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "ajustement", montant: -0.74, solde: 20.26, detail: "Contribution aux frais (3.5 %)" },
+      { id: 1, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "recharge", montant: 21, solde: 21, detail: "PayPal" },
     ],
   },
   moderations: 3,
@@ -128,6 +133,8 @@ export default function ComptePage() {
   // Huit conversations par page ; « Tout voir » rouvre la page sur cette
   // seule liste, entière, avec recherche et tri.
   const seule = useListeSeule();
+  // Une liste seule prend TOUTE la largeur : voir useLargeurPage.
+  const largeur = useLargeurPage("max-w-4xl");
   const listeConv = useListe("conversations", data?.conversations ?? [], {
     cherchable: c => `${c.name} ${c.promptName}`,
     tris: [
@@ -409,7 +416,7 @@ export default function ComptePage() {
   const { identite, consommation, keys, porteMonnaie, conversations, prompts } = data;
 
   return (
-    <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
+    <main className={`${largeur} px-4 pb-16 pt-6 text-primary`}>
       <Head><title>{`${t("compte.title")} — EduChat`}</title></Head>
 
       {!seule && (<>
@@ -572,13 +579,46 @@ export default function ComptePage() {
             </span>
           </>)}
         </div>
+        {/* CE QUE LA PLATEFORME RETIENT, EN ENTIER — pourcentage ET forfait.
+            Un compte personnel ne paie AUCUNE marge : le taux affiché ici est
+            le plancher, celui qui ne couvre que les frais de PayPal, et il
+            n'est pas négociable parce qu'il n'y a rien à négocier (le curseur
+            de 3,5 à 10 % appartient aux écoles, qui arbitrent un budget).
+            Le forfait est dit dans la même phrase : sans lui, la promesse
+            « seulement le pourcentage » serait démentie dès la recharge de
+            cinq francs, où 0.50 est retenu — et démentie au relevé, six mois
+            plus tard, quand plus personne n'est là pour l'expliquer. */}
         <p className="mt-2 text-xs opacity-60">
-          {t("compte.wallet.rateHint", { pct: porteMonnaie.contributionPct })}
+          {t("compte.wallet.rateHint", {
+            pct: porteMonnaie.contributionPct,
+            min: porteMonnaie.commissionPlancher.toFixed(2),
+            devise: porteMonnaie.devise,
+          })}
         </p>
         {/* Ce que le crédit ouvre — et ce qu'il n'ouvre pas. La nuance n'est pas
             décorative : elle évite qu'on croie avoir acheté l'accès à un
             fournisseur que la clé d'EduChat ne servira jamais. */}
         <p className="mt-1 text-xs opacity-60">{t("compte.wallet.unlocks")}</p>
+        {/* CE QUE COÛTE UN JETON — UN LIEN, ET NON UN TABLEAU.
+            Une école a UN fournisseur actif : ses trois barreaux tiennent en
+            six chiffres, et /etablissement les affiche. Un compte personnel,
+            lui, peut employer N'IMPORTE QUEL fournisseur et, avec sa propre
+            clé chez l'intermédiaire, n'importe lequel de leurs modèles :
+            dresser cette grille ici serait interminable à lire, faux le
+            lendemain d'une sortie de modèle, et faux en silence — personne ne
+            vient relire un tableau de prix qu'il a déjà cru une fois.
+            Le catalogue public porte les deux prix de chaque modèle, tenus à
+            jour par ceux dont c'est le métier : on y renvoie. Ce que la phrase
+            doit dire en propre, et qui ne se lit nulle part ailleurs, c'est que
+            RIEN N'EST AJOUTÉ à ces prix-là — la participation aux frais a déjà
+            été prise à la recharge, une seule fois (voir juste au-dessus). */}
+        <p className="mt-1 text-xs opacity-60">
+          {t("compte.wallet.prices")}{" "}
+          <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer"
+            className="underline opacity-90 hover:opacity-100">
+            {t("compte.wallet.pricesLink")}
+          </a>
+        </p>
         {!demo && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button onClick={() => void recharger()} disabled={busy} className={BOUTON}>

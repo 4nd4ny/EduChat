@@ -25,6 +25,30 @@ export function useListeSeule(): string | null {
   return typeof router.query.tout === "string" ? router.query.tout : null;
 }
 
+/**
+ * Classes de LARGEUR du conteneur d'une page qui porte des listes.
+ *
+ * UNE COLONNE LISIBLE POUR LIRE, TOUTE LA PAGE POUR CHERCHER. La page normale
+ * est un texte : elle garde sa colonne (`mx-auto max-w-3xl` et consorts), sans
+ * quoi les paragraphes courent d'un bord à l'autre de l'écran. Le mode « tout
+ * voir » n'est pas un texte, c'est un TABLEAU : on y vient avec une recherche
+ * et un tri pour retrouver une entrée précise, et chaque colonne tronquée est
+ * une information qu'il faut aller chercher ailleurs. Ici, la commodité passe
+ * avant l'élégance.
+ *
+ * LA RÈGLE EST ÉCRITE UNE FOIS, ICI. Les quatre pages concernées
+ * (/enseignant, /compte, /admin, /etablissement) l'appellent avec LEUR colonne
+ * de lecture ; quatre corrections recopiées auraient fini par diverger, et
+ * c'est justement ce que ce fichier existe pour empêcher (voir useListe).
+ *
+ * Avant la réponse du routeur, `useListeSeule()` rend null : on affiche donc
+ * la colonne de lecture, jamais l'inverse — le pire qu'il en coûte est un
+ * élargissement au premier rendu client, jamais une page de texte étalée.
+ */
+export function useLargeurPage(colonne: string): string {
+  return useListeSeule() ? "w-full" : `mx-auto ${colonne}`;
+}
+
 export function useListe<T>(id: string, items: T[], options?: {
   cherchable?: (item: T) => string;
   tris?: Tri<T>[];

@@ -1,15 +1,23 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getAccount, storeToken, clearToken, setEcoleActive } from "../utils/account";
 import { deleteServerProfile, syncProfile } from "../utils/profileSync";
 import { useT } from "../i18n/useT";
 
-// Vérification d'adresse email, sans mot de passe : nom + email → code à deux
-// fois trois chiffres reçu par email → jeton de compte en localStorage.
-// Le lien reçu par email arrive ici avec le code en FRAGMENT (#123-456) :
-// le fragment n'atteint jamais le serveur ni aucun journal.
+// Vérification d'adresse email, sans mot de passe : email → code à deux fois
+// trois chiffres reçu par email → jeton de compte en localStorage.
+//
+// LE LIEN DU COURRIEL OUVRE LE COMPTE, IL NE ROUVRE PAS LE FORMULAIRE. Il
+// arrive ici avec, en FRAGMENT, une charge signée qui porte l'adresse, le code
+// et les choix faits à la demande (src/server/token.ts) : la page la poste
+// telle quelle et la session s'ouvre. Le fragment, lui, n'atteint jamais le
+// serveur — ni ses journaux, ni l'en-tête Referer.
+//
+// Les liens de l'ANCIENNE forme (#123-456, encore en vol dans des boîtes aux
+// lettres au moment du déploiement) restent reconnus : ils pré-remplissent le
+// code, comme avant, et demandent l'adresse.
 export default function VerifierPage() {
   const router = useRouter();
   const t = useT();
@@ -30,16 +38,16 @@ export default function VerifierPage() {
   // fois, à l'écran même où il vient de se produire.
   const [ecoleReconnue, setEcoleReconnue] =
     useState<{ name: string; nouvelle: boolean } | null>(null);
+  // Ouverture de session EN COURS depuis le lien du courriel : l'écran ne doit
+  // montrer ni le formulaire (on ne redemande rien) ni le succès (rien n'est
+  // encore acquis), mais l'attente elle-même.
+  const [lienEnCours, setLienEnCours] = useState(false);
+  // Le fragment n'est lu et posté QU'UNE FOIS. Sans ce verrou, le double appel
+  // des effets (React en mode strict) enverrait deux confirmations : la seconde
+  // trouverait le lien déjà consommé et afficherait un échec PAR-DESSUS une
+  // connexion réussie — indiscernable, pour l'utilisateur, d'un vrai rejeu.
+  const lienTraite = useRef(false);
   const account = typeof window !== "undefined" ? getAccount() : null;
-
-  // Code pré-rempli depuis le fragment d'URL (lien de l'email).
-  useEffect(() => {
-    const fragment = window.location.hash.slice(1);
-    if (/^\d{3}-?\d{3}$/.test(fragment)) {
-      setCode(fragment);
-      setStep("confirm");
-    }
-  }, []);
 
   const errorLabels: Record<string, string> = {
     ERR_EMAIL_INVALID: "Cette adresse email ne semble pas valide.",
@@ -48,6 +56,9 @@ export default function VerifierPage() {
     ERR_CODE_WRONG: "Code incorrect.",
     ERR_TOO_MANY_ATTEMPTS: "Trop d'essais : redemandez un nouveau code.",
     ERR_RATE_LIMIT: "Trop de tentatives rapprochées : patientez une minute.",
+    // Signature invalide, lien expiré, lien déjà consommé : le serveur ne dit
+    // pas laquelle des trois, et cette page n'a donc qu'une phrase à offrir.
+    ERR_LIEN_INVALIDE: t("verify.lien.echec"),
   };
 
   const request = async (event: React.FormEvent) => {
@@ -55,7 +66,9 @@ export default function VerifierPage() {
     setBusy(true); setError("");
     const response = await fetch("/api/verify/request", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      // Les deux choix partent DÈS LA DEMANDE : ils voyagent signés dans le
+      // lien, et se retrouvent donc sur le téléphone qui ouvrira le courriel.
+      body: JSON.stringify({ email, syncOptin, isTeacher }),
     });
     setBusy(false);
     if (!response.ok) {
@@ -66,19 +79,29 @@ export default function VerifierPage() {
     setStep("confirm");
   };
 
-  const confirm = async (event: React.FormEvent) => {
-    event.preventDefault();
+  // Confirmation, quelle que soit la preuve apportée : le code recopié à la
+  // main, ou le lien signé du courriel. Un seul appel, un seul traitement du
+  // succès — le lien vaut le code, il n'y a donc pas deux façons d'entrer.
+  const envoyerConfirmation = async (preuve: Record<string, unknown>) => {
     setBusy(true); setError("");
     const response = await fetch("/api/verify/confirm", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code, syncOptin, isTeacher }),
+      body: JSON.stringify(preuve),
     });
     const data = await response.json().catch(() => ({}));
-    setBusy(false);
+    setBusy(false); setLienEnCours(false);
     if (!response.ok) {
       setError(errorLabels[data?.error?.code] || "La vérification a échoué.");
       return;
     }
+    // Ouvert par un lien, ce navigateur n'a jamais vu ni l'adresse ni les cases
+    // cochées à la demande du code : c'est la réponse du serveur qui les lui
+    // apprend. `teacher` compte autant que l'adresse — c'est lui qui déclenche,
+    // plus bas, la phrase disant ce que le rattachement à l'école N'OUVRE PAS.
+    // Sans cela, l'enseignant qui coche sur son ordinateur et clique sur son
+    // téléphone n'aurait jamais lu cet avertissement.
+    if (data.email) setEmail(String(data.email));
+    if (data.teacher) setIsTeacher(true);
     storeToken(data.token);
     if (data.ecole) {
       setEcoleReconnue({ name: String(data.ecole.name), nouvelle: !!data.ecole.nouvelle });
@@ -94,8 +117,52 @@ export default function VerifierPage() {
     setStep("done");
     // Connexion réussie : si l'option est active, on synchronise dans la foulée
     // (récupère le profil d'un autre navigateur, puis pousse l'état fusionné).
-    if (syncOptin) void syncProfile();
+    // Le serveur RENVOIE le choix : ouvert par un lien, ce navigateur ignore ce
+    // qui a été coché sur l'appareil d'où le code a été demandé.
+    if (data.sync ?? syncOptin) void syncProfile();
   };
+
+  const confirm = (event: React.FormEvent) => {
+    event.preventDefault();
+    void envoyerConfirmation({ email, code, syncOptin, isTeacher });
+  };
+
+  // LE LIEN DU COURRIEL, LU UNE FOIS ET AUSSITÔT EFFACÉ DE LA BARRE D'ADRESSE.
+  //
+  // Deux formes acceptées : la charge signée (base64url « charge.signature »),
+  // qui ouvre le compte sans rien redemander, et l'ancien code nu (#123-456),
+  // qui pré-remplit le formulaire comme avant — des courriels de l'ancienne
+  // forme dorment encore dans des boîtes le jour du déploiement.
+  //
+  // L'effacement du fragment n'est pas de la coquetterie : ce lien VAUT le
+  // code. On ne le laisse ni dans un signet, ni dans une capture d'écran de la
+  // barre d'adresse, ni exposé à un rechargement de page — lequel rejouerait un
+  // lien désormais consommé et afficherait un échec après une connexion pourtant
+  // réussie. L'historique du navigateur en garde trace — et il faut le dire
+  // exactement : la charge est SIGNÉE et ENCODÉE en base64url, pas CHIFFRÉE.
+  // Elle ne se dicte pas au téléphone et ne se lit pas d'un coup d'œil, mais un
+  // atob() dans une console rend l'adresse. Ce qu'on gagne ici est ailleurs :
+  // la trace laissée est déjà consommée, donc sans valeur. La confidentialité
+  // de l'adresse, elle, tient au FRAGMENT (jamais envoyé au serveur, absent des
+  // journaux et de l'en-tête Referer), pas à un chiffrement qui n'existe pas.
+  useEffect(() => {
+    const fragment = window.location.hash.slice(1);
+    if (!fragment || lienTraite.current) return;
+    lienTraite.current = true;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    if (/^\d{3}-?\d{3}$/.test(fragment)) {
+      setCode(fragment);
+      setStep("confirm");
+      return;
+    }
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(fragment)) {
+      setLienEnCours(true);
+      void envoyerConfirmation({ lien: fragment });
+    }
+    // Volontairement sans dépendances : ce fragment se lit au premier rendu, et
+    // une seule fois — c'est le verrou lienTraite qui en répond, pas React.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="mx-auto max-w-md px-4 pt-6 pb-16 text-primary">
@@ -118,11 +185,33 @@ export default function VerifierPage() {
         </p>
       )}
 
-      {step === "request" && (
+      {/* OUVERTURE PAR LE LIEN : rien à remplir, rien à cliquer. On ne montre
+          pas le formulaire pendant ce temps — le faire apparaître pour le
+          remplacer aussitôt donnerait justement l'impression qu'on redemande
+          ce que le serveur sait déjà. */}
+      {lienEnCours && (
+        <p className="mt-6 rounded border border-white/15 bg-secondary p-3 text-sm">
+          {t("verify.lien.encours")}
+        </p>
+      )}
+
+      {step === "request" && !lienEnCours && (
         <form onSubmit={request} className="mt-6 flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">{t("verify.email")}
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
               className="rounded bg-tertiary p-2" autoComplete="email" />
+          </label>
+          {/* LES DEUX CHOIX SE FONT ICI, AVANT L'ENVOI, et non plus à l'écran
+              du code : le lien du courriel ouvre le compte directement, il n'y
+              a plus d'écran intermédiaire où les poser. Ils partent signés dans
+              le lien, donc ils suivent jusqu'au téléphone qui l'ouvrira. */}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={syncOptin} onChange={e => setSyncOptin(e.target.checked)} />
+            {t("verify.sync")}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={isTeacher} onChange={e => setIsTeacher(e.target.checked)} />
+            Je suis enseignant·e — je souhaite gérer des sessions de classe (rattachement à un établissement validé par l'admin)
           </label>
           <button type="submit" disabled={busy}
             className="mt-2 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">
@@ -142,17 +231,14 @@ export default function VerifierPage() {
                 className="rounded bg-tertiary p-2" autoComplete="email" />
             </label>
           )}
+          {/* LE CODE COURT RESTE SAISISSABLE À LA MAIN : qui lit ses courriels
+              sur un autre appareil que celui où il travaille recopie six
+              chiffres plutôt qu'une URL de deux cents caractères. Les deux
+              cases ont migré à l'écran précédent (elles voyagent dans le lien) ;
+              elles gardent ici la valeur qui y a été choisie. */}
           <label className="flex flex-col gap-1 text-sm">{t("verify.code")}
             <input value={code} onChange={e => setCode(e.target.value)} required placeholder="123-456"
               inputMode="numeric" className="rounded bg-tertiary p-2 text-center text-xl tracking-widest" />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={syncOptin} onChange={e => setSyncOptin(e.target.checked)} />
-            {t("verify.sync")}
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={isTeacher} onChange={e => setIsTeacher(e.target.checked)} />
-            Je suis enseignant·e — je souhaite gérer des sessions de classe (rattachement à un établissement validé par l'admin)
           </label>
           <button type="submit" disabled={busy}
             className="mt-2 rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">

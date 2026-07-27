@@ -50,6 +50,22 @@ export type Fournisseurs = {
   /** Ce visiteur n'a que le repli gratuit : ni compte, ni réseau d'école. */
   demonstration: boolean;
   /**
+   * APPELLE-T-ON DEPUIS LE RÉSEAU D'UN ÉTABLISSEMENT ?
+   *
+   * Le fait ne se déduit pas de `motif` : une école dont un enseignant paie
+   * lui-même reçoit 'tout' comme un visiteur de son salon (voir
+   * perimetreFournisseurs). Il est donc rendu à part par /api/providers, qui le
+   * tient de surLeCampus() — la SEULE autorité sur cette question. On le porte
+   * ici tel quel, sans jamais le recalculer côté navigateur : une adresse
+   * réseau ne se devine pas dans une page.
+   *
+   * `false` tant que le serveur n'a pas répondu : hors campus est le cas par
+   * défaut, et c'est le bon sens du doute — une porte qui mène au catalogue
+   * commun ne trompe personne, l'inverse enverrait un visiteur du dehors sur
+   * la page d'une école qui n'est pas la sienne.
+   */
+  campus: boolean;
+  /**
    * LE SERVEUR A-T-IL RÉPONDU ? — `visibles` vaut avant cela la liste d'attente
    * d'une salle de classe, qui n'est le périmètre de personne en particulier.
    * Un appelant qui se contente d'AFFICHER cette liste n'a pas besoin de le
@@ -66,6 +82,7 @@ type ReponseProviders = {
   served?: string[];
   visibles?: ProviderId[];
   motif?: 'tout' | 'ecole' | 'demo';
+  campus?: boolean;
   compte?: boolean;
 };
 
@@ -140,6 +157,7 @@ export function useFournisseurs(_options?: { surface?: 'chat' | 'duel' }): Fourn
     /** La liste à afficher. Tant que la réponse n'est pas là : celle d'une école. */
     visibles: visibles as readonly ProviderId[],
     demonstration: perimetre?.motif === 'demo',
+    campus: perimetre?.campus === true,
     pret: perimetre !== null,
   };
 }

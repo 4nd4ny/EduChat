@@ -1,8 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireAdmin, requireSuperAdmin } from '../../../server/admin';
 import { etatDesComptes, mouvements, bouger, reglerContribution, commissionRecharge,
-  titulaireEcole, CONTRIBUTION_MIN, CONTRIBUTION_MAX, DETAIL_COMMISSION }
+  titulaireEcole, CONTRIBUTION_MIN, CONTRIBUTION_MAX, detailCommission }
   from '../../../server/porteMonnaie';
+import { BillingCurrency } from '../../../utils/env';
 import { paypalActif, rembourser, FRAIS_PAYPAL_PCT } from '../../../server/paypal';
 import { ERR } from '../../../shared/providers';
 
@@ -80,11 +81,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // jeton. Deux mouvements distincts pour qu'on lise ce qui est entré et ce
     // qui a été retenu — un solde net sans sa ligne de commission serait un
     // chiffre qu'on ne peut pas recalculer.
-    const { commission, credite, pct } = commissionRecharge(titulaireEcole(etablissementId), Math.abs(montant));
+    const retenue = commissionRecharge(titulaireEcole(etablissementId), Math.abs(montant));
+    const { commission, credite, pct } = retenue;
     bouger(titulaireEcole(etablissementId), 'recharge', Math.abs(montant),
       String(req.body?.detail ?? '').slice(0, 200) || 'versement', scope.auth.email);
+    // Le libellé nomme ce qui a joué : sur un versement de 10 francs à 3,5 %,
+    // c'est le forfait (0.50, soit 5 %) et non le taux. Écrire le taux ici
+    // laisserait au registre de l'école un chiffre que son solde dément.
     const solde = bouger(titulaireEcole(etablissementId), 'ajustement', -commission,
-      `${DETAIL_COMMISSION} (${pct} %)`, scope.auth.email);
+      detailCommission(retenue, BillingCurrency), scope.auth.email);
     return res.status(200).json({ ok: true, solde, commission, credite, pct });
   }
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
 import { useT } from "../i18n/useT";
 import { authHeaders, getAccount } from "../utils/account";
-import { useListeSeule } from "../site/ListePaginee";
+import { useLargeurPage, useListeSeule } from "../site/ListePaginee";
 import SelecteurEcole, { ecolesDemo, useEcoles } from "../site/SelecteurEcole";
 import { ZoneAdmin, ZoneEnseignant } from "../administration/commun";
 import { ModerationCommentaires, ModerationTuteurs } from "../administration/Moderation";
@@ -75,6 +75,8 @@ export default function EnseignantPage() {
   const t = useT();
   const ecoles = useEcoles();
   const seule = useListeSeule();
+  // Une liste seule prend TOUTE la largeur : voir useLargeurPage.
+  const largeur = useLargeurPage("max-w-3xl");
   const [status, setStatus] = useState<Status | null>(null);
   const [prompts, setPrompts] = useState<PromptOption[]>([]);
   const [password, setPassword] = useState("");
@@ -344,7 +346,7 @@ export default function EnseignantPage() {
     && !!ecoleCourante && !peutModerer;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
+    <div className={`${largeur} px-4 pb-16 text-primary`}>
       <Head><title>{`${t("session.title")} — EduChat`}</title></Head>
 
       {demo && (
