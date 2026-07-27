@@ -42,23 +42,47 @@ export const providerDefaults: Record<ProviderId, {
   label: string; model: string; gdpr?: boolean; wrng?: boolean;
   images?: boolean; pdf?: boolean; voice?: boolean;
   /**
-   * `adultOnly` : fournisseur ÉCARTÉ au titre du règlement européen sur l'IA
-   * (AI Act), qui interdit d'exposer des mineurs à certains systèmes.
+   * `ecarte` : fournisseur ÉCARTÉ D'UN PUBLIC SCOLAIRE, au titre du règlement
+   * européen sur l'IA (AI Act), qui interdit d'exposer des mineurs à certains
+   * systèmes. Là où l'école répond des personnes — sur son réseau — ils ne
+   * figurent pas ; et aucune clé de la plateforme ne les finance jamais, nulle
+   * part (src/server/accesFournisseurs.ts porte la démonstration).
    *
-   * DEUX GARDES, ET ELLES NE SE REMPLACENT PAS (src/server/adult.ts porte la
-   * démonstration). Depuis l'IP d'un établissement, ces fournisseurs n'existent
-   * pour personne — compte ou pas, clé ou pas. Ailleurs, ils demandent un compte
-   * dont la majorité a été vérifiée : « hors du wifi du collège » n'est pas
-   * « adulte », c'est aussi la chambre d'un élève. Une clé de la plateforme, elle,
-   * ne les finance JAMAIS, nulle part.
+   * ─── POURQUOI CE DRAPEAU NE FUSIONNE PAS AVEC `wrng`, ET NE DOIT PAS ──────
+   *
+   * Il a porté le nom `adultOnly` tant qu'une « majorité certifiée » ouvrait
+   * ces fournisseurs ; cette certification a disparu, et la tentation est alors
+   * de supprimer le drapeau ou de le fondre dans `wrng`. LES DEUX SERAIENT DES
+   * FAUTES, et chacune se démontre sur un fournisseur précis :
+   *
+   *   · LE SUPPRIMER rouvrirait GEMINI à une école. Gemini ne porte pas de
+   *     drapeau rouge — l'éditeur n'est pas un sous-traitant hors cadre — mais
+   *     il est écarté d'un public mineur. Sans `ecarte`, il retomberait dans
+   *     SCHOOL_PROVIDER_IDS : la clé d'un collège le paierait, et il
+   *     s'afficherait dans la liste d'une salle de classe. C'est très
+   *     exactement l'engagement pris devant une direction qui tomberait.
+   *
+   *   · LES FONDRE mentirait dans l'autre sens, et deux fois. Sur Gemini,
+   *     l'interface afficherait un drapeau rouge « sous-traitant hors UE sans
+   *     cadre reconnu » — une affirmation FACTUELLE, et fausse. Et OPENROUTER,
+   *     drapeau rouge lui aussi, resterait ce qu'il doit rester : le moteur du
+   *     repli gratuit public et un intermédiaire vers l'échelle réglée par
+   *     l'administration — donc PAS écarté. Un drapeau unique ne saurait plus
+   *     dire lequel des deux traitements appliquer.
+   *
+   * Les deux drapeaux répondent à deux questions distinctes : `wrng` CONSTATE
+   * un fait sur le sous-traitant (et s'affiche à ce titre), `ecarte` porte une
+   * DÉCISION sur le public. Qu'ils coïncident sur cinq fournisseurs chinois ne
+   * les rend pas identiques — ils divergent aux deux bords, et ce sont
+   * précisément les bords qui coûtent cher.
    */
-  adultOnly?: boolean;
+  ecarte?: boolean;
 }> = {
   mistral: { label: "Mistral", model: "mistral-medium-latest", gdpr: true, images: true, voice: true },
   anthropic: { label: "Claude", model: "claude-sonnet-5", gdpr: true, images: true, pdf: true },
   openai: { label: "ChatGPT", model: "gpt-5.1", gdpr: true, images: true, pdf: true, voice: true },
-  gemini: { label: "Gemini", model: "gemini-3.5-flash", adultOnly: true },
-  grok: { label: "Grok", model: "grok-4.5", adultOnly: true, wrng: true, images: true },
+  gemini: { label: "Gemini", model: "gemini-3.5-flash", ecarte: true },
+  grok: { label: "Grok", model: "grok-4.5", ecarte: true, wrng: true, images: true },
   // OpenRouter est un INTERMÉDIAIRE : même en routant vers un modèle dont
   // l'éditeur offre un cadre correct, les échanges transitent par lui et
   // peuvent y être exploités. Drapeau rouge, donc — il reste le moteur du
@@ -69,11 +93,11 @@ export const providerDefaults: Record<ProviderId, {
   // Qwen, Kimi et GLM, mais elles supposent de changer aussi de modèle :
   // annoncer le trombone avec le modèle par défaut ne ferait que produire
   // des refus du fournisseur. Aucun PDF natif, aucune transcription câblée.
-  deepseek: { label: "DeepSeek", model: "deepseek-v4-flash", adultOnly: true, wrng: true },
-  qwen: { label: "Qwen", model: "qwen-plus", adultOnly: true, wrng: true },
-  kimi: { label: "Kimi", model: "kimi-k2.5", adultOnly: true, wrng: true },
-  glm: { label: "GLM", model: "glm-4.6", adultOnly: true, wrng: true },
-  minimax: { label: "MiniMax", model: "MiniMax-M2.5", adultOnly: true, wrng: true },
+  deepseek: { label: "DeepSeek", model: "deepseek-v4-flash", ecarte: true, wrng: true },
+  qwen: { label: "Qwen", model: "qwen-plus", ecarte: true, wrng: true },
+  kimi: { label: "Kimi", model: "kimi-k2.5", ecarte: true, wrng: true },
+  glm: { label: "GLM", model: "glm-4.6", ecarte: true, wrng: true },
+  minimax: { label: "MiniMax", model: "MiniMax-M2.5", ecarte: true, wrng: true },
 };
 
 // Pièce jointe telle qu'elle transite du navigateur vers /api/completion.
@@ -129,44 +153,40 @@ export const ERR = {
 export type ErrorCode = (typeof ERR)[keyof typeof ERR];
 
 /**
- * Fournisseurs proposés dans l'interface publique — ceux qu'un mineur peut
- * légitimement rencontrer. Les autres ne sont pas supprimés : ils attendent un
- * compte dont la majorité a été vérifiée, HORS d'un réseau scolaire. C'est
- * aussi la liste servie par défaut tant que le serveur n'a pas répondu : la
- * plus restrictive des deux, jamais l'inverse.
- */
-export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
-  id => !providerDefaults[id].adultOnly);
-
-/**
- * Même liste, pour les interfaces où l'utilisateur NOMME LE MODÈLE lui-même.
+ * Fournisseurs qu'une CLÉ D'ÉTABLISSEMENT peut réellement servir — et, par la
+ * même occasion, ce qu'on propose SUR LE RÉSEAU d'une école.
  *
- * OpenRouter est le seul fournisseur à porter deux statuts selon l'endroit, et
- * ce n'est pas une incohérence à « corriger » : dans le chat, l'utilisateur ne
- * choisit pas de modèle — l'administration règle l'échelle, aujourd'hui Mistral
- * et Claude — donc OpenRouter n'est qu'un intermédiaire vers des modèles
- * conformes, et son drapeau WRNG suffit à le dire. Sur la page « duel », le
- * modèle est écrit à la main : rien n'empêcherait d'y demander n'importe quoi à
- * travers OpenRouter, y compris ce qu'aucune de nos listes ne contient. Là, il
- * doit donc être traité comme les fournisseurs réservés aux adultes.
+ * Ni écarté d'un public scolaire, ni drapeau rouge. OpenRouter en est exclu à
+ * ce second titre : la route de complétion refuse déjà de le payer sur la clé
+ * interne d'une école, et une liste qui propose ce que le serveur refuse est
+ * pire qu'une liste courte — un réglage qu'on enregistre et qui ne marchera
+ * jamais se paie en heures de dépannage. Il reste accessible à qui apporte ses
+ * propres moyens, sous sa propre responsabilité.
  *
- * CETTE CONSTANTE NE PORTE QUE LE CAS LE PLUS RESTRICTIF : useFournisseurs
- * rend la liste entière — OpenRouter compris — au visiteur qui a droit aux
- * fournisseurs écartés, puisque c'est exactement le même droit. Le serveur le
- * revérifie de toute façon (/api/completion, garde OpenRouter hors échelle).
- */
-export const DUEL_PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
-  id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);
-
-/**
- * Fournisseurs qu'une CLÉ D'ÉTABLISSEMENT peut réellement servir.
- *
- * OpenRouter en est exclu comme les fournisseurs réservés aux adultes : il
- * porte le drapeau WRNG, et la route de complétion refuse déjà de le payer sur
- * la clé interne d'une école. Il reste accessible à qui apporte SA propre clé,
- * sous sa propre responsabilité. Cette liste existe pour que l'interface cesse
- * de proposer ce que le serveur refuse — un réglage qu'on peut enregistrer et
- * qui ne marchera jamais est pire qu'un réglage absent.
+ * C'est aussi la liste que le navigateur affiche TANT QUE LE SERVEUR N'A PAS
+ * RÉPONDU (src/chat/useFournisseurs.ts) : le seul périmètre qu'on puisse
+ * montrer sans savoir d'où l'on appelle est celui d'une salle de classe.
  */
 export const SCHOOL_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
-  id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);
+  id => !providerDefaults[id].ecarte && !providerDefaults[id].wrng);
+
+/**
+ * Fournisseurs admissibles là où l'utilisateur NOMME LE MODÈLE LUI-MÊME
+ * (page « duel ») ET n'a pas de compte.
+ *
+ * OpenRouter porte deux statuts selon l'endroit, et ce n'est pas une
+ * incohérence à « corriger » : dans le chat personne ne choisit de modèle —
+ * l'administration règle l'échelle — donc OpenRouter n'est qu'un intermédiaire
+ * vers des modèles conformes, et il est même le moteur du repli gratuit
+ * public. Sur « duel », le modèle est écrit à la main : rien n'empêcherait d'y
+ * demander à travers lui ce qu'aucune de nos listes ne contient.
+ *
+ * CETTE CONSTANTE NE PORTE QUE LE RETRAIT. Le périmètre, lui, vient du serveur
+ * (src/server/accesFournisseurs.ts) ; le hook se contente d'en soustraire les
+ * intermédiaires quand la surface nomme le modèle et que personne ne répond de
+ * l'appel. Un compte, lui, garde OpenRouter : il est identifié et il paie. Le
+ * serveur revérifie de toute façon (/api/completion, garde « modèle hors
+ * échelle chez un intermédiaire »).
+ */
+export const DUEL_PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
+  id => !providerDefaults[id].ecarte && !providerDefaults[id].wrng);

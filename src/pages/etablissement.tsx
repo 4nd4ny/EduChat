@@ -117,17 +117,13 @@ export default function EtablissementPage() {
   // `null` = pas encore répondu ; `ip: ""` = le serveur n'a rien su lire.
   // `revendiquee` vient du SERVEUR (resolveEtablissementByIp), et non d'une
   // déduction d'écran : c'est lui qui décidera, et il doit dire la même chose.
+  //
+  // ELLE NE SERT PLUS SEULEMENT AU FORMULAIRE : « Pourquoi passer par
+  // EduChat » ne s'affiche plus quand l'adresse relève d'un établissement
+  // connu (voir plus bas), et c'est cette réponse-là qui le décide. D'où la
+  // lecture désormais inconditionnelle — sauf en démonstration, qui ne touche
+  // à rien de réel.
   const [ipVisiteur, setIpVisiteur] = useState<{ ip: string; revendiquee: boolean } | null>(null);
-  useEffect(() => {
-    if (!inscription) return;
-    fetch("/api/ip")
-      .then(r => r.json())
-      .then((d: { ip?: string; revendiquee?: boolean }) => setIpVisiteur({
-        ip: d?.ip && d.ip !== "unknown" ? d.ip : "",
-        revendiquee: !!d?.revendiquee,
-      }))
-      .catch(() => setIpVisiteur({ ip: "", revendiquee: false }));
-  }, [inscription]);
 
   // DÉMONSTRATION (?visite=1) : l'espace s'ouvre avec un établissement
   // FICTIF et tous les réglages inertes. Aucun appel au serveur : on montre
@@ -136,6 +132,22 @@ export default function EtablissementPage() {
   const demo = router.query.visite === "1";
   const [tour, setTour] = useState(false);
   useEffect(() => { if (demo) setTour(true); }, [demo]);
+
+  // La lecture de l'adresse, DÉCLARÉE APRÈS `demo` et non avant : le tableau
+  // de dépendances est évalué pendant le rendu, et une constante lue avant sa
+  // déclaration lèverait une ReferenceError à chaque montage.
+  useEffect(() => {
+    if (demo) return;
+    fetch("/api/ip")
+      .then(r => r.json())
+      .then((d: { ip?: string; revendiquee?: boolean }) => setIpVisiteur({
+        ip: d?.ip && d.ip !== "unknown" ? d.ip : "",
+        revendiquee: !!d?.revendiquee,
+      }))
+      // Un échec ne doit pas MASQUER le bloc : « adresse inconnue, donc pas une
+      // école » laisse l'argument visible, ce qui est le défaut le moins cher.
+      .catch(() => setIpVisiteur({ ip: "", revendiquee: false }));
+  }, [demo]);
   // QUI RÈGLE, ET QUI SE CONTENTE DE LIRE (décision A). Tout enseignant
   // rattaché voit cet écran ; seul un administrateur de l'école y CHANGE
   // quelque chose. La démonstration, elle, montre l'écran complet — tous ses
@@ -355,7 +367,13 @@ export default function EtablissementPage() {
               )}
             </section>
 
-            <div className="mt-8"><PourquoiEduChat /></div>
+            {/* PLUS DE « POURQUOI PASSER PAR EDUCHAT » ICI (décision du
+                client). Le bloc explique à une école pourquoi elle passerait
+                par la plateforme : c'est un argument POUR CEUX QUI HÉSITENT.
+                Or cette moitié de page ne s'affiche que lorsque l'adresse
+                relève d'un établissement DÉJÀ inscrit — la personne qui la lit
+                est dedans, et on lui vend ce qu'elle a. Il reste sur l'autre
+                branche, celle du réseau que personne n'a revendiqué. */}
 
             {/* PLUS DE « VOUS ENSEIGNEZ ICI ? / VÉRIFIER MON EMAIL » (décision
                 du client). Le bloc proposait une formalité de compte sur une
@@ -368,18 +386,33 @@ export default function EtablissementPage() {
             {state === "none" && (
               <p className="mt-6 text-sm opacity-70">{t("etab.public.notMember")}</p>
             )}
-            {!inscription && !inscriptionFaite && (
-              // MÊME BOUTON QUE LES ACTIONS PRINCIPALES DU SITE (orange, texte
-              // foncé, gras). Ce n'était qu'un lien souligné à demi effacé :
-              // c'est pourtant le seul chemin de tout un établissement qui
-              // s'inscrit depuis le réseau d'un autre, et personne ne le voyait.
-              <div className="mt-6">
+            {/* LA PORTE DE SORTIE MANQUAIT, ET ELLE NE MANQUAIT QUE DE CE
+                CÔTÉ-CI. L'autre branche — le réseau qu'aucune école n'a
+                revendiqué — offre « Retour au catalogue » à côté de ses
+                boutons ; ici, un visiteur reconnu par le réseau de son école
+                n'avait que « Mon établissement n'est pas celui-ci », et devait
+                deviner le logo de la barre pour rejoindre les tuteurs. Même
+                clé, même look que là-bas : une même sortie doit se reconnaître
+                d'un écran à l'autre.
+                ELLE N'EST PAS CONDITIONNÉE PAR L'INSCRIPTION EN COURS, à la
+                différence du bouton voisin : renoncer et retourner au
+                catalogue est justement ce qu'on veut pouvoir faire une fois le
+                formulaire ouvert. */}
+            <div className="mt-6 flex flex-wrap gap-3">
+              {!inscription && !inscriptionFaite && (
+                // MÊME BOUTON QUE LES ACTIONS PRINCIPALES DU SITE (orange, texte
+                // foncé, gras). Ce n'était qu'un lien souligné à demi effacé :
+                // c'est pourtant le seul chemin de tout un établissement qui
+                // s'inscrit depuis le réseau d'un autre, et personne ne le voyait.
                 <button onClick={ouvrirInscription}
                   className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold text-[#111827] hover:opacity-90">
                   <MdSchool /> {t("etab.public.otherSchool")}
                 </button>
-              </div>
-            )}
+              )}
+              <Link href="/" className="rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+                {t("etab.locked.back")}
+              </Link>
+            </div>
           </>
         ) : (
           <>
@@ -757,8 +790,21 @@ export default function EtablissementPage() {
           réglages un à un ; ce pavé de texte n'a aucune ancre `data-tour`, donc
           aucune étape ne s'y arrête — il ne fait qu'allonger la page que le
           voile doit faire défiler. Le lire suppose du reste d'être responsable
-          d'une école, ce que le visiteur de la démonstration n'est pas. */}
-      {!demo && <section className="mt-10"><PourquoiEduChat /></section>}
+          d'une école, ce que le visiteur de la démonstration n'est pas.
+          ET PLUS DEPUIS LE RÉSEAU D'UN ÉTABLISSEMENT CONNU (décision du
+          client), ce qui retourne l'argument ci-dessus sans le contredire :
+          oui, c'est le responsable qui devra convaincre sa direction — mais
+          quand il consulte sa console DEPUIS SON ÉCOLE, l'école est déjà
+          cliente et le plaidoyer est derrière lui. Il le retrouve tel quel
+          chez lui, ou sur /etablissements, là où il prépare sa réunion.
+          `revendiquee` SEULEMENT, jamais isIpAllowed : « établissement connu »
+          veut dire une école enregistrée en base, tandis que SECRET_ALLOWED_IPS
+          est une liste d'amorçage qui peut contenir la machine de l'exploitant.
+          Tant que la réponse n'est pas là (`null`), on n'affiche rien : le bloc
+          apparaîtrait puis disparaîtrait sous les yeux, en sautant la page. */}
+      {!demo && ipVisiteur !== null && !ipVisiteur.revendiquee && (
+        <section className="mt-10"><PourquoiEduChat /></section>
+      )}
 
       {/* --- Contact / assistance ---
           Placé juste après le bloc « géré par l'administration » : c'est déjà

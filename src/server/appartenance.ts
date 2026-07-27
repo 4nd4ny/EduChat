@@ -284,10 +284,10 @@ export function ecoleActive(req: NextApiRequest): number | null {
  * PHYSIQUEMENT sur son réseau : c'est mayUseServerKeys(ip) et
  * resolveEtablissementByIp(ip), et rien d'autre. Le jour où l'on croira
  * « simplifier » en remplaçant l'IP par l'école active dans /api/completion,
- * /api/speak, /api/transcribe ou src/server/adult.ts, n'importe quel
- * enseignant fera payer son établissement depuis chez lui, à toute heure, et
- * le porte-monnaie deviendra un compte ouvert. Le lieu répond du budget et de
- * la conformité ; le compte répond de la pédagogie. Deux questions, deux
+ * /api/speak, /api/transcribe ou src/server/accesFournisseurs.ts, n'importe
+ * quel enseignant fera payer son établissement depuis chez lui, à toute heure,
+ * et le porte-monnaie deviendra un compte ouvert. Le lieu répond du budget et
+ * de la conformité ; le compte répond de la pédagogie. Deux questions, deux
  * réponses, et on ne les confond pas.
  * ─────────────────────────────────────────────────────────────────────────────
  */

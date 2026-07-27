@@ -388,12 +388,20 @@ export function getDb(): Database.Database {
     // Consentement à la mémorisation des clés API (case à cocher du chat) :
     // mémorisé côté compte pour suivre l'utilisateur d'un navigateur à l'autre.
     "ALTER TABLE users ADD COLUMN keys_optin INTEGER NOT NULL DEFAULT 0",
-    // Majorité vérifiée, pour l'accès aux fournisseurs écartés au titre de
-    // l'AI Act. On n'enregistre QUE la décision : la date, et le nom de la
-    // personne qui se porte garante (l'administration après un entretien
-    // vidéo, ou un enseignant qui répond de ses élèves majeurs). Aucune pièce
-    // d'identité n'est demandée ni conservée : en garder une copie créerait un
-    // risque plus lourd que celui qu'on cherche à couvrir.
+    // ─── COLONNES MORTES : NI LUES, NI ÉCRITES ─────────────────────────────
+    // Elles portaient la « majorité vérifiée », qui ouvrait les fournisseurs
+    // écartés au titre de l'AI Act hors du réseau d'une école. Cette notion a
+    // été supprimée : un élève qui basculait son téléphone en 4G sortait du
+    // réseau scolaire sans avoir rien à certifier, et une restriction qu'un
+    // geste contourne ne protège personne. L'accès se décide désormais sur le
+    // LIEU et le COMPTE (src/server/accesFournisseurs.ts).
+    // PLUS RIEN NE LES LIT NI NE LES ÉCRIT : ni la liste des fournisseurs, ni
+    // la complétion, ni l'administration des comptes — la case « adulte », le
+    // champ « certifié par » et le module qui les écrivait ont tous disparu.
+    // Elles ne sont plus qu'un dépôt d'archives, figé au jour du changement.
+    // ON NE LES SUPPRIME PAS : les migrations sont additives (une colonne
+    // retirée est une base qu'on ne sait plus relire à l'envers), et elles
+    // gardent la trace de décisions réellement prises par une administration.
     "ALTER TABLE users ADD COLUMN adult_verified_at INTEGER",
     "ALTER TABLE users ADD COLUMN adult_verified_by TEXT",
     // Administrateur d'ÉCOLE (voir src/server/admin.ts) : il administre SON
@@ -532,6 +540,42 @@ export function getDb(): Database.Database {
     // (identification, rang de promptagogue). Cacher l'entrée ne prétend donc
     // pas interdire l'adresse — le dire ici évite qu'on s'y fie un jour.
     "ALTER TABLE etablissements ADD COLUMN atelier_promptagogue INTEGER NOT NULL DEFAULT 0",
+    // ─── LE PORTE-MONNAIE D'UNE PERSONNE, DANS LA MÊME COMPTABILITÉ ────────
+    //
+    // EduChat vend aussi des jetons à un individu : il provisionne, on décompte
+    // au PRIX COÛTANT, la contribution est prélevée à la recharge, et l'accès
+    // se ferme quand le crédit est épuisé. Exactement la règle des écoles.
+    //
+    // UNE SEULE TABLE DE MOUVEMENTS, ET C'EST LE POINT IMPORTANT. Deux
+    // comptabilités parallèles finissent toujours par diverger : on corrige un
+    // arrondi d'un côté, on l'oublie de l'autre, et six mois plus tard deux
+    // chiffres décrivent le même franc. `credit_mouvements` porte donc les deux
+    // titulaires, distingués par titulaire_email :
+    //   · NULL  → le titulaire est l'école etablissement_id (tout l'existant) ;
+    //   · posée → le titulaire est CETTE personne, et etablissement_id vaut 0.
+    // Le 0 est un SENTINELLE, pas une école : la colonne est NOT NULL et les
+    // migrations sont additives, on ne peut donc pas la rendre nullable. Aucun
+    // établissement ne porte l'id 0 (AUTOINCREMENT commence à 1) et aucune clé
+    // étrangère ne pointe vers etablissements : toutes les lectures existantes
+    // filtrent sur un id réel et ne verront jamais une ligne personnelle.
+    //
+    // CE QUE LA TABLE PARTAGÉE DONNE GRATUITEMENT : idx_credit_paypal, l'index
+    // UNIQUE sur paypal_id, devient l'idempotence de TOUTES les recharges, de
+    // quelque titulaire qu'elles viennent. Une table parallèle aurait exigé le
+    // sien — et l'aurait obtenu un jour trop tard.
+    "ALTER TABLE credit_mouvements ADD COLUMN titulaire_email TEXT",
+    // « Mes mouvements » interroge le registre par personne : sans index, la
+    // page balaierait une table qui n'est jamais purgée.
+    "CREATE INDEX IF NOT EXISTS idx_credit_titulaire ON credit_mouvements(titulaire_email, ts)",
+    // Solde personnel, dans la monnaie de facturation. Symétrique de
+    // etablissements.solde, y compris dans sa capacité à passer sous zéro : le
+    // contrôle a lieu AVANT l'appel, et une réponse déjà produite se paie.
+    "ALTER TABLE users ADD COLUMN solde REAL NOT NULL DEFAULT 0",
+    // Intention de recharge d'une PERSONNE. Même sentinelle que ci-dessus :
+    // etablissement_id = 0 et titulaire_email renseigné. C'est cette ligne —
+    // jamais un champ renvoyé par le navigateur, jamais le custom_id lu chez
+    // PayPal — qui dira au retour quel porte-monnaie créditer.
+    "ALTER TABLE recharges ADD COLUMN titulaire_email TEXT",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

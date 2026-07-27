@@ -73,7 +73,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Sans cela, « l'élève parle à son téléphone » resterait réservé à qui
   // apporte sa propre clé — c'est-à-dire à personne, en classe.
   if (!apiKey && await mayUseServerKeys(clientIp)) {
-    if (providerDefaults[provider].wrng) {
+    // MÊME REFUS, MOT POUR MOT, QUE DANS /api/completion : la clé interne d'une
+    // école ne finance ni un drapeau rouge, ni un fournisseur ÉCARTÉ d'un
+    // public scolaire. L'audit a trouvé ici la seule route où `ecarte`
+    // manquait. Rien ne fuyait AUJOURD'HUI — la garde `voice` deux lignes plus
+    // bas refusait de toute façon Gemini et les fournisseurs chinois, aucun
+    // d'eux n'ayant de transcription câblée — mais l'engagement pris devant une
+    // direction tenait alors par la table des capacités, pas par une règle.
+    // Le jour où l'on ajouterait `voice: true` à Gemini (l'API existe), la
+    // clé d'un collège l'aurait payé, et personne n'aurait relu ce fichier.
+    // Une invariance de conformité ne se déduit pas d'un catalogue.
+    if (providerDefaults[provider].wrng || providerDefaults[provider].ecarte) {
       return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
     }
     apiKey = String(DeveloperKeys[provider] || '').trim();

@@ -51,9 +51,35 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   // Fournisseurs que le serveur peut servir sans clé personnelle, et lesquels
   // ce visiteur a le droit de voir. La règle vit dans useFournisseurs — la même
   // que celle appliquée sur la page « duel », et une seule fois écrite.
-  const { served, visibles, motifAIAct } = useFournisseurs();
+  const { served, visibles, motifAIAct, demonstration, pret } = useFournisseurs();
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
+
+  // LE MENU NE DOIT PAS AFFICHER UN CHOIX QU'IL NE CONTIENT PLUS.
+  //
+  // Le fournisseur courant vit dans le contexte, et il survit à tout : au
+  // rechargement, au changement de compte, au départ du réseau de l'école. Un
+  // visiteur revenu de chez lui avec « anthropic » en mémoire, alors que sa
+  // liste ne contient plus que le repli gratuit, voyait un <select> dont la
+  // valeur ne figurait dans aucune option — un champ vide sur les navigateurs
+  // qui refusent l'orphelin, et le nom d'un fournisseur qu'on ne lui servira
+  // pas sur les autres. RIEN NE CASSAIT (l'envoi part de toute façon sur le
+  // repli gratuit, dont le fournisseur est imposé par le serveur), et c'est
+  // bien le problème : l'écran mentait sans que rien ne le signale.
+  //
+  // DEUX GARDES, ET AUCUNE N'EST DÉCORATIVE.
+  //  · `pret` — avant la réponse du serveur, `visibles` est la liste d'attente
+  //    d'une salle de classe. Corriger là-dessus effacerait le « grok » d'un
+  //    compte qui y a droit, à chaque chargement de page, une fraction de
+  //    seconde avant d'apprendre qu'il y avait droit. On ne réécrit jamais le
+  //    choix de quelqu'un sur une supposition.
+  //  · `visibles.length` — un périmètre vide (repli gratuit non configuré)
+  //    donnerait `visibles[0] === undefined`, et un fournisseur indéfini écrit
+  //    dans le contexte casserait providerDefaults partout ailleurs. Mieux
+  //    vaut garder l'ancienne valeur, inerte.
+  useEffect(() => {
+    if (pret && visibles.length && !visibles.includes(provider)) setProvider(visibles[0]);
+  }, [pret, visibles, provider, setProvider]);
 
   // Cocher enregistre la clé du champ pour le fournisseur courant ; décocher
   // efface TOUTES les clés mémorisées (le serveur ne doit pas garder un
@@ -148,24 +174,30 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             aria-label={t("chat.input.provider")}
             className={`${FIELD} w-full ${bar && drapeau ? "rounded-l-none" : ""}`}
           >
-            {/* AI Act : depuis l'IP d'une école, les fournisseurs écartés ne
-                figurent pas dans la liste — pour tout le monde, compte ou pas.
-                Ailleurs, ils n'y figurent que pour un compte dont la majorité
-                a été vérifiée. La note sous le menu dit lequel des deux. */}
+            {/* CE QUE CETTE LISTE CONTIENT DÉPEND D'OÙ L'ON APPELLE ET DE QUI
+                L'ON EST — le serveur seul en décide (accesFournisseurs.ts).
+                Depuis le réseau d'une école : les fournisseurs conformes, pour
+                tout le monde, compte ou pas. Ailleurs, avec un compte : tout.
+                Ailleurs, sans compte : la démonstration gratuite seule. */}
             {visibles.map(id => {
               const item = providerDefaults[id];
               // « clé personnelle » ne se dit QUE là où l'information apprend
               // quelque chose. Sur un fournisseur à drapeau rouge, elle est
-              // bavarde : ces fournisseurs ne sont montrés qu'en dehors d'un
-              // établissement, à un compte adulte, qui apporte forcément sa
-              // clé — la clé interne ne les paiera jamais. Le drapeau WRNG,
-              // lui, reste : c'est lui qui porte l'avertissement.
+              // bavarde : hors d'un établissement, ces fournisseurs ne se
+              // montrent qu'à un compte, qui apporte forcément de quoi payer —
+              // la clé interne ne les paiera jamais. Le drapeau WRNG, lui,
+              // reste : c'est lui qui porte l'avertissement.
               const cleRequise = served !== null && !served.includes(id) && !item.wrng;
               return (
                 <option key={id} value={id}>
                   {item.label}
                   {item.gdpr ? ` · ${t("chat.input.gdpr.tag")}` : item.wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
-                  {cleRequise ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
+                  {/* L'ÉTIQUETTE QUI MANQUAIT. Sans compte et hors campus, ce
+                      menu n'a plus qu'une ligne, « OpenRouter · WRNG » : le nom
+                      d'un intermédiaire que personne ne connaît, flanqué d'un
+                      drapeau rouge, pour désigner ce qui est en réalité une
+                      démonstration offerte. On le dit donc, là où on le lit. */}
+                  {demonstration ? ` · ${t("fournisseurs.demoTag")}` : cleRequise ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
                 </option>
               );
             })}

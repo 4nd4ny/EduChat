@@ -136,12 +136,19 @@ export default function Factures({ ecole, variante, demo }: {
                   </tbody>
                 </table>
               )}
+              {/* PLUS DE LIGNE « PARTICIPATION » : elle vaudrait 0.00 à jamais.
+                  La contribution de l'école est prélevée à la RECHARGE, une
+                  seule fois (src/server/porteMonnaie.ts), et s'inscrit au
+                  registre du porte-monnaie ; la facture, elle, est au prix
+                  coûtant. Afficher « Participation aux frais (10 %) — 0.00 »
+                  en dessous d'une consommation, c'était affirmer un taux qui
+                  ne s'applique pas là, avec un montant qui le dément : la
+                  seule lecture possible était « on nous a oublié quelque
+                  chose ». Le total est désormais la consommation, et il se
+                  recalcule au tarif public du fournisseur. */}
               <dl className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
                 <span><dt className="inline opacity-60">{t("admin.facture.consumption")} </dt>
                   <dd className="inline font-mono">{f.consommation.toFixed(2)} {f.devise}</dd></span>
-                <span title={t("admin.facture.shareTitle")}>
-                  <dt className="inline opacity-60">{t("admin.facture.share", { pct: f.participationPct })} </dt>
-                  <dd className="inline font-mono">{f.participation.toFixed(2)} {f.devise}</dd></span>
                 <span><dt className="inline font-bold">{t("admin.facture.total")} </dt>
                   <dd className="inline font-mono font-bold">{f.total.toFixed(2)} {f.devise}</dd></span>
               </dl>

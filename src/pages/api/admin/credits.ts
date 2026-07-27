@@ -1,7 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireAdmin, requireSuperAdmin } from '../../../server/admin';
 import { etatDesComptes, mouvements, bouger, reglerContribution, commissionRecharge,
-  CONTRIBUTION_MIN, CONTRIBUTION_MAX } from '../../../server/porteMonnaie';
+  titulaireEcole, CONTRIBUTION_MIN, CONTRIBUTION_MAX, DETAIL_COMMISSION }
+  from '../../../server/porteMonnaie';
 import { paypalActif, rembourser, FRAIS_PAYPAL_PCT } from '../../../server/paypal';
 import { ERR } from '../../../shared/providers';
 
@@ -24,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fraisPaypalPct: FRAIS_PAYPAL_PCT,
       paypalActif: paypalActif(),
       // L'historique n'a de sens que pour UNE école : celle qu'on regarde.
-      mouvements: portee ? mouvements(portee) : [],
+      mouvements: portee ? mouvements(titulaireEcole(portee)) : [],
     });
   }
 
@@ -52,7 +53,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!cible || !sienne) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
       if (!paypalActif()) return res.status(503).json({ error: { code: 'ERR_PAYPAL_OFF' } });
       try {
-        return res.status(200).json({ ok: true, ...(await rembourser(cible, admin.auth.email)) });
+        return res.status(200).json({ ok: true, ...(await rembourser(titulaireEcole(cible), admin.auth.email)) });
       } catch (erreur) {
         console.error('Remboursement impossible :', erreur);
         return res.status(502).json({ error: { code: 'ERR_REFUND_FAILED' } });
@@ -71,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Une recharge est toujours positive ; un ajustement peut corriger dans les
     // deux sens (une erreur de saisie, un geste commercial).
     if (genre === 'ajustement') {
-      const solde = bouger(etablissementId, 'ajustement', montant,
+      const solde = bouger(titulaireEcole(etablissementId), 'ajustement', montant,
         String(req.body?.detail ?? '').slice(0, 200), scope.auth.email);
       return res.status(200).json({ ok: true, solde });
     }
@@ -79,11 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // jeton. Deux mouvements distincts pour qu'on lise ce qui est entré et ce
     // qui a été retenu — un solde net sans sa ligne de commission serait un
     // chiffre qu'on ne peut pas recalculer.
-    const { commission, credite, pct } = commissionRecharge(etablissementId, Math.abs(montant));
-    bouger(etablissementId, 'recharge', Math.abs(montant),
+    const { commission, credite, pct } = commissionRecharge(titulaireEcole(etablissementId), Math.abs(montant));
+    bouger(titulaireEcole(etablissementId), 'recharge', Math.abs(montant),
       String(req.body?.detail ?? '').slice(0, 200) || 'versement', scope.auth.email);
-    const solde = bouger(etablissementId, 'ajustement', -commission,
-      `Contribution aux frais (${pct} %)`, scope.auth.email);
+    const solde = bouger(titulaireEcole(etablissementId), 'ajustement', -commission,
+      `${DETAIL_COMMISSION} (${pct} %)`, scope.auth.email);
     return res.status(200).json({ ok: true, solde, commission, credite, pct });
   }
 

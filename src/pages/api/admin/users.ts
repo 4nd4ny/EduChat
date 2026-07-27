@@ -1,6 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { setAdultVerified } from '../../../server/adult';
 import { requireAdmin, dansLaPortee } from '../../../server/admin';
 import { definirAdminEcole, delierCompte, ecolePrincipale, lierCompte } from '../../../server/appartenance';
 import { getEtablissementById } from '../../../server/etablissements';
@@ -40,7 +39,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                   WHERE l.email = u.email AND l.etablissement_id = @ecole), 0) END AS isSchoolAdmin,
                u.etablissement_id AS etablissementId, e.name AS etablissementName,
                u.sync_optin AS syncOptin, u.created_at AS createdAt, u.verified_at AS verifiedAt,
-               u.adult_verified_at AS adultVerifiedAt, u.adult_verified_by AS adultVerifiedBy,
+               -- users.adult_verified_at / adult_verified_by NE SORTENT PLUS.
+               -- La « majorité certifiée » n'existe plus (src/server/db.ts dit
+               -- pourquoi les colonnes, elles, restent) ; les renvoyer offrirait
+               -- à une administration d'école la date et le nom d'un garant sur
+               -- une décision que plus rien n'applique. Ce qui ne sert plus à
+               -- rien ne doit pas sortir de la base.
                (SELECT COUNT(*) FROM prompts p WHERE p.author_email = u.email) AS promptCount
         FROM users u LEFT JOIN etablissements e ON e.id = u.etablissement_id
         ${filtre}
@@ -125,46 +129,28 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       if (cible === null) return res.status(409).json({ error: { code: 'ERR_NO_ETABLISSEMENT' } });
       rangVise = { etablissementId: cible, admin: !!req.body.isSchoolAdmin };
     }
-    // Certification de majorité : on n'enregistre QUE le nom de la personne
-    // qui se porte garante — l'administration après un entretien vidéo, ou un
-    // enseignant qui répond de ses élèves majeurs. Champ vide = retrait.
-    // Aucune pièce d'identité n'est demandée ni conservée.
-    // Elle ne passe pas par `sets` (colonnes doubles + horodatage) mais par sa
-    // propre variable : sans elle, une requête qui ne changeait QUE la
-    // certification tombait sur le garde-fou « rien à mettre à jour » plus
-    // bas — l'écriture avait bien lieu, mais l'interface annonçait un échec.
-    let garantVise: string | undefined;
-    if ('adultVerifiedBy' in (req.body ?? {})) {
-      // PERSONNE NE SE CERTIFIE SOI-MÊME MAJEUR.
-      //
-      // Un garant répond de QUELQU'UN D'AUTRE (voir src/server/adult.ts :
-      // « l'administration après un entretien vidéo, ou un enseignant qui
-      // répond de ses élèves majeurs ») — se porter garant de soi ne vérifie
-      // rien du tout. Tant que le rang d'administrateur d'école se recevait
-      // du site, l'anomalie restait théorique. Depuis l'INSCRIPTION EN
-      // LIBRE-SERVICE (src/pages/api/etablissement/inscription.ts), n'importe
-      // qui obtient ce rang en trois champs : sans cette garde, il lui
-      // suffirait de cocher sa propre case. Le contournement ne s'arrête pas
-      // à un complice : rattacher un second compte à son école est réservé
-      // au site, et deux inscrits en libre-service atterrissent dans DEUX
-      // écoles, donc hors de la portée l'un de l'autre.
-      //
-      // CE QUE LA CASE OUVRE, EXACTEMENT, et c'est le motif de cette garde :
-      // hors du réseau d'une école, les fournisseurs écartés au titre de l'AI
-      // Act (Gemini, Grok, DeepSeek, Qwen, Kimi, GLM, MiniMax) ET le nommage
-      // libre d'un modèle derrière un intermédiaire — OpenRouter, page
-      // « duel » —, c'est-à-dire atteindre à la main n'importe quoi, y compris
-      // ce qu'aucune de nos listes ne contient (mayUseAdultProviders,
-      // src/server/adult.ts). Un mineur qui se certifierait lui-même
-      // obtiendrait tout cela : c'est assez pour refuser.
-      //
-      // Le site, lui, garde la main : un super-administrateur tient son rang
-      // de SECRET_ADMIN_EMAILS, pas d'un formulaire.
-      if (admin.niveau === 'ecole' && email === admin.auth.email.toLowerCase()) {
-        return res.status(403).json({ error: { code: 'ERR_SELF_CERT_FORBIDDEN' } });
-      }
-      garantVise = String(req.body.adultVerifiedBy ?? '');
-    }
+    // LA CERTIFICATION DE MAJORITÉ N'EST PLUS ACCEPTÉE ICI, ET C'EST LE POINT.
+    //
+    // Cette route lisait `adultVerifiedBy` et écrivait les deux colonnes
+    // users.adult_verified_at / adult_verified_by, sous la garde « personne ne
+    // se certifie soi-même majeur ». Le produit a supprimé la notion : l'accès
+    // aux fournisseurs se décide sur le LIEU et le COMPTE
+    // (src/server/accesFournisseurs.ts), et l'écran de gestion des comptes n'a
+    // plus ni case ni champ de garant.
+    //
+    // POURQUOI RETIRER L'ÉCRITURE, ET PAS SEULEMENT L'AFFICHAGE. Une route qui
+    // accepte encore un champ que plus aucune interface n'envoie est une porte
+    // qu'on n'ouvre plus qu'à la main : elle peuplerait la base
+    // d'auto-certifications le jour où quelqu'un rebrancherait quoi que ce soit
+    // sur ces colonnes, et sa garde — qui n'avait de sens que couplée à la
+    // règle disparue — se relirait comme la preuve que la règle vit encore.
+    // Un corps de requête portant `adultVerifiedBy` est désormais IGNORÉ, ce
+    // qui est le comportement de tout champ inconnu ; s'il est seul, la
+    // requête tombe sur « rien à mettre à jour » plus bas, et c'est vrai.
+    //
+    // LES COLONNES RESTENT EN BASE (migrations additives, src/server/db.ts) :
+    // elles gardent la trace de décisions réellement prises, et plus rien ne
+    // les lit ni ne les écrit.
     if ('isTeacher' in (req.body ?? {})) {
       sets.push('is_teacher = ?');
       params.push(req.body.isTeacher ? 1 : 0);
@@ -173,7 +159,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       sets.push('is_promptagogue = ?');
       params.push(req.body.isPromptagogue ? 1 : 0);
     }
-    if (!sets.length && !rangVise && garantVise === undefined) {
+    if (!sets.length && !rangVise) {
       return res.status(400).json({ error: { code: 'ERR_NOTHING_TO_UPDATE' } });
     }
 
@@ -195,7 +181,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     // ancien — donc l'école active de repli, avant même que la colonne
     // principale ne soit écrite).
     if (rangVise) definirAdminEcole(email, rangVise.etablissementId, rangVise.admin);
-    if (garantVise !== undefined) setAdultVerified(email, garantVise);
     if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE email = ?`).run(...params, email);
     return res.status(200).json({ ok: true });
   }

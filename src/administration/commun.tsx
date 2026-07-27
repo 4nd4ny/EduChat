@@ -51,7 +51,10 @@ export type AdminUser = {
   email: string; name: string; isPromptagogue: number; isTeacher: number;
   etablissementId: number | null; etablissementName: string | null;
   syncOptin: number; createdAt: number; verifiedAt: number | null; promptCount: number;
-  adultVerifiedAt: number | null; adultVerifiedBy: string | null;
+  // La « majorité certifiée » a disparu du produit : ni case, ni champ, ni
+  // colonne à l'écran, et /api/admin/users ne renvoie plus les deux dates.
+  // Les garder ici décrirait une réponse que le serveur n'envoie pas — un type
+  // qui ment est pire qu'un type absent, parce qu'on l'accorde sans relire.
 };
 export type AdminComment = {
   id: number; body: string; status: "pending" | "approved" | "hidden";

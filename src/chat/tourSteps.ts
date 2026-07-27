@@ -22,6 +22,10 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'tutor', shape: 'rect', textKey: 'tour.tutor' },
     { target: 'messages', shape: 'rect', textKey: 'tour.messages' },
     { target: 'history', shape: 'rect', textKey: 'tour.history' },
+    // La visite se lance sur ?visite=1, donc chez un visiteur ANONYME : le
+    // sélecteur qu'elle désigne ici ne contient qu'un fournisseur, celui du
+    // repli gratuit, et le texte de tour.provider doit tenir à côté de cette
+    // liste d'un seul élément.
     { target: 'provider', shape: 'rect', textKey: 'tour.provider' },
     { target: 'apikey', shape: 'rect', textKey: 'tour.apikey' },
     { target: 'composer', shape: 'rect', textKey: 'tour.composer' },

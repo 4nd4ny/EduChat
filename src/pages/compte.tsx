@@ -28,6 +28,15 @@ const DOSSIER_DEMO: AccountData = {
     etablissement: { id: 1, name: "Collège de la Démonstration", monthTokens: 412350 },
   },
   keys: [{ provider: "mistral", updatedAt: Date.parse("2026-07-22T14:05:00Z"), readable: true }],
+  porteMonnaie: {
+    ouvert: true, solde: 18.4, devise: "CHF", depense30: 6.2,
+    contributionPct: 5, jours: 89, aSec: false,
+    mouvements: [
+      { id: 3, ts: Date.parse("2026-07-24T10:00:00Z"), genre: "consommation", montant: -0.42, solde: 18.4, detail: "anthropic · claude-haiku" },
+      { id: 2, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "ajustement", montant: -1.05, solde: 18.82, detail: "Contribution aux frais (5 %)" },
+      { id: 1, ts: Date.parse("2026-07-02T09:00:00Z"), genre: "recharge", montant: 21, solde: 19.87, detail: "PayPal" },
+    ],
+  },
   moderations: 3,
   conversations: [
     { id: "d1", name: "Théorème de Pythagore", createdAt: 1784100000000, lastMessage: 1784900000000, messageCount: 14, promptName: "Socrate", promptVersion: 3, bytes: 8210 },
@@ -44,7 +53,8 @@ const DOSSIER_DEMO: AccountData = {
 // reprendre en main : tout exporter, effacer ce qui peut l'être.
 //
 // L'ordre des sections est celui de la demande : la consommation d'abord,
-// les clés ensuite, les conversations en tableau, le reste à la fin.
+// les clés ensuite, le porte-monnaie personnel juste après (les deux façons de
+// payer se lisent côte à côte), les conversations en tableau, le reste à la fin.
 //
 // Deux honnêtetés structurent la page :
 //  - on n'affiche aucun chiffre inventé. EduChat ne journalise PAS l'usage
@@ -63,6 +73,13 @@ function octets(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} ko`;
   return `${(n / (1024 * 1024)).toFixed(2)} Mo`;
 }
+
+/** Ce que /api/me/credits ajoute au solde : l'état du paiement et ses bornes. */
+type InfosRecharge = {
+  paypalActif: boolean; fraisPaypalPct: number;
+  montantMin: number; montantMax: number; commissionMin: number;
+  contributionPct: number; devise: string;
+};
 
 function Section({ numero, titre, ancre, barre, children }: {
   numero: number; titre: string; ancre?: string; barre?: React.ReactNode; children: React.ReactNode;
@@ -94,6 +111,12 @@ export default function ComptePage() {
   const [nouvelEmail, setNouvelEmail] = useState("");
   const [codeEmail, setCodeEmail] = useState("");
   const [attenteCode, setAttenteCode] = useState(false);
+  // Ce que /api/me/data ne peut pas dire du porte-monnaie : l'état du paiement
+  // et les bornes d'une recharge. Chargé À PART, et seulement pour qui possède
+  // déjà un porte-monnaie — le fichier explique plus bas pourquoi on ne
+  // multiplie pas les appels au chargement (les seaux de limitation sont
+  // comptés par IP, et une salle des maîtres partage la sienne).
+  const [credits, setCredits] = useState<InfosRecharge | null>(null);
 
   // DÉMONSTRATION (?visite=1) : la page s'ouvre sans compte, avec un dossier
   // FICTIF, pour montrer ce que chaque profil y trouve. Aucun appel serveur.
@@ -192,6 +215,90 @@ export default function ComptePage() {
     lien.click();
     URL.revokeObjectURL(url);
   }, t("compte.exported"));
+
+  // ─── LE PORTE-MONNAIE PERSONNEL ───────────────────────────────────────────
+  //
+  // Le solde et le relevé arrivent avec le reste (/api/me/data). Ce qui manque
+  // — le paiement est-il branché, entre quelles bornes recharge-t-on — se
+  // demande à /api/me/credits, et SEULEMENT quand on en a besoin : au montage
+  // pour qui a déjà un porte-monnaie (il a un bouton « rembourser » à afficher
+  // ou à taire), au clic pour les autres.
+  const lireInfosRecharge = useCallback(async (): Promise<InfosRecharge | null> => {
+    try {
+      const response = await fetch("/api/me/credits", { headers: authHeaders() });
+      if (!response.ok) return null;
+      const recu = await response.json();
+      setCredits(recu);
+      return recu;
+    } catch { return null; }
+  }, []);
+
+  const ouvertPorteMonnaie = !!data?.porteMonnaie?.ouvert;
+  useEffect(() => {
+    if (demo || !ouvertPorteMonnaie) return;
+    void lireInfosRecharge();
+  }, [demo, ouvertPorteMonnaie, lireInfosRecharge]);
+
+  // Ces deux-ci n'empruntent pas `agir` : ses comptes rendus sont fixés
+  // d'avance, alors qu'une recharge et un remboursement ont plusieurs issues
+  // qui ne sont ni « fait » ni « erreur » — paiement éteint, montant refusé,
+  // saisie abandonnée. Chacune mérite sa phrase.
+  const recharger = async () => {
+    setBusy(true); setMessage("");
+    try {
+      const infos = credits ?? await lireInfosRecharge();
+      if (!infos) { setMessage(t("compte.error")); return; }
+      // PAYPAL EST ÉTEINT AUJOURD'HUI, et on le dit plutôt que d'ouvrir une
+      // page qui échouera : un point de paiement à moitié fonctionnel est pire
+      // qu'un point de paiement visiblement absent.
+      if (!infos.paypalActif) { setMessage(t("compte.wallet.paypalOff")); return; }
+      const saisi = window.prompt(
+        t("compte.wallet.amountPrompt", { min: infos.montantMin, max: infos.montantMax, devise: infos.devise }),
+        String(infos.montantMin * 4));
+      if (saisi === null) return;   // renoncé : aucun compte rendu à faire
+      const montant = Number(saisi.replace(",", "."));
+      if (!Number.isFinite(montant)) { setMessage(t("compte.wallet.amountInvalid")); return; }
+      const response = await fetch("/api/me/credits", {
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ montant }),
+      });
+      if (!response.ok) { setMessage(t("compte.wallet.amountInvalid")); return; }
+      const recu = await response.json();
+      // On QUITTE le site pour PayPal : c'est là que le paiement se fait, et
+      // nulle part ailleurs. Aucune coordonnée bancaire n'est jamais saisie sur
+      // educh.at. Le crédit, lui, n'arrivera pas au retour du navigateur mais
+      // sur la notification signée de PayPal — d'où le message d'attente.
+      if (recu?.approbation) { window.location.href = recu.approbation; return; }
+      setMessage(t("compte.wallet.topUpStarted"));
+    } catch {
+      setMessage(t("compte.error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rembourserCredit = async () => {
+    const solde = data?.porteMonnaie.solde ?? 0;
+    const devise = data?.porteMonnaie.devise ?? "";
+    if (!window.confirm(t("compte.wallet.refundConfirm", { montant: solde.toFixed(2), devise }))) return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch("/api/me/credits", {
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "rembourser" }),
+      });
+      const recu = await response.json().catch(() => ({}));
+      setMessage(response.ok
+        ? t("compte.wallet.refundDone",
+            { montant: Number(recu?.rembourse ?? 0).toFixed(2), devise: recu?.devise ?? devise })
+        : t("compte.wallet.refundFailed"));
+      await charger();
+    } catch {
+      setMessage(t("compte.wallet.refundFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const oublierCle = (provider: string) => agir(async () => {
     const response = await fetch(`/api/keys?provider=${encodeURIComponent(provider)}`,
@@ -299,7 +406,7 @@ export default function ComptePage() {
     );
   }
 
-  const { identite, consommation, keys, conversations, prompts } = data;
+  const { identite, consommation, keys, porteMonnaie, conversations, prompts } = data;
 
   return (
     <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 text-primary">
@@ -433,9 +540,82 @@ export default function ComptePage() {
       </Section>
       )}
 
-      {/* 3 — Conversations -------------------------------------------------- */}
+      {/* 3 — Porte-monnaie personnel ---------------------------------------- */}
+      {/* SOUS les clés, et c'est le bon ordre : ce sont les deux façons de
+          payer, et la première question de qui n'a pas de clé est « puis-je
+          acheter des jetons ici ? ». La section s'affiche même vide — « vous
+          n'avez pas de crédit » est une réponse, une section absente n'en est
+          pas une. */}
+      {!seule && (
+      <Section ancre="compte-credit" numero={3} titre={t("compte.wallet.title")}>
+        <p className="text-sm opacity-80">{t("compte.wallet.intro")}</p>
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+          <span>
+            <span className="text-xs uppercase opacity-60">{t("compte.wallet.balance")} </span>
+            <b className={`font-mono text-lg ${porteMonnaie.aSec && porteMonnaie.ouvert ? "text-red-300" : ""}`}>
+              {porteMonnaie.solde.toFixed(2)} {porteMonnaie.devise}
+            </b>
+            {porteMonnaie.ouvert && porteMonnaie.aSec && (
+              <span className="ml-2 rounded bg-red-600/40 px-1 text-xs">{t("compte.wallet.dry")}</span>
+            )}
+          </span>
+          {porteMonnaie.ouvert && (<>
+            <span>
+              <span className="text-xs uppercase opacity-60">{t("compte.wallet.spent30")} </span>
+              <span className="font-mono">{porteMonnaie.depense30.toFixed(2)}</span>
+            </span>
+            <span>
+              <span className="text-xs uppercase opacity-60">{t("compte.wallet.days")} </span>
+              <span>{porteMonnaie.jours === null
+                ? t("compte.wallet.unknown")
+                : t("compte.wallet.daysValue", { n: porteMonnaie.jours })}</span>
+            </span>
+          </>)}
+        </div>
+        <p className="mt-2 text-xs opacity-60">
+          {t("compte.wallet.rateHint", { pct: porteMonnaie.contributionPct })}
+        </p>
+        {/* Ce que le crédit ouvre — et ce qu'il n'ouvre pas. La nuance n'est pas
+            décorative : elle évite qu'on croie avoir acheté l'accès à un
+            fournisseur que la clé d'EduChat ne servira jamais. */}
+        <p className="mt-1 text-xs opacity-60">{t("compte.wallet.unlocks")}</p>
+        {!demo && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={() => void recharger()} disabled={busy} className={BOUTON}>
+              {t("compte.wallet.topUp")}
+            </button>
+            {porteMonnaie.solde > 0 && credits?.paypalActif && (
+              <button onClick={() => void rembourserCredit()} disabled={busy} className={DANGER}
+                title={t("compte.wallet.refundHint", { pct: credits.fraisPaypalPct })}>
+                {t("compte.wallet.refund")}
+              </button>
+            )}
+          </div>
+        )}
+        {porteMonnaie.mouvements.length > 0 && (
+          <>
+            <h4 className="mt-4 text-xs font-bold uppercase opacity-60">{t("compte.wallet.movements")}</h4>
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs">
+              {porteMonnaie.mouvements.slice(0, 12).map(m => (
+                <li key={m.id} className="flex gap-3 opacity-70">
+                  <span className="w-24 shrink-0">{new Date(m.ts).toLocaleDateString("fr-CH")}</span>
+                  <span className={`w-20 shrink-0 text-right font-mono ${m.montant < 0 ? "" : "text-green-300"}`}>
+                    {m.montant.toFixed(2)}
+                  </span>
+                  <span className="w-20 shrink-0 text-right font-mono opacity-60">{m.solde.toFixed(2)}</span>
+                  <span className="truncate">{m.detail || m.genre}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs opacity-60">{t("compte.wallet.movementsHint")}</p>
+          </>
+        )}
+      </Section>
+      )}
+
+      {/* 4 — Conversations -------------------------------------------------- */}
       {(!seule || seule === "conversations") && (
-      <Section ancre="compte-conversations" numero={3} titre={t("compte.conv.title")} barre={listeConv.barre}>
+      <Section ancre="compte-conversations" numero={4} titre={t("compte.conv.title")} barre={listeConv.barre}>
         <p className="text-sm opacity-80">{t("compte.conv.intro")}</p>
 
         <label className="mt-3 flex items-center gap-2 text-xs">
@@ -510,9 +690,9 @@ export default function ComptePage() {
       </Section>
       )}
 
-      {/* 4 — Le reste -------------------------------------------------------- */}
+      {/* 5 — Le reste -------------------------------------------------------- */}
       {!seule && (
-      <Section ancre="compte-tuteurs" numero={4} titre={t("compte.other.title")}>
+      <Section ancre="compte-tuteurs" numero={5} titre={t("compte.other.title")}>
         <h3 className="text-sm font-bold">{t("compte.prompts.title")}</h3>
         <p className="mt-1 text-xs opacity-70">{t("compte.prompts.publicDomain")}</p>
         {prompts.length === 0

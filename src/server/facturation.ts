@@ -1,22 +1,27 @@
-// LA FACTURE D'UNE ÉCOLE, ET LES 10 % QUI PAIENT LA GRATUITÉ DES AUTRES.
+// LA FACTURE D'UNE ÉCOLE — AU PRIX COÛTANT, ET RIEN D'AUTRE.
 //
 // La consommation se recalcule à tout moment depuis usage_log : jetons par
-// fournisseur, multipliés par le tarif du fournisseur. S'y ajoute une
-// PARTICIPATION AUX FRAIS DE FONCTIONNEMENT, dix pour cent, qui alimente les
-// clés offertes — la démonstration publique du site et les écoles RESPIRE.
+// fournisseur, multipliés par le tarif du fournisseur. ET C'EST TOUT : le
+// total d'une facture est celui de sa consommation.
 //
-// Elle est affichée en clair, sur sa propre ligne, dans l'administration de
-// chaque école. Une contribution qu'on cache n'est plus une contribution,
-// c'est une marge ; et une école qui voit ce qu'elle finance l'accepte mieux
-// qu'une école qui découvre un écart entre son relevé et sa facture.
+// CE COMMENTAIRE DISAIT LE CONTRAIRE, ET IL AVAIT CESSÉ D'ÊTRE VRAI. Il
+// annonçait « une participation aux frais, dix pour cent, qui s'ajoute ».
+// Depuis le passage au prix coûtant, la contribution de l'école — 3,5 à 10 %,
+// qu'elle choisit — est prélevée UNE FOIS, À LA RECHARGE
+// (src/server/porteMonnaie.ts, commissionRecharge), et elle s'inscrit au
+// registre du porte-monnaie comme un mouvement daté. Elle n'apparaît donc plus
+// sur la facture : ce qu'une école lit ici, elle peut le confronter au tarif
+// public d'Anthropic, d'OpenAI ou de Mistral et retrouver notre chiffre au
+// centime — c'est tout l'intérêt du changement, et une ligne « participation :
+// 0.00 » suffirait à le brouiller.
 //
-// Les écoles RESPIRE ne paient RIEN, participation comprise : elles sont la
-// destination de cet argent, pas sa source.
+// Les écoles RESPIRE ne paient RIEN : elles sont la destination de cet argent,
+// pas sa source — et elles ne rechargent pas, donc ne contribuent nulle part.
 
 import { getDb } from './db';
 import { monthStartUtc } from './admin';
 import { BillingCurrency } from '../utils/env';
-import { contributionDe, coutDe } from './porteMonnaie';
+import { contributionDe, coutDe, titulaireEcole, DETAIL_COMMISSION } from './porteMonnaie';
 
 export type LigneFournisseur = { provider: string; tokens: number; prixMtok: number; montant: number };
 
@@ -216,7 +221,7 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     // PLUS DE PARTICIPATION SUR LA CONSOMMATION : elle a été prélevée à la
     // recharge. Le relevé montre donc le PRIX COÛTANT, celui que l'école peut
     // confronter au tarif public du fournisseur — c'est tout l'intérêt.
-    const pct = contributionDe(ecole.id);
+    const pct = contributionDe(titulaireEcole(ecole.id));
     const participation = 0;
     const emise = emises.find(f => f.etablissement_id === ecole.id);
 
@@ -289,11 +294,25 @@ export function impayees() {
 }
 
 /**
- * Ce que la participation a rapporté, et ce qu'elle a financé.
+ * Ce que la contribution a rapporté ce mois-ci, et ce qu'elle a financé.
  *
- * Le premier chiffre est la somme des 10 % facturés ; le second, la
- * consommation des clés offertes — démonstration publique et écoles RESPIRE.
- * Les mettre côte à côte est la seule façon de vérifier que la promesse tient.
+ * ELLE NE SE LIT PLUS SUR LES FACTURES, ET C'EST TOUT LE CORRECTIF. Ce bilan
+ * additionnait `facture.participation` — un champ que le passage au prix
+ * coûtant met à zéro par construction. La plateforme affichait donc « 0.00
+ * encaissé » en regard de ce qu'elle offrait, et le rapprochement qui justifie
+ * cet écran — a-t-on collecté de quoi payer la gratuité qu'on promet ? —
+ * répondait non tous les mois. Un tableau de bord qui se trompe dans ce
+ * sens-là est pire qu'absent : il fait croire à une perte.
+ *
+ * LA CONTRIBUTION VIT DÉSORMAIS AU REGISTRE DU PORTE-MONNAIE, prélevée à la
+ * recharge (src/server/porteMonnaie.ts). On la relit donc là où elle est
+ * écrite : les `ajustement` négatifs portant l'en-tête DETAIL_COMMISSION, sur
+ * TOUS les titulaires — écoles ET porte-monnaie personnels, puisque les deux
+ * la paient et que les deux financent la même gratuité.
+ *
+ * Le taux affiché n'est plus « le » taux : chaque école choisit le sien entre
+ * 3,5 et 10 %, et le plancher de 0.50 le relève sur les petits versements. On
+ * montre donc celui qui RESSORT — commission rapportée aux versements du mois.
  */
 export function bilanParticipation(year: number, month: number) {
   const db = getDb();
@@ -301,8 +320,22 @@ export function bilanParticipation(year: number, month: number) {
   const fin = monthStartUtc(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1);
   const prix = tarifs();
 
-  const collectee = facturesDuMois(year, month, null)
-    .reduce((n, f) => n + f.participation, 0);
+  // Le `LIKE` porte sur une chaîne que le serveur écrit lui-même, jamais sur
+  // une saisie : les deux seules routes de recharge la composent à partir de
+  // DETAIL_COMMISSION. Un ajustement manuel qui commencerait par ces mots
+  // serait compté à tort — c'est le prix d'un registre dont le genre n'a pas
+  // été scindé, et un genre neuf laisserait au contraire tout l'historique
+  // hors du compte.
+  const encaisse = db.prepare(`
+    SELECT COALESCE(SUM(-montant), 0) AS total FROM credit_mouvements
+    WHERE ts >= ? AND ts < ? AND genre = 'ajustement' AND montant < 0
+      AND detail LIKE ? || '%'
+  `).get(debut, fin, DETAIL_COMMISSION) as { total: number };
+  const versements = db.prepare(`
+    SELECT COALESCE(SUM(montant), 0) AS total FROM credit_mouvements
+    WHERE ts >= ? AND ts < ? AND genre = 'recharge' AND montant > 0
+  `).get(debut, fin) as { total: number };
+  const collectee = encaisse.total;
 
   const offerts = db.prepare(`
     SELECT u.provider AS provider, SUM(u.tokens) AS tokens,
@@ -316,11 +349,11 @@ export function bilanParticipation(year: number, month: number) {
   const cout = (l: typeof offerts) => centimes(l.reduce(
     (n, o) => n + (o.tokens / 1_000_000) * (prix[o.provider] ?? 0), 0));
 
-  // Les écoles ne contribuent plus toutes au même taux : le bilan de la
-  // plateforme n'affiche donc plus « le » pourcentage, mais celui qui ressort
-  // réellement de ce qui a été encaissé. Un chiffre unique serait faux.
-  const facturees = facturesDuMois(year, month, null).filter(f => !f.respire && f.consommation > 0);
-  const base = facturees.reduce((n, f) => n + f.consommation, 0);
+  // LA BASE, C'EST CE QUI A ÉTÉ VERSÉ — plus la consommation facturée. Rapporter
+  // la commission à une consommation qu'elle ne touche plus donnerait un taux
+  // sans rapport avec celui que les écoles ont réglé au curseur, et qui bougerait
+  // au gré d'un mois creux ou chargé.
+  const base = versements.total;
   return {
     devise: BillingCurrency,
     pct: base > 0 ? Math.round((collectee / base) * 1000) / 10 : 0,

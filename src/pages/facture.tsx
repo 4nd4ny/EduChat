@@ -183,17 +183,20 @@ export default function FacturePage() {
                   <dt>{t("admin.facture.consumption")}</dt>
                   <dd className="font-mono">{montant(facture.consommation, facture.devise)}</dd>
                 </div>
-                {/* La participation est NOMMÉE, sur sa propre ligne : une
-                    contribution qu'on cache n'est plus une contribution. */}
-                <div className="flex justify-between py-0.5">
-                  <dt>{t("admin.facture.share", { pct: facture.participationPct })}</dt>
-                  <dd className="font-mono">{montant(facture.participation, facture.devise)}</dd>
-                </div>
+                {/* LA PARTICIPATION N'EST PLUS UNE LIGNE DE FACTURE, parce
+                    qu'elle n'est plus prélevée ici : elle l'est à la RECHARGE,
+                    une seule fois, et figure au registre du porte-monnaie sous
+                    sa propre date. La cacher serait grave ; l'imprimer à 0.00
+                    sur un document comptable l'était tout autant, dans l'autre
+                    sens — l'intendance y aurait lu un taux qu'on ne lui
+                    applique pas. Reste la mention ci-dessous, qui dit ce que
+                    ce total EST : le prix du fournisseur, sans marge. */}
                 <div className="mt-1 flex justify-between border-t border-black/30 py-1 font-bold">
                   <dt>{t("admin.facture.total")}</dt>
                   <dd className="font-mono">{montant(facture.total, facture.devise)}</dd>
                 </div>
               </dl>
+              <p className="mt-2 text-right text-xs opacity-70">{t("facture.prixCoutant")}</p>
             </>
           )}
 

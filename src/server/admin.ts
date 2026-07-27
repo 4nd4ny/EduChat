@@ -9,8 +9,8 @@
 //
 //   ADMINISTRATEUR D'ÉCOLE — un enseignant à qui l'on confie SON établissement.
 //   Il valide les prompts, modère les commentaires, gère les comptes de son
-//   école (enseignants, majorité certifiée, et d'autres administrateurs de la
-//   même école) et lit la facture de sa clé interne. Il ne sort jamais de son
+//   école (enseignants et autres administrateurs de la même école) et lit la
+//   facture de sa clé interne. Il ne sort jamais de son
 //   établissement. C'est ce qui rend une école autonome sans lui donner la
 //   main sur les autres.
 //
@@ -198,15 +198,18 @@ export function requireSuperAdmin(req: NextApiRequest): AdminScope | null {
  * l'on contrôle. Fonder la portée sur estMembre revenait donc à ceci :
  * j'inscris une école depuis une adresse que je contrôle, je vérifie un SECOND
  * compte depuis cette même adresse, et le voilà dans ma portée. Or la portée
- * commande la CERTIFICATION DE MAJORITÉ, qui ouvre les fournisseurs écartés au
- * titre de l'AI Act et le nommage libre d'un modèle derrière un intermédiaire
- * (mayUseAdultProviders, src/server/adult.ts). La garde « personne ne se
- * certifie soi-même » ne verrait rien passer : les deux comptes sont deux
- * adresses. Le commentaire de cette garde, dans /api/admin/users, tient
- * justement pour acquis que « deux inscrits en libre-service atterrissent dans
- * DEUX écoles, donc hors de la portée l'un de l'autre » — estMembre effacerait
- * la démonstration sans la remplacer, et le complice n'aurait plus à être
- * complice.
+ * commande les RÔLES d'un compte — enseignant, promptagogue, administrateur
+ * d'école — et donc ce qu'il publie, modère et dépense au nom de l'école. Un
+ * second compte fabriqué depuis chez soi se verrait ainsi nommé enseignant, ou
+ * administrateur, d'une école qu'on vient d'inventer ; et comme l'école inclut
+ * les tuteurs qui lui appartiennent et le porte-monnaie qui les paie, ce n'est
+ * pas une portée théorique.
+ *
+ * (Cette démonstration se lisait naguère sur la CERTIFICATION DE MAJORITÉ, que
+ * la portée commandait aussi. La notion a été supprimée du produit — l'accès
+ * aux fournisseurs se décide sur le lieu et le compte,
+ * src/server/accesFournisseurs.ts — et le raisonnement vaut inchangé pour les
+ * rôles, qui sont ce qui reste.)
  *
  * users.etablissement_id, lui, ne se ramasse pas : il est posé par le site
  * (/api/admin/users, réservé au super) ou par l'inscription, qui ne rattache

@@ -57,9 +57,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const respire = req.body?.respire ? 1 : 0;
     const quota = Math.max(0, Number(req.body?.tokenQuotaMonthly) || 0);
     const perStudent = Math.max(0, Number(req.body?.quotaPerStudentDaily) || 0);
-    // Un fournisseur que la clé interne ne peut PAS payer (OpenRouter, ou tout
-    // fournisseur réservé aux adultes) n'a pas de sens ici : le réglage
-    // s'enregistrerait et la complétion le refuserait ensuite.
+    // Un fournisseur que la clé interne ne peut PAS payer — un intermédiaire à
+    // drapeau rouge (OpenRouter), ou un fournisseur ÉCARTÉ d'un public scolaire
+    // au titre de l'AI Act — n'a pas de sens ici : le réglage s'enregistrerait
+    // et la complétion le refuserait ensuite. SCHOOL_PROVIDER_IDS retire déjà
+    // les deux familles ; ce commentaire disait « réservé aux adultes », d'un
+    // temps où une majorité certifiée les rouvrait — cette notion n'existe plus.
     const activeProvider = SCHOOL_PROVIDER_IDS.includes(req.body?.activeProvider) ? req.body.activeProvider : '';
     const billingEmail = String(req.body?.billingEmail ?? '').trim().slice(0, 255);
     if (!name) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });

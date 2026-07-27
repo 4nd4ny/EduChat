@@ -3,7 +3,7 @@ import { getClientIp, isRateLimited, mayUseServerKeys } from "../../server/acces
 import { getDb, PromptRow } from "../../server/db";
 import { requireAuth } from "../../server/token";
 import { getLadder } from "../../server/ladder";
-import { mayUseAdultProviders } from "../../server/adult";
+import { aUnMoyenPropre, fournisseurLibre, perimetreFournisseurs } from "../../server/accesFournisseurs";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { tokensDetail } from "../../server/llm";
 import { readUserKey } from "../../server/userKeys";
@@ -11,10 +11,11 @@ import { getPublishedByName, getByShareToken, porteeAppelant, PorteeCatalogue } 
 import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { seanceActive, seanceAutoriseFournisseur } from "../../server/seance";
-import { aDuCredit, decompter } from "../../server/porteMonnaie";
+import { aDuCredit, aUnPorteMonnaie, decompter, titulaireCompte, titulaireEcole }
+  from "../../server/porteMonnaie";
 import { notifyAdmin } from "../../server/mail";
 import { touchPresence } from "../../server/stats";
-import { AlertIpDailyTokens, DeveloperKeys, FreeProvider, FreeModel, FreeModels } from "../../utils/env";
+import { AlertIpDailyTokens, DeveloperKeys, FreeModel, FreeModels } from "../../utils/env";
 import {
   buildProviderRequest, canStreamProvider, streamProviderResponse,
   type ProviderCallOpts, type WireMessage,
@@ -183,54 +184,78 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Clé PERSONNELLE : celle saisie dans la page, ou — à défaut — celle que le
   // titulaire du compte a demandé de mémoriser (chiffrée en base). Résolue ici,
   // avant tout contrôle, pour que la suite ne fasse plus la différence : une
-  // clé mémorisée donne exactement les mêmes droits qu'une clé saisie.
-  // AI Act : les fournisseurs écartés sont refusés AVANT même de regarder
-  // quelle clé sera utilisée. Sur un réseau d'établissement, ils le sont pour
-  // tout le monde — c'est le seul engagement qu'on puisse tenir devant une
-  // école. Ailleurs, ils demandent un compte dont la majorité a été vérifiée :
-  // « hors du wifi du collège » n'est pas « adulte », c'est aussi la chambre
-  // d'un élève de quatorze ans, et c'est précisément là que l'école ne voit
-  // plus rien (src/server/adult.ts porte la démonstration).
+  // clé mémorisée donne exactement les mêmes droits qu'une clé saisie POUR
+  // PAYER. Pour OUVRIR un périmètre, en revanche, les deux ne se valent pas —
+  // voir juste en dessous.
+  const compteAppelant = requireAuth(req)?.email ?? null;
+  let personalKey = String(body.apiKey || "").trim();
+  if (!personalKey && compteAppelant) personalKey = readUserKey(compteAppelant, provider) ?? "";
+
+  // ─── LE PÉRIMÈTRE : QUELS FOURNISSEURS POUR CETTE REQUÊTE-CI ───────────────
   //
-  // LE CONTRÔLE VIT ICI, pas dans le menu déroulant : une requête forgée à la
-  // main n'a aucune interface à contourner. Les deux motifs de refus sortent
-  // distincts, parce que l'un se lève en se faisant certifier et l'autre non.
-  if (providerDefaults[provider].adultOnly) {
-    const verdict = mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
-    if (!verdict.allowed) {
-      return res.status(403).json({
-        error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
-      });
-    }
+  // Une seule fonction, la même que celle qui dresse la liste affichée
+  // (/api/providers) : src/server/accesFournisseurs.ts, où la matrice est
+  // écrite et démontrée. LE CONTRÔLE VIT ICI, pas dans le menu déroulant —
+  // une requête forgée à la main n'a aucune interface à contourner.
+  //
+  // `moyenPropre` se lit EN BASE (aUnMoyenPropre), jamais dans le corps de la
+  // requête : sur le réseau d'une école, seul un moyen de paiement associé
+  // AVANT de venir lève les règles de l'établissement. Accepter la clé collée
+  // dans le champ reviendrait à rouvrir Grok en classe pour qui a trouvé une
+  // clé sur un forum — et cette route serait alors plus permissive que la
+  // liste, qui, elle, ne voit pas le corps de la requête.
+  const perimetre = perimetreFournisseurs({
+    ip: clientIp, email: compteAppelant, moyenPropre: aUnMoyenPropre(compteAppelant),
+  });
+
+  // OÙ LE PÉRIMÈTRE MORD, ET OÙ IL SERAIT REDONDANT.
+  //
+  // Il mord sur le chemin qui honore RÉELLEMENT le fournisseur demandé : celui
+  // d'une clé personnelle. C'est là, et là seulement, que le choix du client
+  // décide de qui reçoit la conversation.
+  //
+  // Les deux autres chemins portent leur propre garde, et elle est plus
+  // stricte :
+  //   · la clé INTERNE refuse tout net les fournisseurs écartés et les drapeaux
+  //     rouges (plus bas) — l'engagement pris devant une école ne dépend donc
+  //     pas de ce test-ci —, et elle ne s'ouvre PAS à un anonyme hors campus
+  //     (garde `motif !== 'demo'`, plus bas, où le cas est démonté) ;
+  //   · le repli gratuit IMPOSE son fournisseur et son modèle : le choix du
+  //     client y est ignoré, il n'y a rien à refuser.
+  // Refuser ICI, en plus, fermerait la porte au visiteur anonyme qui garde
+  // « Claude » dans son menu et reçoit aujourd'hui, comme hier, la réponse du
+  // modèle gratuit — un refus sec là où il y a une réponse à donner. On ne
+  // casse pas la démonstration publique pour un contrôle que la suite du
+  // fichier fait déjà, et mieux.
+  if (personalKey && !perimetre.fournisseurs.includes(provider)) {
+    return res.status(403).json({
+      error: {
+        code: perimetre.motif === 'ecole'
+          ? 'ERR_PROVIDER_SCHOOL_NETWORK'     // le lieu : aucun réglage de l'intéressé ne le lève
+          : 'ERR_PROVIDER_ACCOUNT_REQUIRED',  // la démonstration : il faut un compte
+      },
+    });
   }
 
   // OPENROUTER : LE SEUL FOURNISSEUR À DEUX STATUTS, ET VOICI CE QUI LE TIENT.
   //
-  // Il n'est pas « adultOnly », parce que dans le chat personne ne choisit de
+  // Il n'est pas « écarté », parce que dans le chat personne ne choisit de
   // modèle : l'administration règle l'échelle, aujourd'hui Mistral et Claude,
-  // et OpenRouter n'est qu'un intermédiaire vers des modèles conformes. Son
-  // drapeau WRNG suffit donc à le signaler, sans l'écarter.
+  // et OpenRouter n'est qu'un intermédiaire vers des modèles conformes — il est
+  // même le moteur du repli gratuit public. Son drapeau WRNG suffit donc à le
+  // signaler, sans l'écarter.
   //
   // Mais cette promesse ne vaut QUE tant que le modèle vient de l'échelle.
-  // Nommer « deepseek/... » à travers OpenRouter contournerait tout l'AI Act
-  // d'une ligne de requête — et pire : atteindrait ce qu'aucune de nos listes
-  // ne contient. À qui n'a pas droit aux fournisseurs écartés, on n'accepte
-  // donc d'OpenRouter que les modèles réglés par l'administration. La page
-  // « duel » ne le propose plus à ces visiteurs ; ceci le refuse aussi à une
-  // requête forgée à la main, qui n'a pas d'interface à contourner.
-  if (provider === 'openrouter' && body.model && !getLadder('openrouter').includes(model)) {
-    const verdict = mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
-    if (!verdict.allowed) {
-      return res.status(403).json({
-        error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
-      });
-    }
-  }
-
-  let personalKey = String(body.apiKey || "").trim();
-  if (!personalKey) {
-    const account = requireAuth(req);
-    if (account) personalKey = readUserKey(account.email, provider) ?? "";
+  // Nommer « deepseek/… » à travers OpenRouter atteindrait, en une ligne de
+  // requête, ce qu'aucune de nos listes ne contient. NOMMER SON MODÈLE CHEZ UN
+  // INTERMÉDIAIRE DEMANDE DONC UN COMPTE : quelqu'un d'identifié, qui paie et
+  // répond de son appel. L'anonyme, lui, n'a d'OpenRouter que le repli gratuit,
+  // dont le modèle est imposé — et c'est précisément par là qu'il essaierait de
+  // passer. La page « duel » ne le lui propose plus ; ceci le refuse aussi à
+  // une requête forgée à la main, qui n'a pas d'interface à contourner.
+  if (provider === 'openrouter' && body.model && !getLadder('openrouter').includes(model)
+      && !perimetre.compte) {
+    return res.status(403).json({ error: { code: 'ERR_PROVIDER_ACCOUNT_REQUIRED' } });
   }
 
   // Pièces jointes (images/PDF) — réservées à la clé PERSONNELLE et aux
@@ -293,22 +318,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Règle d'accès, par ordre de priorité :
   //  1. clé personnelle (BYOK) → toujours acceptée, avec le fournisseur/modèle du client ;
   //  2. site déverrouillé OU IP d'établissement en plage horaire → clé interne
-  //     du fournisseur choisi, soumise aux quotas (facturée, journalisée avec l'IP) ;
-  //  3. REPLI GRATUIT public → fournisseur + modèle gratuits configurés
+  //     du fournisseur choisi, soumise aux quotas (facturée, journalisée avec l'IP).
+  //     JAMAIS pour un anonyme hors campus : voir la garde, plus bas ;
+  //  3. PORTE-MONNAIE PERSONNEL → clé interne, décomptée sur le crédit du
+  //     compte. Journalisée SANS IP ni établissement : la consommation d'une
+  //     personne n'est la donnée d'aucune école ;
+  //  4. REPLI GRATUIT public → fournisseur + modèle gratuits configurés
   //     (SECRET_FREE_PROVIDER / SECRET_FREE_MODEL), avec la clé serveur de ce
   //     fournisseur : le site « marche un peu » sans rien saisir. JAMAIS journalisé
   //     avec l'IP (pas d'établissement, pas de donnée personnelle) ;
-  //  4. sinon → verrouillé (401).
+  //  5. sinon → verrouillé (401).
+  //
+  // L'ORDRE 2 AVANT 3 EST UNE DÉCISION D'ARGENT, PAS UN HASARD. Là où l'école
+  // finance déjà (son réseau, ses horaires, son porte-monnaie), elle continue
+  // de payer : déplacer silencieusement la dépense sur le crédit d'un élève
+  // parce qu'il en a un serait lui faire payer le cours. De même quand le site
+  // est GLOBALEMENT déverrouillé (verrou /api/auth) : la plateforme offre alors
+  // le service à tout le monde, et on ne prélève pas un crédit personnel pour
+  // ce qu'on donne au même instant à l'anonyme d'à côté.
   let apiKey = personalKey;
   let effProvider: ProviderId = provider;   // fournisseur RÉELLEMENT utilisé
   let effModel = model;                      // modèle RÉELLEMENT utilisé
   let usedServerKey = false;                 // clé interne (établissement/déverrouillé) → journal + IP
   let usedFreeKey = false;                   // clé gratuite publique → journal sans IP
+  let payeurCompte: string | null = null;    // clé interne payée par un crédit PERSONNEL
   let etablissementId: number | null = null;
   let studentBucket = "";
   let teacherEmail: string | null = null;
 
   if (!personalKey) {
+    // Le repli gratuit, résolu UNE fois : la même fonction que celle qui dresse
+    // la liste de la démonstration, refus des fournisseurs écartés compris.
+    const libre = fournisseurLibre();
     const etab = resolveEtablissementByIp(clientIp);
     etablissementId = etab?.id ?? null;
     // Pot du quota par élève : clientId anonyme si valide, SINON l'IP — omettre
@@ -324,15 +365,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       teacherEmail = seance.setByEmail;
     }
 
-    if (await mayUseServerKeys(clientIp)) {
+    // ─── LA CLÉ INTERNE N'EST PAS OFFERTE À UN ANONYME HORS CAMPUS ─────────
+    //
+    // `motif !== 'demo'`, et cette condition n'est pas décorative : sans elle,
+    // la route est PLUS PERMISSIVE QUE LA LISTE qu'elle est censée appliquer,
+    // et c'est exactement le défaut que accesFournisseurs.ts existe pour
+    // supprimer — « c'est toujours la copie la plus permissive qui survit ».
+    //
+    // LA REQUÊTE FORGÉE, EN UNE LIGNE. Site globalement déverrouillé (verrou
+    // /api/auth, posé depuis /school), visiteur sans compte et hors du réseau
+    // de toute école, `POST {provider:"anthropic"}` sans clé : mayUseServerKeys
+    // répondait `true` sur le seul verrou global, `anthropic` n'est ni écarté
+    // ni drapeau rouge, et `etablissementId` étant nul, ni le porte-monnaie ni
+    // les quotas ne mordaient. C'était Claude, sur la clé de la plateforme, à
+    // un inconnu, sans que rien ne soit décompté à personne. Sa liste, elle,
+    // ne contenait que le repli gratuit : l'écran promettait moins que ce que
+    // le serveur donnait — l'écart qu'on ne remarque jamais, puisqu'il ne
+    // produit aucune erreur.
+    //
+    // LE MÊME TEST RÉPARE L'INVERSE. La liste d'un anonyme hors campus se
+    // réduit désormais au seul fournisseur du repli gratuit, et ChatSettings
+    // aligne le menu dessus — or ce fournisseur est OpenRouter, à drapeau
+    // rouge, que la branche ci-dessous refuse tout net. Site déverrouillé, ce
+    // visiteur ne recevait donc plus RIEN (403) là où il recevait hier la
+    // démonstration. Il tombe maintenant sur le repli gratuit, verrou ouvert
+    // ou fermé — c'est-à-dire sur ce que la matrice lui promet, et sur la même
+    // chose dans les deux états du site.
+    //
+    // CE QUE CELA COÛTE, ET POURQUOI C'EST LE BON PRIX. Une école
+    // mono-établissement qui s'appuierait sur le verrou global SANS avoir
+    // déclaré son adresse (ni en base, ni dans SECRET_ALLOWED_IPS) retombe sur
+    // le modèle gratuit : `surLeCampus` ne la reconnaît pas. Le remède existe
+    // et il est le bon — déclarer l'adresse, ce que la fonction honore déjà —,
+    // et une adresse ILLISIBLE compte de toute façon pour une école, si bien
+    // qu'un proxy cassé n'enferme personne. Payer la clé de la plateforme pour
+    // n'importe qui, au motif qu'une école a oublié de se déclarer, serait
+    // l'échange inverse.
+    if (perimetre.motif !== 'demo' && await mayUseServerKeys(clientIp)) {
       // La clé INTERNE d'un établissement ne finance jamais un fournisseur
       // à drapeau rouge : ce serait envoyer des travaux d'élèves hors UE
       // sans cadre de transfert. Ces fournisseurs restent accessibles en
       // clé personnelle, sous la responsabilité de leur titulaire.
-      // AI Act : ni les fournisseurs à drapeau rouge, ni ceux réservés aux
-      // adultes ne passent par la clé d'un établissement — c'est un public
-      // scolaire, donc mineur par défaut.
-      if (providerDefaults[provider].wrng || providerDefaults[provider].adultOnly) {
+      // AI Act : ni les fournisseurs à drapeau rouge, ni ceux écartés d'un
+      // public scolaire ne passent par la clé d'un établissement — c'est un
+      // public scolaire, donc mineur par défaut. CE REFUS NE DÉPEND D'AUCUNE
+      // CASE DE LA MATRICE : un compte qui paie lui-même a le droit de choisir
+      // ces fournisseurs, jamais celui de les faire payer par une école.
+      if (providerDefaults[provider].wrng || providerDefaults[provider].ecarte) {
         return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
       }
       // FOURNISSEURS DE LA SÉANCE. L'enseignant a coché ce que sa classe peut
@@ -356,7 +435,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Code DISTINCT du quota : une classe qui bute sur un mur doit lire
       // « l'école n'a plus de crédit » — « quota dépassé » l'enverrait
       // attendre demain un déblocage qui ne viendra pas tout seul.
-      if (etablissementId && !aDuCredit(etablissementId)) {
+      if (etablissementId && !aDuCredit(titulaireEcole(etablissementId))) {
         return res.status(402).json({ error: { code: 'ERR_SCHOOL_NO_CREDIT' } });
       }
 
@@ -378,11 +457,89 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       apiKey = String(developerKeys[provider] || "").trim();
       if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
-    } else if (isProviderId(FreeProvider) && String(developerKeys[FreeProvider as ProviderId] || "").trim()) {
+    } else if (perimetre.compte && compteAppelant && aUnPorteMonnaie(compteAppelant)) {
+      // ─── LE PORTE-MONNAIE PERSONNEL ────────────────────────────────────────
+      //
+      // EduChat vend aussi des jetons à une personne : elle provisionne, elle
+      // emploie la clé interne, on décompte son crédit au prix coûtant. Même
+      // règle que pour une école, jusqu'au refus AVANT l'appel.
+      //
+      // POURQUOI « A UN PORTE-MONNAIE » ET NON « A DU CRÉDIT » COMME CONDITION
+      // D'ENTRÉE : les deux réponses à un solde vide sont opposées, et il faut
+      // savoir laquelle on doit. Qui n'a jamais provisionné doit continuer de
+      // recevoir la démonstration gratuite exactement comme avant — ce chantier
+      // n'a pas le droit de la lui retirer. Qui a provisionné puis épuisé doit
+      // l'APPRENDRE (402) : le rétrograder en silence sur le petit modèle
+      // gratuit le laisserait constater que « les réponses sont devenues
+      // mauvaises » sans jamais lui dire pourquoi.
+      //
+      // `perimetre.compte` et non le seul jeton : les droits se relisent en
+      // base (voir accesFournisseurs.ts). Un jeton vit quatre-vingt-dix jours et
+      // survit à un compte effacé — dont la ligne users, donc le solde, n'existe
+      // plus.
+      if (!aDuCredit(titulaireCompte(compteAppelant))) {
+        return res.status(402).json({ error: { code: 'ERR_ACCOUNT_NO_CREDIT' } });
+      }
+      // LA CLÉ INTERNE NE SERT JAMAIS UN ÉCARTÉ NI UN DRAPEAU ROUGE, QUEL QUE
+      // SOIT LE PAYEUR — même règle, mot pour mot, que pour une école, et pour
+      // la même raison : c'est la clé d'EduChat, et l'engagement qu'elle porte
+      // ne s'achète pas. Un crédit personnel achète des jetons, pas le droit de
+      // faire sortir cette clé de ce qu'elle a promis de servir. Ces
+      // fournisseurs-là restent atteignables, mais avec SA PROPRE clé — c'est
+      // exactement ce que dit la matrice (accesFournisseurs.ts).
+      if (providerDefaults[provider].wrng || providerDefaults[provider].ecarte) {
+        return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
+      }
+      // LES FOURNISSEURS DE LA SÉANCE VALENT AUSSI ICI, et c'est un choix.
+      // Hors d'une école le test ne coûte rien (pas d'établissement résolu par
+      // l'IP, donc pas de séance, donc `true`). Dedans — cas d'un appel hors des
+      // horaires d'accès, où l'école ne paie pas mais où la classe a bien lieu —
+      // un crédit personnel n'achète pas le droit de sortir de ce que
+      // l'enseignant a coché pour son heure de cours. La restriction est
+      // PÉDAGOGIQUE, pas financière : payer soi-même ne change rien à ce qu'on
+      // est venu faire dans cette salle. Celui qui l'a posée peut la lever ;
+      // personne d'autre.
+      if (!seanceAutoriseFournisseur(seance, provider)) {
+        return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_IN_SESSION' } });
+      }
+      payeurCompte = compteAppelant;
+      apiKey = String(developerKeys[provider] || "").trim();
+      if (!apiKey) return res.status(503).json({ error: { code: ERR.NO_KEY } });
+    } else if (libre && !perimetre.campus) {
+      // LE REPLI GRATUIT NE DESSERT PAS UNE SALLE DE CLASSE, et cette condition
+      // `!perimetre.campus` répare un trou mesuré.
+      //
+      // Le repli est OpenRouter : un intermédiaire à drapeau rouge, servi sur un
+      // budget de démonstration. Hors campus c'est exactement ce qu'on veut
+      // offrir à un visiteur anonyme. Sur le campus, c'est la rupture de
+      // l'engagement pris devant la direction — « chez nous, seuls les
+      // fournisseurs conformes ».
+      //
+      // Le trou ne s'ouvrait pas par la porte du choix de fournisseur, mais par
+      // celle de l'HORAIRE : mayUseServerKeys() rend faux hors des heures
+      // déclarées par l'établissement, la branche « clé interne » est sautée, et
+      // l'élève tombait ici. Mesuré : IP d'école, 15 h 06 hors plage, question
+      // anonyme → réponse servie par OpenRouter. La liste annoncée à cet élève
+      // par /api/providers disait pourtant « mistral, anthropic, openai ».
+      //
+      // Refuser est le comportement juste : une école hors horaire, ou à sec,
+      // doit voir son accès FERMÉ — ce qui se remarque et s'explique — et non
+      // silencieusement dévié vers un fournisseur qu'elle a écarté. Le visiteur
+      // reçoit ERR_LOCKED ci-dessous.
+      //
       // Repli gratuit public : on IMPOSE le fournisseur et le modèle gratuits,
       // quel que soit le choix du client (qui n'a pas fourni de clé).
+      //
+      // LE FOURNISSEUR VIENT DE fournisseurLibre() ET NON DE FreeProvider :
+      // c'est la MÊME fonction qui dresse la liste de la démonstration
+      // (accesFournisseurs.ts), et elle refuse un repli gratuit configuré sur
+      // un fournisseur ÉCARTÉ. Écrit deux fois, ce test aurait divergé — et
+      // c'est ici, sur le seul chemin où le fournisseur ne vient pas de la
+      // requête, que la divergence aurait fait payer par la clé de la
+      // plateforme, à un visiteur anonyme de salle de classe, ce qu'aucune
+      // autre ligne du fichier n'accepte de payer.
       usedFreeKey = true;
-      effProvider = FreeProvider as ProviderId;
+      effProvider = libre;
       effModel = (FreeModel || providerDefaults[effProvider].model).slice(0, 128);
       webSearch = false; // le petit modèle gratuit ne fait pas de recherche web
       apiKey = String(developerKeys[effProvider] || "").trim();
@@ -439,8 +596,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // vérifiée dans decompter, pas ici : une règle de gratuité ne se
           // répète pas à chaque point d'appel.
           if (etablissementId) {
-            decompter(etablissementId, effProvider, detail.entree, detail.sortie, effModel);
+            decompter(titulaireEcole(etablissementId), effProvider, detail.entree, detail.sortie, effModel);
           }
+        } else if (payeurCompte) {
+          // PORTE-MONNAIE PERSONNEL : journal SANS IP, SANS établissement et
+          // SANS teacher_email. La colonne `ip` est documentée comme une donnée
+          // de FACTURATION D'ÉTABLISSEMENT, et /rgpd promet qu'on ne journalise
+          // pas l'usage d'une personne : y inscrire l'adresse d'un particulier
+          // reprendrait cette promesse pour un confort d'exploitation.
+          //
+          // Le lien avec le titulaire n'est pas perdu pour autant — il vit dans
+          // credit_mouvements.titulaire_email, où il est à sa place : le relevé
+          // de SON porte-monnaie, qu'il consulte lui-même et qui entre dans son
+          // export. Une dépense doit être traçable par celui qui la paie ;
+          // c'est autre chose que de tenir un journal de qui parle à quel modèle.
+          //
+          // used_server_key = 1 dit vrai (la clé interne a bien servi) et suit
+          // ce que fait déjà le repli gratuit. L'alerte « IP gourmande », elle,
+          // ne se déclenche pas : elle est gardée par la variable usedServerKey,
+          // restée fausse, et interroge de toute façon une IP réelle.
+          db.prepare(`
+            INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, tokens_in, tokens_out, used_server_key, client_id)
+            VALUES (?, '', NULL, NULL, ?, ?, ?, ?, ?, ?, 1, '')
+          `).run(Date.now(), promptRow?.id ?? null, effProvider, effModel, tokenUsage, detail.entree, detail.sortie);
+          // Décompte dans la MÊME transaction que la ligne de journal, comme
+          // pour une école : séparés, le registre et le solde divergent.
+          decompter(titulaireCompte(payeurCompte), effProvider, detail.entree, detail.sortie, effModel);
         } else if (usedFreeKey) {
           // Clé gratuite publique : journalisée SANS IP ni établissement (suivi
           // du budget gratuit uniquement, aucune donnée personnelle).
@@ -451,7 +632,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       })();
     } catch (statsError) {
-      console.error('Statistiques non enregistrées :', statsError);
+      // DEUX ÉCHECS TRÈS DIFFÉRENTS PASSENT PAR ICI, ET LE JOURNAL DOIT LES
+      // DISTINGUER. Une statistique perdue n'est rien. Un DÉCOMPTE perdu est de
+      // l'argent : la transaction étant annulée en bloc, la réponse a été
+      // servie et personne ne l'a payée. bouger() échoue bruyamment quand un
+      // titulaire est introuvable, précisément pour que ce cas se voie — encore
+      // faut-il que ce catch-ci ne l'enterre pas sous « statistiques non
+      // enregistrées », qui invite à ne pas regarder.
+      //
+      // L'adresse figure dans le message parce que sans elle la trace est
+      // inexploitable : le décompte n'ayant PAS eu lieu, il n'existe aucune
+      // ligne de registre où retrouver de qui il s'agissait. C'est un message
+      // d'anomalie, pas un journal d'usage.
+      if (payeurCompte || etablissementId) {
+        console.error(
+          'CONSOMMATION NON DÉCOMPTÉE — '
+          + (payeurCompte ? `compte ${payeurCompte}` : `établissement ${etablissementId}`)
+          + ` · ${effProvider} · ${effModel} · ${detail.entree}+${detail.sortie} jetons :`,
+          statsError);
+      } else {
+        console.error('Statistiques non enregistrées :', statsError);
+      }
       // La réponse de chat n'est jamais sacrifiée pour une statistique.
     }
 

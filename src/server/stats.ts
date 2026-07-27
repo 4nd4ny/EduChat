@@ -13,7 +13,8 @@
 
 import crypto from 'crypto';
 import { getDb } from './db';
-import { DeveloperKeys, FreeDailyUsd, FreePricePerMtok, FreeProvider, TokenKey } from '../utils/env';
+import { FreeDailyUsd, FreePricePerMtok, TokenKey } from '../utils/env';
+import { fournisseurLibre } from './accesFournisseurs';
 
 /** Fenêtre pendant laquelle un visiteur est compté « en ligne ». */
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -109,7 +110,11 @@ export function getSiteStats(): SiteStats {
   let freeBudgetUsd: number | null = null;
   // Mêmes conditions que la route de complétion : annoncer un budget alors que
   // le repli gratuit ne répond pas serait un mensonge affiché en permanence.
-  const freeServed = !!FreeProvider && !!String(DeveloperKeys[FreeProvider] || '').trim();
+  // La MÊME fonction, et non les mêmes conditions recopiées : elle refuse aussi
+  // un repli configuré sur un fournisseur écarté, que /api/completion ne sert
+  // plus. Deux copies de la condition auraient fini par afficher un budget
+  // quotidien pour un repli que le serveur refuse.
+  const freeServed = fournisseurLibre() !== null;
   if (freeServed) {
     const day = new Date(now);
     const dayStart = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate());

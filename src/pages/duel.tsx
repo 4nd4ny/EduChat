@@ -118,33 +118,49 @@ export default function DuelPage() {
   // Grok, Gemini et les cinq chinois y étaient sélectionnables par un élève,
   // depuis le réseau d'une école. La route de complétion les refusait bien —
   // mais après coup, par une erreur, là où il ne fallait tout simplement pas
-  // proposer le choix. Le serveur décide (réseau d'établissement d'abord,
-  // certification adulte ensuite) ; cette page ne fait que le refléter.
+  // proposer le choix. Le serveur décide (le réseau d'où l'on appelle d'abord,
+  // le compte et ses moyens propres ensuite) ; cette page ne fait que le
+  // refléter.
   //
   // AVEC UNE PARTICULARITÉ QUI N'APPARTIENT QU'À ELLE : ici le modèle s'écrit
   // à la main, donc OpenRouter cesse d'être un intermédiaire vers l'échelle
   // réglée par l'administration. La surface « duel » le retire de la liste
-  // publique pour cette raison — il revient avec les fournisseurs écartés, au
-  // même visiteur et au même titre, puisque c'est le même droit.
-  const { served, visibles, motifAIAct } = useFournisseurs({ surface: "duel" });
+  // pour qui n'a pas de compte — nommer soi-même un modèle derrière un
+  // intermédiaire demande quelqu'un d'identifié, qui paie et répond de son
+  // appel, et /api/completion le refuse déjà (ERR_PROVIDER_ACCOUNT_REQUIRED).
+  const { served, visibles, motifAIAct, pret } = useFournisseurs({ surface: "duel" });
 
   // Une colonne peut pointer un fournisseur qui vient de sortir de la liste —
   // au changement de compte, ou parce que la réponse du serveur arrive après
   // le premier rendu. Sans ce rattrapage, le <select> afficherait un choix
   // vide et le premier envoi partirait sur un fournisseur refusé.
+  //
+  // MAIS SEULEMENT UNE FOIS LE PÉRIMÈTRE CONNU (`pret`). Avant la réponse,
+  // `visibles` est la liste d'attente d'une salle de classe, qui n'est le
+  // périmètre de personne : corriger là-dessus déplacerait la colonne d'un
+  // promptagogue vers un fournisseur qu'il n'a pas choisi, une fraction de
+  // seconde avant d'apprendre qu'il avait droit au sien.
   useEffect(() => {
+    if (!pret) return;
     setConfig(previous => {
       const next = [...previous] as [ColumnConfig, ColumnConfig];
       let change = false;
       for (const index of [0, 1] as const) {
         if (visibles.includes(next[index].provider)) continue;
         const repli = visibles[0];
+        // UNE LISTE VIDE N'A PAS DE PREMIER ÉLÉMENT. Le cas existe depuis que
+        // le périmètre peut se réduire au seul repli gratuit : `visibles[0]`
+        // vaut alors `undefined`, et `providerDefaults[undefined].model` fait
+        // tomber la page entière — un écran blanc pour une liste courte. On
+        // garde la configuration précédente : inutilisable, mais visible, et
+        // le serveur refuse de toute façon l'appel (ERR_PROMPTAGOGUE_ONLY).
+        if (!repli) return previous;
         next[index] = { ...next[index], provider: repli, model: providerDefaults[repli].model };
         change = true;
       }
       return change ? next : previous;
     });
-  }, [visibles]);
+  }, [pret, visibles]);
 
   const updateConfig = (index: 0 | 1, patch: Partial<ColumnConfig>) => {
     setConfig(previous => {
@@ -265,7 +281,7 @@ export default function DuelPage() {
 
       {/* La même note que dans le chat, au-dessus des menus de fournisseurs :
           c'est ici qu'on constate leur absence, c'est donc ici qu'on l'explique. */}
-      <div className="mt-4"><NoteAIAct motif={motifAIAct} duel /></div>
+      <div className="mt-4"><NoteAIAct motif={motifAIAct} /></div>
 
       {/* Configuration */}
       <div data-tour="duel-colonneA" className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-secondary p-4 text-xs md:grid-cols-2">
@@ -291,9 +307,9 @@ export default function DuelPage() {
                     {providerDefaults[id].label}
                     {providerDefaults[id].gdpr ? ` · ${t("chat.input.gdpr.tag")}`
                       : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
-                    {/* Pas de « clé personnelle » sur un drapeau rouge : ces
-                        fournisseurs ne se montrent qu'à un compte adulte hors
-                        établissement, qui apporte forcément sa clé — la
+                    {/* Pas de « clé personnelle » sur un drapeau rouge : hors
+                        établissement, ces fournisseurs ne se montrent qu'à un
+                        compte, qui apporte forcément de quoi payer — la
                         plateforme ne les finance jamais. Le drapeau WRNG, lui,
                         dit tout ce qu'il y a à dire. */}
                     {served !== null && !served.includes(id) && !providerDefaults[id].wrng

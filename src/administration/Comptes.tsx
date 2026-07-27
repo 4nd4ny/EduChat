@@ -1,16 +1,27 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
-import { authHeaders, getAccount } from "../utils/account";
+import { authHeaders } from "../utils/account";
 import { useListe, useListeSeule } from "../site/ListePaginee";
 import { type AdminUser, type Etab } from "./commun";
 
 // LES COMPTES DE L'ÉCOLE.
 //
-// Descendu de /admin vers /etablissement : gérer qui enseigne chez soi, qui y
-// administre et de qui l'on répond pour la majorité est une affaire d'école,
-// pas de plateforme. Le SERVEUR n'a pas changé de règles — /api/admin/users
-// filtre déjà sur la portée de l'appelant et refuse tout ce qui la déborde ;
-// cet écran ne fait que se tenir là où la portée a un sens.
+// Descendu de /admin vers /etablissement : gérer qui enseigne chez soi et qui
+// y administre est une affaire d'école, pas de plateforme. Le SERVEUR n'a pas
+// changé de règles — /api/admin/users filtre déjà sur la portée de l'appelant
+// et refuse tout ce qui la déborde ; cet écran ne fait que se tenir là où la
+// portée a un sens.
+//
+// LA CERTIFICATION DE MAJORITÉ A DISPARU DE CET ÉCRAN (décision du client), et
+// avec elle la case « adulte », la colonne « majorité certifiée par » et son
+// champ de garant. Elle ne commandait plus rien : l'accès aux fournisseurs
+// écartés ne se lit plus sur l'âge attesté d'un compte mais sur LE RÉSEAU d'où
+// l'on appelle (src/server/accesFournisseurs.ts). Un élève qui basculait son
+// téléphone en 4G quittait le réseau de l'école et obtenait tout ; une
+// restriction qu'un geste contourne ne protégeait personne, et faisait signer
+// aux administrateurs d'école une attestation sans effet. Les colonnes
+// users.adult_verified_at / adult_verified_by demeurent en base (migration
+// additive), plus rien ne les lit.
 //
 // LA LISTE SUIT L'ÉCOLE ACTIVE : le sélecteur du haut change l'en-tête, donc
 // la portée que le serveur calcule, donc les lignes rendues. C'est la raison
@@ -24,7 +35,6 @@ export default function Comptes({ ecole, isSuper, demo }: {
 }) {
   const t = useT();
   const seule = useListeSeule();
-  const account = typeof window !== "undefined" ? getAccount() : null;
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [etabs, setEtabs] = useState<Etab[]>([]);
   const [message, setMessage] = useState("");
@@ -71,18 +81,6 @@ export default function Comptes({ ecole, isSuper, demo }: {
     relire();
   };
 
-  // Qui coche : sert de garant par défaut quand on atteste la majorité.
-  const moi = account?.name || account?.email || "";
-  // SA PROPRE LIGNE. Un administrateur d'ÉCOLE ne certifie pas sa propre
-  // majorité : le garant répond de quelqu'un d'autre, et depuis l'inscription
-  // en libre-service ce rang s'obtient en trois champs — cocher sa case
-  // ouvrirait seul les fournisseurs écartés au titre de l'AI Act. La règle
-  // vit sur le SERVEUR (ERR_SELF_CERT_FORBIDDEN, src/pages/api/admin/users.ts) ;
-  // ici on se contente de ne pas montrer une case qui répondrait 403 — même
-  // honnêteté d'interface que pour les super-administrateurs.
-  const sansAutoCertif = (email: string) =>
-    !isSuper && !!account?.email && email.toLowerCase() === account.email.toLowerCase();
-
   if (seule && seule !== "comptes") return null;
 
   return (
@@ -97,7 +95,7 @@ export default function Comptes({ ecole, isSuper, demo }: {
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase opacity-60">
               <tr><th className="py-1 pr-2">{t("admin.col.account")}</th><th className="pr-2">{t("admin.col.roles")}</th>
-                <th className="pr-2">{t("admin.col.school")}</th><th className="pr-2">{t("admin.col.adultCertifiedBy")}</th><th className="pr-2">{t("admin.col.prompts")}</th><th>{t("admin.col.createdAt")}</th></tr>
+                <th className="pr-2">{t("admin.col.school")}</th><th className="pr-2">{t("admin.col.prompts")}</th><th>{t("admin.col.createdAt")}</th></tr>
             </thead>
             <tbody>
               {listeComptes.visibles.map(u => (
@@ -116,25 +114,8 @@ export default function Comptes({ ecole, isSuper, demo }: {
                         title={t("admin.accounts.superTitle")}>{t("admin.accounts.super")}</span>
                     ) : (<>
                     {/* « promptagogue » ne disait rien : tout compte vérifié
-                        l'est. La case utile est celle de la majorité, qui
-                        ouvre les fournisseurs écartés au titre de l'AI Act —
-                        jamais depuis un réseau scolaire. Cocher sans nom de
-                        garant vous désigne vous-même. */}
-                    <label className={`mr-2 text-xs ${sansAutoCertif(u.email) ? "opacity-50" : ""}`}
-                      title={sansAutoCertif(u.email)
-                        ? t("admin.accounts.noSelfCert")
-                        : u.adultVerifiedAt
-                          ? t("admin.accounts.adultOnTitle", {
-                              date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
-                              name: u.adultVerifiedBy ?? "",
-                            })
-                          : t("admin.accounts.adultOffTitle")}>
-                      <input type="checkbox" checked={!!u.adultVerifiedAt}
-                        disabled={sansAutoCertif(u.email)}
-                        onChange={e => updateUser(u.email, {
-                          adultVerifiedBy: e.target.checked ? (u.adultVerifiedBy || moi || "administration") : "",
-                        })} /> {t("admin.accounts.adult")}
-                    </label>
+                        l'est. Reste donc ce qui se décide vraiment ici : qui
+                        enseigne dans cette école, et qui l'administre. */}
                     <label className="text-xs">
                       <input type="checkbox" checked={!!u.isTeacher}
                         onChange={e => updateUser(u.email, { isTeacher: e.target.checked })} /> {t("admin.accounts.teacher")}
@@ -163,29 +144,10 @@ export default function Comptes({ ecole, isSuper, demo }: {
                       </select>
                     ) : <span className="text-xs opacity-60">{u.etablissementName ?? "—"}</span>}
                   </td>
-                  <td className="pr-2 text-xs">
-                    {/* Certification de majorité : le NOM du garant suffit.
-                        Aucune pièce d'identité n'est demandée ni conservée —
-                        l'entretien vidéo sert à décider, pas à archiver. */}
-                    <input
-                      defaultValue={u.adultVerifiedBy ?? ""}
-                      placeholder={t("admin.accounts.certifiedByPlaceholder")}
-                      disabled={sansAutoCertif(u.email)}
-                      title={sansAutoCertif(u.email)
-                        ? t("admin.accounts.noSelfCert")
-                        : u.adultVerifiedAt
-                          ? t("admin.accounts.certifiedOnTitle", {
-                              date: new Date(u.adultVerifiedAt).toLocaleDateString("fr-CH"),
-                              name: u.adultVerifiedBy ?? "",
-                            })
-                          : t("admin.accounts.certifyHint")}
-                      onBlur={e => {
-                        if ((e.target.value.trim() || "") !== (u.adultVerifiedBy ?? "")) {
-                          updateUser(u.email, { adultVerifiedBy: e.target.value.trim() });
-                        }
-                      }}
-                      className={`w-36 rounded bg-tertiary px-1 py-0.5 text-xs ${u.adultVerifiedAt ? "ring-1 ring-green-600/60" : ""}`} />
-                  </td>
+                  {/* La colonne « majorité certifiée par » est partie avec la
+                      règle qu'elle servait — en-tête ET cellule d'un même
+                      geste : une colonne retirée d'un seul côté décalerait en
+                      silence tout ce qui la suit. */}
                   <td className="pr-2 text-xs">{u.promptCount || 0}</td>
                   <td className="text-xs opacity-60">
                     {u.createdAt ? new Date(u.createdAt).toLocaleDateString("fr-CH") : "—"}

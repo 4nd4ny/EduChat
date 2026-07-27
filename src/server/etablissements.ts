@@ -127,7 +127,7 @@ export type LigneConsommation = {
  *
  * Ce que la liste NE JETTE JAMAIS : une consommation réelle. Un fournisseur
  * peut avoir été servi hier et ne plus l'être aujourd'hui (clé retirée du
- * serveur, fournisseur reclassé « adultes seulement » depuis l'AI Act) ; ses
+ * serveur, fournisseur écarté d'un public scolaire depuis l'AI Act) ; ses
  * jetons ont pourtant été décomptés du porte-monnaie. Il reste donc affiché,
  * marqué `servi: false` — le faire disparaître creuserait un écart inexpliqué
  * entre ce relevé et la facture, et c'est l'écart inexpliqué qui ruine la

@@ -16,9 +16,11 @@
 //   4. L'IDEMPOTENCE EST UNE CONTRAINTE DE BASE, pas un test. Deux webhooks
 //      identiques sont normaux ; c'est UNIQUE qui doit refuser le doublon, pas
 //      un « SELECT puis INSERT » que deux requêtes simultanées franchissent.
-//   5. L'ÉCOLE CRÉDITÉE VIENT D'UNE INTENTION CRÉÉE PAR NOUS, retrouvée par
-//      l'identifiant de commande — jamais d'un champ que le client nous
-//      renvoie.
+//   5. LE PORTE-MONNAIE CRÉDITÉ VIENT D'UNE INTENTION CRÉÉE PAR NOUS,
+//      retrouvée par l'identifiant de commande — jamais d'un champ que le
+//      client nous renvoie. Cela vaut pour une école comme pour une personne :
+//      depuis le porte-monnaie personnel, l'intention porte en plus l'adresse
+//      du titulaire, et c'est ELLE qui décide de qui est crédité.
 //
 // Sans identifiants PayPal, TOUT EST ÉTEINT : les routes répondent 503 et
 // l'interface ne propose rien. Un point de paiement à moitié fonctionnel est
@@ -26,7 +28,8 @@
 
 import { getDb } from './db';
 import { BillingCurrency } from '../utils/env';
-import { bouger, commissionRecharge } from './porteMonnaie';
+import { bouger, commissionRecharge, soldeDe, titulaireCompte, titulaireEcole,
+  DETAIL_COMMISSION, type Titulaire } from './porteMonnaie';
 
 const ID = (process.env.SECRET_PAYPAL_CLIENT_ID || '').trim();
 const SECRET = (process.env.SECRET_PAYPAL_SECRET || '').trim();
@@ -84,10 +87,17 @@ async function appel(chemin: string, init: RequestInit = {}): Promise<any> {
  * Crée une commande PayPal ET l'intention qui lui correspond chez nous.
  *
  * L'intention est écrite AVANT de renvoyer quoi que ce soit au navigateur :
- * c'est elle qui dira, au retour, quelle école créditer. Le client ne nous
- * réapprendra rien à ce moment-là.
+ * c'est elle qui dira, au retour, quel porte-monnaie créditer. Le client ne
+ * nous réapprendra rien à ce moment-là.
+ *
+ * CUSTOM_ID : POUR UNE ÉCOLE SEULEMENT. C'est un repère de confort dans les
+ * relevés PayPal, et un identifiant d'établissement n'y désigne personne. Une
+ * ADRESSE EMAIL, elle, est une donnée personnelle : l'envoyer chez un tiers
+ * pour la seule commodité de la relecture d'un relevé serait un transfert
+ * gratuit — d'autant plus gratuit qu'il ne sert à rien, la table d'intentions
+ * étant de toute façon la seule source de vérité.
  */
-export async function creerRecharge(etablissementId: number, montant: number, par: string):
+export async function creerRecharge(titulaire: Titulaire, montant: number, par: string):
   Promise<{ orderId: string; approbation: string }> {
   const somme = Math.floor(montant * 100) / 100;
   if (!(somme > 0) || somme > 100_000) throw new Error('Montant hors limites.');
@@ -99,20 +109,30 @@ export async function creerRecharge(etablissementId: number, montant: number, pa
       purchase_units: [{
         amount: { currency_code: BillingCurrency, value: somme.toFixed(2) },
         description: `EduChat — recharge du porte-monnaie`,
-        // Repère de confort pour la lecture des relevés PayPal. JAMAIS la
-        // source de vérité : c'est notre table d'intentions qui décide.
-        custom_id: `etab:${etablissementId}`,
+        custom_id: titulaire.genre === 'ecole' ? `etab:${titulaire.id}` : 'compte',
       }],
     }),
   });
 
+  // Même sentinelle qu'au registre : etablissement_id = 0 pour une personne,
+  // dont l'adresse vit dans titulaire_email (voir src/server/db.ts).
   getDb().prepare(`
-    INSERT INTO recharges (order_id, etablissement_id, montant, devise, etat, cree_at, par)
-    VALUES (?, ?, ?, ?, 'attente', ?, ?)
-  `).run(order.id, etablissementId, somme, BillingCurrency, Date.now(), par);
+    INSERT INTO recharges (order_id, etablissement_id, titulaire_email, montant, devise, etat, cree_at, par)
+    VALUES (?, ?, ?, ?, ?, 'attente', ?, ?)
+  `).run(
+    order.id,
+    titulaire.genre === 'ecole' ? titulaire.id : 0,
+    titulaire.genre === 'ecole' ? null : titulaire.email,
+    somme, BillingCurrency, Date.now(), par,
+  );
 
   const lien = (order.links ?? []).find((l: any) => l.rel === 'approve' || l.rel === 'payer-action');
   return { orderId: order.id, approbation: lien?.href ?? '' };
+}
+
+/** Le titulaire d'une intention, tel qu'il a été écrit au moment de la créer. */
+function titulaireDeLIntention(row: { etablissement_id: number; titulaire_email: string | null }): Titulaire {
+  return row.titulaire_email ? titulaireCompte(row.titulaire_email) : titulaireEcole(row.etablissement_id);
 }
 
 // ------------------------------------------------- vérifier une notification
@@ -173,13 +193,15 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
 
   // --- Paiement reçu -------------------------------------------------------
   if (type === 'PAYMENT.CAPTURE.COMPLETED') {
-    // Quelle école ? L'intention que NOUS avons créée, retrouvée par la
+    // Quel porte-monnaie ? L'intention que NOUS avons créée, retrouvée par la
     // commande dont cette capture dépend.
     const orderId = String(ressource?.supplementary_data?.related_ids?.order_id ?? '');
     const intention = db.prepare(
-      'SELECT etablissement_id, montant, etat FROM recharges WHERE order_id = ?')
-      .get(orderId) as { etablissement_id: number; montant: number; etat: string } | undefined;
+      'SELECT etablissement_id, titulaire_email, montant, etat FROM recharges WHERE order_id = ?')
+      .get(orderId) as
+      { etablissement_id: number; titulaire_email: string | null; montant: number; etat: string } | undefined;
     if (!intention) return { creditee: false, raison: `Aucune intention pour la commande ${orderId}.` };
+    const titulaire = titulaireDeLIntention(intention);
 
     // Le montant vient de PayPal, pas de la notification.
     const capture = await relireCapture(captureId);
@@ -195,13 +217,14 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
     // exceptionnel — n'en font passer qu'une.
     let solde: number;
     try {
-      solde = bouger(intention.etablissement_id, 'recharge', capture.montant,
+      solde = bouger(titulaire, 'recharge', capture.montant,
         `PayPal ${captureId}`, 'paypal', captureId);
-      // La contribution se prélève sur le versement, au taux choisi par
-      // l'école — jamais sur les jetons, qui passent à prix coûtant.
-      const { commission, pct } = commissionRecharge(intention.etablissement_id, capture.montant);
-      solde = bouger(intention.etablissement_id, 'ajustement', -commission,
-        `Contribution aux frais (${pct} %) — ${captureId}`, 'paypal');
+      // La contribution se prélève sur le versement — au taux choisi par
+      // l'école, à celui de la plateforme pour une personne — jamais sur les
+      // jetons, qui passent à prix coûtant.
+      const { commission, pct } = commissionRecharge(titulaire, capture.montant);
+      solde = bouger(titulaire, 'ajustement', -commission,
+        `${DETAIL_COMMISSION} (${pct} %) — ${captureId}`, 'paypal');
     } catch {
       return { creditee: false, raison: 'Déjà créditée (idempotence).' };
     }
@@ -224,12 +247,13 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
       ?? ressource?.disputed_transactions?.[0]?.seller_transaction_id
       ?? captureId);
     const recharge = db.prepare(
-      'SELECT etablissement_id, montant FROM recharges WHERE capture_id = ?')
-      .get(origine) as { etablissement_id: number; montant: number } | undefined;
+      'SELECT etablissement_id, titulaire_email, montant FROM recharges WHERE capture_id = ?')
+      .get(origine) as
+      { etablissement_id: number; titulaire_email: string | null; montant: number } | undefined;
     if (!recharge) return { creditee: false, raison: `Aucune recharge connue pour ${origine}.` };
     let solde: number;
     try {
-      solde = bouger(recharge.etablissement_id, 'ajustement', -recharge.montant,
+      solde = bouger(titulaireDeLIntention(recharge), 'ajustement', -recharge.montant,
         `PayPal ${type} ${origine}`, 'paypal', `annul:${origine}`);
     } catch {
       return { creditee: false, raison: 'Reprise déjà enregistrée.' };
@@ -247,7 +271,8 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
 export const FRAIS_PAYPAL_PCT = 3.5;
 
 /**
- * Rembourse le crédit restant d'une école, moins les frais PayPal.
+ * Rembourse le crédit restant d'un titulaire — école ou personne —, moins les
+ * frais PayPal.
  *
  * DEUX PROPRIÉTÉS DE SÛRETÉ, et elles ne sont pas décoratives. D'abord un
  * remboursement PayPal repart TOUJOURS vers le payeur d'origine : même un
@@ -260,27 +285,37 @@ export const FRAIS_PAYPAL_PCT = 3.5;
  * Les 3.5 % restent acquis : ce sont les frais que PayPal a prélevés à
  * l'encaissement et qu'il ne rend pas.
  */
-export async function rembourser(etablissementId: number, par: string):
+export async function rembourser(titulaire: Titulaire, par: string):
   Promise<{ rembourse: number; devise: string; detail: string }> {
   const db = getDb();
-  const solde = (db.prepare('SELECT solde FROM etablissements WHERE id = ?')
-    .get(etablissementId) as { solde: number } | undefined)?.solde ?? 0;
+  const solde = soldeDe(titulaire);
   if (solde <= 0) throw new Error('Aucun crédit à rembourser.');
 
   const aRendre = Math.floor(solde * (1 - FRAIS_PAYPAL_PCT / 100) * 100) / 100;
   if (aRendre <= 0) throw new Error('Montant trop faible après frais.');
 
   // Le solde part d'abord. Voir plus haut : c'est le sens qui se répare.
-  bouger(etablissementId, 'ajustement', -solde,
+  bouger(titulaire, 'ajustement', -solde,
     `Remboursement demandé — ${aRendre.toFixed(2)} rendus, ${(solde - aRendre).toFixed(2)} de frais PayPal`, par);
 
   // On rembourse capture par capture, de la plus récente à la plus ancienne :
-  // PayPal ne sait rembourser qu'une capture, pas « un solde ».
-  const captures = db.prepare(`
-    SELECT capture_id AS id, montant FROM recharges
-    WHERE etablissement_id = ? AND etat = 'creditee' AND capture_id IS NOT NULL
-    ORDER BY credite_at DESC
-  `).all(etablissementId) as { id: string; montant: number }[];
+  // PayPal ne sait rembourser qu'une capture, pas « un solde ». On ne retient
+  // que les intentions DE CE TITULAIRE — le prédicat sur titulaire_email est ce
+  // qui empêche le remboursement d'une personne d'aller piocher dans les
+  // captures d'une école (etablissement_id = 0 ne désigne aucune école, mais on
+  // ne fait pas reposer une écriture d'argent sur cette seule coïncidence).
+  const captures = (titulaire.genre === 'ecole'
+    ? db.prepare(`
+        SELECT capture_id AS id, montant FROM recharges
+        WHERE etablissement_id = ? AND titulaire_email IS NULL
+          AND etat = 'creditee' AND capture_id IS NOT NULL
+        ORDER BY credite_at DESC
+      `).all(titulaire.id)
+    : db.prepare(`
+        SELECT capture_id AS id, montant FROM recharges
+        WHERE titulaire_email = ? AND etat = 'creditee' AND capture_id IS NOT NULL
+        ORDER BY credite_at DESC
+      `).all(titulaire.email)) as { id: string; montant: number }[];
 
   let reste = aRendre;
   const faits: string[] = [];
@@ -302,7 +337,7 @@ export async function rembourser(etablissementId: number, par: string):
   // Ce qui n'a pas pu être rendu revient au porte-monnaie : on ne garde pas
   // l'argent d'une école au motif que PayPal a refusé.
   if (reste > 0) {
-    bouger(etablissementId, 'ajustement', reste,
+    bouger(titulaire, 'ajustement', reste,
       `Remboursement partiel : ${reste.toFixed(2)} n'ont pas pu être rendus par PayPal`, par);
   }
   return {

@@ -16,6 +16,7 @@
 import { getDb } from './db';
 import { isAdminEmail } from './token';
 import { listUserKeys } from './userKeys';
+import { etatDuCompte, mouvements, titulaireCompte } from './porteMonnaie';
 import type { ProviderId } from '../shared/providers';
 
 const QUOTA_AUTEUR_BYTES = 1024 * 1024;   // même plafond que /api/prompts
@@ -52,6 +53,21 @@ export type AccountData = {
     etablissement: { id: number; name: string; monthTokens: number } | null;
   };
   keys: { provider: ProviderId; updatedAt: number; readable: boolean }[];
+  /**
+   * LE PORTE-MONNAIE PERSONNEL. Toujours présent, même vide : « vous n'avez pas
+   * de crédit » est une réponse, « la section n'existe pas » n'en est pas une.
+   * `ouvert` dit s'il a déjà servi — c'est ce qui distingue un compte qui n'a
+   * jamais provisionné (démonstration gratuite, comme avant) d'un compte à sec
+   * (accès à la clé interne suspendu, et il doit le savoir).
+   * Le RELEVÉ, lui, est la seule trace nominative d'une consommation
+   * personnelle : elle est ici parce qu'elle est à SON titulaire, et nulle part
+   * ailleurs — usage_log n'en garde ni adresse ni IP.
+   */
+  porteMonnaie: {
+    ouvert: boolean; solde: number; devise: string; depense30: number;
+    contributionPct: number; jours: number | null; aSec: boolean;
+    mouvements: { id: number; ts: number; genre: string; montant: number; solde: number; detail: string }[];
+  };
   moderations: number;
   conversations: ConversationResume[];
   deletedConversations: number;
@@ -194,6 +210,14 @@ export function collectAccountData(email: string): AccountData {
       etablissement,
     },
     keys: listUserKeys(email),
+    porteMonnaie: {
+      ...etatDuCompte(email),
+      // `par` n'est pas repris : sur un porte-monnaie personnel, l'auteur du
+      // mouvement est toujours son titulaire ou « paypal ». La colonne ne dirait
+      // rien de plus que la ligne elle-même.
+      mouvements: mouvements(titulaireCompte(email), 50)
+        .map(m => ({ id: m.id, ts: m.ts, genre: m.genre, montant: m.montant, solde: m.solde, detail: m.detail })),
+    },
     moderations: moderations.n,
     conversations: resumeConversations(profile),
     deletedConversations: effacees.n,
@@ -254,6 +278,19 @@ export function collectAccountExport(email: string) {
       + "jamais le serveur, même pour leur propriétaire.",
     identite: donnees.identite,
     consommation: donnees.consommation,
+    // Le porte-monnaie personnel, RELEVÉ COMPLET COMPRIS : c'est l'historique
+    // financier de l'intéressé, et l'omettre d'un export intégral serait
+    // exactement la réponse incomplète que ce module refuse de faire ailleurs.
+    // Il est d'ailleurs sa seule trace de consommation nominative — usage_log
+    // n'en garde ni adresse, ni IP. La page en montre les cinquante derniers
+    // mouvements ; l'export les prend TOUS, c'est la différence entre lire et
+    // emporter. Une ligne de registre pèse quelques dizaines d'octets : le
+    // plafond en octets des tuteurs n'a pas d'équivalent utile ici.
+    porteMonnaie: {
+      ...donnees.porteMonnaie,
+      mouvements: mouvements(titulaireCompte(email), 1_000_000)
+        .map(m => ({ id: m.id, ts: m.ts, genre: m.genre, montant: m.montant, solde: m.solde, detail: m.detail })),
+    },
     clesMemorisees: donnees.keys,
     profilSynchronise: profile ?? null,
     profilMisAJour: updatedAt,
