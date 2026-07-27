@@ -7,7 +7,7 @@ import { mayUseAdultProviders } from "../../server/adult";
 import { RUNG_REASONING, isRung, modelForRung } from "../../shared/ladder";
 import { tokensDetail } from "../../server/llm";
 import { readUserKey } from "../../server/userKeys";
-import { getPublishedByName, getByShareToken, porteeDepuisIp, PorteeCatalogue } from "../../server/prompts";
+import { getPublishedByName, getByShareToken, porteeAppelant, PorteeCatalogue } from "../../server/prompts";
 import { traductionFraiche } from "../../server/traduction";
 import { resolveEtablissementByIp, studentDayUsage } from "../../server/etablissements";
 import { seanceActive, seanceAutoriseFournisseur } from "../../server/seance";
@@ -187,9 +187,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // AI Act : les fournisseurs écartés sont refusés AVANT même de regarder
   // quelle clé sera utilisée. Sur un réseau d'établissement, ils le sont pour
   // tout le monde — c'est le seul engagement qu'on puisse tenir devant une
-  // école. Ailleurs, ils demandent un compte dont la majorité a été vérifiée.
+  // école. Ailleurs, ils demandent un compte dont la majorité a été vérifiée :
+  // « hors du wifi du collège » n'est pas « adulte », c'est aussi la chambre
+  // d'un élève de quatorze ans, et c'est précisément là que l'école ne voit
+  // plus rien (src/server/adult.ts porte la démonstration).
+  //
+  // LE CONTRÔLE VIT ICI, pas dans le menu déroulant : une requête forgée à la
+  // main n'a aucune interface à contourner. Les deux motifs de refus sortent
+  // distincts, parce que l'un se lève en se faisant certifier et l'autre non.
   if (providerDefaults[provider].adultOnly) {
-    const verdict = await mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
+    const verdict = mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
     if (!verdict.allowed) {
       return res.status(403).json({
         error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
@@ -206,12 +213,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   //
   // Mais cette promesse ne vaut QUE tant que le modèle vient de l'échelle.
   // Nommer « deepseek/... » à travers OpenRouter contournerait tout l'AI Act
-  // d'une ligne de requête. À qui n'a pas droit aux fournisseurs écartés, on
-  // n'accepte donc d'OpenRouter que les modèles réglés par l'administration.
-  // La page « duel » ne le propose plus à ces visiteurs ; ceci le refuse aussi
-  // à une requête forgée à la main, qui n'a pas d'interface à contourner.
+  // d'une ligne de requête — et pire : atteindrait ce qu'aucune de nos listes
+  // ne contient. À qui n'a pas droit aux fournisseurs écartés, on n'accepte
+  // donc d'OpenRouter que les modèles réglés par l'administration. La page
+  // « duel » ne le propose plus à ces visiteurs ; ceci le refuse aussi à une
+  // requête forgée à la main, qui n'a pas d'interface à contourner.
   if (provider === 'openrouter' && body.model && !getLadder('openrouter').includes(model)) {
-    const verdict = await mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
+    const verdict = mayUseAdultProviders(clientIp, requireAuth(req)?.email ?? null);
     if (!verdict.allowed) {
       return res.status(403).json({
         error: { code: verdict.reason === 'school-network' ? 'ERR_ADULT_SCHOOL_NETWORK' : 'ERR_ADULT_REQUIRED' },
@@ -261,8 +269,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Langue de lecture, envoyée par le client (router.locale) : le routage i18n
   // de Next ne traverse pas les routes d'API.
   const locale = String(body.locale ?? "").slice(0, 5);
+  // PORTÉE DE LECTURE, ET RIEN QUE DE LECTURE : quels tuteurs cet appelant a le
+  // droit d'employer. Elle suit l'ÉCOLE du compte quand il y a un titre
+  // d'enseignement (porteeAppelant, src/server/prompts.ts), sans quoi un
+  // enseignant qui essaie chez lui, avec sa propre clé, le tuteur réservé de son
+  // collège recevrait un 404 sur un texte qu'il a lui-même écrit.
+  //
+  // CELA NE DÉPLACE AUCUN FRANC. Qui paie se décide plus bas, sur la seule IP
+  // (resolveEtablissementByIp puis mayUseServerKeys) : lire le tuteur de son
+  // école depuis la maison ne fait pas de la maison un réseau scolaire.
   const resolved = resolveSystemPrompt(promptName, promptVersion, shareToken, locale,
-    porteeDepuisIp(clientIp));
+    porteeAppelant(req, clientIp));
   if (resolved === 'unknown') return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   const system = resolved?.system ?? "";
   const promptRow = resolved?.row ?? null;

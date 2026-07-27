@@ -1,6 +1,8 @@
 // Accès aux prompts socratiques — requêtes partagées par les routes API.
 
+import type { NextApiRequest } from 'next';
 import { getDb, PromptRow } from './db';
+import { ecoleEnseignante } from './appartenance';
 import { getEtablissementById, resolveEtablissementByIp } from './etablissements';
 import { traductionFraiche } from './traduction';
 
@@ -53,6 +55,45 @@ export function porteeDepuisIp(ip: string): PorteeCatalogue {
 export function porteeDeLEcole(etablissementId: number): PorteeCatalogue {
   const etab = getEtablissementById(etablissementId);
   return { etablissementId, publicsExternes: !!etab?.catalogue_ouvert };
+}
+
+/**
+ * LA PORTÉE D'UNE REQUÊTE — celle qu'emploient toutes les lectures publiques
+ * du catalogue, et qui suit l'enseignant hors des murs de son école.
+ *
+ * LE PROBLÈME. Un enseignant prépare sa leçon chez lui et ouvre la liste des
+ * tuteurs pour en déployer un sur sa classe de demain : les tuteurs de son
+ * établissement — ceux que ses collègues ont écrits, ceux qu'il a écrits — ne
+ * s'y trouvaient pas, puisque la portée se déduisait de la seule IP. Il voyait
+ * le catalogue d'un visiteur de passage, et la liste de déploiement offrait
+ * précisément ce qu'il ne cherchait pas.
+ *
+ * LES DEUX CHAMPS NE RÉPONDENT PAS À LA MÊME QUESTION, et c'est pourquoi ils
+ * ne viennent pas de la même source :
+ *
+ *   `etablissementId` — DE QUELLE ÉCOLE PUIS-JE VOIR LES TUTEURS RÉSERVÉS ?
+ *     Question d'APPARTENANCE, donc de compte : l'école active du signataire
+ *     dès qu'il y a un titre d'enseignement (ecoleEnseignante,
+ *     src/server/appartenance.ts), et l'IP à défaut — visiteur anonyme, élève,
+ *     ou compte simplement rattaché par une IP, pour qui rien ne change.
+ *
+ *   `publicsExternes` — LE RÉSEAU D'OÙ J'ÉCRIS MASQUE-T-IL LE DEHORS ?
+ *     Question de LIEU, donc d'IP, et elle le reste : « catalogue fermé » est
+ *     la décision d'une école pour les écrans qui sont chez elle. La garder
+ *     ici évite au passage un effet pervers : l'enseignant d'une école au
+ *     catalogue fermé, chez lui, verrait MOINS de tuteurs qu'un inconnu sur le
+ *     même canapé. Il obtient l'union — les réservés de son école, et les
+ *     publics du monde.
+ *
+ * CE N'EST PAS UNE AUTORISATION DE DÉPENSE. La portée dit ce qui se LIT ; qui
+ * paie reste affaire d'IP (mayUseServerKeys, src/server/access.ts).
+ */
+export function porteeAppelant(req: NextApiRequest, ip: string): PorteeCatalogue {
+  const surIp = porteeDepuisIp(ip);
+  return {
+    etablissementId: ecoleEnseignante(req) ?? surIp.etablissementId,
+    publicsExternes: surIp.publicsExternes,
+  };
 }
 
 /**

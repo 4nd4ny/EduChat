@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { CommentRow, getDb } from '../../../../server/db';
-import { getByName, estVisible, porteeDepuisIp } from '../../../../server/prompts';
+import { getByName, estVisible, porteeAppelant } from '../../../../server/prompts';
 import { requireAuth, isAdminEmail } from '../../../../server/token';
 import { requireGestionTuteurs, tuteurDeLEcole } from '../../../../server/admin';
 import { getClientIp, isRateLimited } from '../../../../server/access';
@@ -45,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // ni brouillon, ni dépublié, ni archivé — et pas davantage le tuteur réservé
   // à une autre école, sans quoi cette route dirait par un 200 ce que la fiche
   // cache par un 404. Les modérateurs gardent l'accès quel que soit l'état.
-  if (!moderator && !estVisible(row, porteeDepuisIp(getClientIp(req)))) {
+  if (!moderator && !estVisible(row, porteeAppelant(req, getClientIp(req)))) {
     return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   }
 

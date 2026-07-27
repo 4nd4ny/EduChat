@@ -255,3 +255,46 @@ export function ecoleActive(req: NextApiRequest): number | null {
   if (!auth) return null;
   return ecoleActivePourCompte(auth.email, choixEcole(req));
 }
+
+/**
+ * L'ÉCOLE POUR LAQUELLE CET APPELANT ENSEIGNE — et le seul endroit où l'école
+ * du COMPTE l'emporte sur celle de l'ADRESSE IP.
+ *
+ * LE PROBLÈME QU'ELLE RÉSOUT. Un enseignant prépare sa leçon chez lui, le
+ * dimanche soir. Toutes les vues d'enseignement se réglaient jusqu'ici sur
+ * l'IP appelante : depuis son salon, il n'avait plus d'école du tout — plus
+ * son catalogue, plus sa séance, plus la liste des tuteurs de ses collègues.
+ * Un compte IDENTIFIÉ, lui, dit à quelle école il appartient sans avoir besoin
+ * du réseau : c'est cette réponse-là qu'on prend ici.
+ *
+ * LE TITRE EXIGÉ EST CELUI DES QUATRE AUTRES GARDES (requireGestionTuteurs,
+ * /api/etablissement, session-settings, le rattachement d'un tuteur déposé) :
+ * administrer cette école, OU en être l'enseignant au sens où elle en répond
+ * (estEnseignantDe — is_teacher ET école principale, donc un rattachement posé
+ * par une administration). Le simple lien d'appartenance ne suffit pas : il se
+ * RAMASSE en vérifiant son adresse depuis une IP d'établissement, élèves
+ * compris (src/pages/api/verify/confirm.ts). Sans ce titre, tout élève passé
+ * une fois par le wifi du collège emporterait chez lui l'école entière.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * LA LIGNE À NE PAS FRANCHIR, ET ELLE EST ICI.
+ *
+ * CETTE FONCTION NE DOIT JAMAIS SERVIR À DÉCIDER QUI PAIE, ni à lever le
+ * filtre AI Act. Payer sur la clé interne d'une école exige d'être
+ * PHYSIQUEMENT sur son réseau : c'est mayUseServerKeys(ip) et
+ * resolveEtablissementByIp(ip), et rien d'autre. Le jour où l'on croira
+ * « simplifier » en remplaçant l'IP par l'école active dans /api/completion,
+ * /api/speak, /api/transcribe ou src/server/adult.ts, n'importe quel
+ * enseignant fera payer son établissement depuis chez lui, à toute heure, et
+ * le porte-monnaie deviendra un compte ouvert. Le lieu répond du budget et de
+ * la conformité ; le compte répond de la pédagogie. Deux questions, deux
+ * réponses, et on ne les confond pas.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export function ecoleEnseignante(req: NextApiRequest): number | null {
+  const auth = requireAuth(req);
+  if (!auth) return null;
+  const active = ecoleActivePourCompte(auth.email, choixEcole(req));
+  if (active === null) return null;
+  return estAdminDe(auth.email, active) || estEnseignantDe(auth.email, active) ? active : null;
+}

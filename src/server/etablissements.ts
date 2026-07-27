@@ -21,6 +21,13 @@ export type EtabRow = {
    * (tuteurs sans rattachement), toujours visible — voir src/server/prompts.ts.
    */
   catalogue_ouvert: number;
+  /**
+   * L'atelier de promptagogue est-il proposé depuis le réseau de l'école ?
+   * Défaut 0 (fermé) : l'accueil masque alors la tuile et montre celle de
+   * l'enseignant à sa place. Affordance seulement — /duel et /publier gardent
+   * leurs propres gardes (voir la migration dans src/server/db.ts).
+   */
+  atelier_promptagogue: number;
 };
 
 export type HourSlot = { day: number; start: string; end: string }; // day 0 = dimanche

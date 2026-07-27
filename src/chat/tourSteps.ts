@@ -63,6 +63,13 @@ export const TOURS: Record<string, TourStep[]> = {
     { target: 'etab-identite', shape: 'rect', textKey: 'tour.etab.identity' },
     { target: 'etab-horaires', shape: 'rect', textKey: 'tour.etab.hours' },
     { target: 'etab-quotas', shape: 'rect', textKey: 'tour.etab.quotas' },
+    // L'ATELIER DE PROMPTAGOGUE. C'est le seul réglage de cette page dont
+    // l'effet se voit AILLEURS — sur l'accueil, et seulement depuis le réseau
+    // de l'école. Personne ne devinerait qu'une case cochée ici fait
+    // reparaître une tuile là-bas : sans cette étape, le réglage restait celui
+    // qu'on ne comprend qu'en l'essayant. L'école fictive de la démonstration
+    // l'a rouvert exprès, pour que l'étape désigne une case COCHÉE.
+    { target: 'etab-atelier', shape: 'rect', textKey: 'tour.etab.workshop' },
     { target: 'etab-conso', shape: 'rect', textKey: 'tour.etab.usage' },
     { target: 'etab-portemonnaie', shape: 'rect', textKey: 'tour.etab.wallet' },
   ],

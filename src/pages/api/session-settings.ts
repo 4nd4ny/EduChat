@@ -2,9 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../server/db';
 import { getClientIp, getAuthLockExpiry, isRateLimited } from '../../server/access';
 import { requireAuth } from '../../server/token';
-import {
-  choixEcole, ecoleActivePourCompte, estAdminDe, estEnseignantDe,
-} from '../../server/appartenance';
+import { ecoleEnseignante } from '../../server/appartenance';
 import { DeveloperKeys, MaxUnlockMinutes } from '../../utils/env';
 import { ERR, isProviderId, SCHOOL_PROVIDER_IDS, type ProviderId } from '../../shared/providers';
 import { resolveEtablissementByIp } from '../../server/etablissements';
@@ -25,6 +23,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // ---- GET : les réglages ACTIFS de l'établissement de l'appelant -----------
   // Public (les élèves en héritent), sans aucune donnée personnelle.
+  //
+  // ET IL RESTE SUR L'IP, lui, quand tout le reste bascule sur l'école active.
+  // Ce GET est le canal d'HÉRITAGE DES ÉLÈVES : un écran de classe, sans compte,
+  // demande « quel tuteur pour cette salle ? ». La réponse ne peut venir que du
+  // lieu. La console de l'enseignant, elle, lit /api/session-status, qui rend
+  // les DEUX écoles — la salle et celle dont il s'occupe.
   if (req.method === 'GET') {
     if (!etablissementId) return res.status(200).json({ settings: null });
     // LA MÊME PORTÉE QU'AU CATALOGUE, et pas seulement « publié ». La séance
@@ -72,31 +76,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // compte enseignant vérifié (rôle ET rattachement relus en base).
   const auth = requireAuth(req);
   const lockExpiry = await getAuthLockExpiry();
-  let teacherEtabId: number | null = null;
-  if (auth) {
-    // L'ÉCOLE ACTIVE et non plus users.etablissement_id : un enseignant
-    // partagé entre deux collèges pose la séance de celui qu'il a choisi, et
-    // le serveur revérifie ce choix contre la table de liaison.
-    const active = ecoleActivePourCompte(auth.email, choixEcole(req));
-    // « users.is_teacher » NE SUFFIT PAS, et le lien d'appartenance non plus.
-    //
-    // is_teacher se DÉCLARE (case « je suis enseignant » de /verifier), et le
-    // lien se RAMASSE en vérifiant son adresse depuis une IP d'établissement
-    // (verify/confirm.ts) — élèves compris. « Case cochée + wifi du collège »
-    // aurait donc suffi à poser la séance de toute l'école, DEPUIS CHEZ SOI et
-    // hors de toute heure de classe : le tuteur déployé sur les écrans, les
-    // fournisseurs du jour restreints ou rouverts. La séance est une décision
-    // d'enseignant ; on exige donc les mêmes deux titres que /api/etablissement
-    // et requireGestionTuteurs — administrer cette école, ou en être
-    // l'enseignant AU SENS OÙ ELLE EN RÉPOND (estEnseignantDe : école
-    // principale, c'est-à-dire un rattachement posé par une administration).
-    //
-    // Le chemin sans compte n'est pas touché : le mot de passe de salle reste
-    // la preuve enseignante de la classe, et il vise l'école de l'IP.
-    if (active !== null && (estAdminDe(auth.email, active) || estEnseignantDe(auth.email, active))) {
-      teacherEtabId = active;
-    }
-  }
+  // L'ÉCOLE ACTIVE, ET UN TITRE POUR ELLE — la garde commune à toutes les vues
+  // où le compte l'emporte sur l'IP (ecoleEnseignante, src/server/appartenance.ts).
+  //
+  // « users.is_teacher » NE SUFFIRAIT PAS, et le lien d'appartenance non plus :
+  // le premier se DÉCLARE (case « je suis enseignant » de /verifier), le second
+  // se RAMASSE en vérifiant son adresse depuis une IP d'établissement
+  // (verify/confirm.ts) — élèves compris. « Case cochée + wifi du collège »
+  // aurait donc suffi à poser la séance de toute l'école, depuis chez soi et
+  // hors de toute heure de classe : le tuteur déployé sur les écrans, les
+  // fournisseurs du jour restreints ou rouverts.
+  //
+  // Le chemin sans compte n'est pas touché : le mot de passe de salle reste la
+  // preuve enseignante de la classe, et il vise l'école de l'IP.
+  const teacherEtabId = ecoleEnseignante(req);
   if (!lockExpiry && teacherEtabId === null) {
     return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   }

@@ -144,12 +144,19 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       // du site, l'anomalie restait théorique. Depuis l'INSCRIPTION EN
       // LIBRE-SERVICE (src/pages/api/etablissement/inscription.ts), n'importe
       // qui obtient ce rang en trois champs : sans cette garde, il lui
-      // suffirait de cocher sa propre case pour ouvrir les fournisseurs
-      // écartés au titre de l'AI Act (Gemini, Grok, DeepSeek… hors réseau
-      // scolaire, avec sa clé personnelle). Le contournement ne s'arrête pas
+      // suffirait de cocher sa propre case. Le contournement ne s'arrête pas
       // à un complice : rattacher un second compte à son école est réservé
       // au site, et deux inscrits en libre-service atterrissent dans DEUX
       // écoles, donc hors de la portée l'un de l'autre.
+      //
+      // CE QUE LA CASE OUVRE, EXACTEMENT, et c'est le motif de cette garde :
+      // hors du réseau d'une école, les fournisseurs écartés au titre de l'AI
+      // Act (Gemini, Grok, DeepSeek, Qwen, Kimi, GLM, MiniMax) ET le nommage
+      // libre d'un modèle derrière un intermédiaire — OpenRouter, page
+      // « duel » —, c'est-à-dire atteindre à la main n'importe quoi, y compris
+      // ce qu'aucune de nos listes ne contient (mayUseAdultProviders,
+      // src/server/adult.ts). Un mineur qui se certifierait lui-même
+      // obtiendrait tout cela : c'est assez pour refuser.
       //
       // Le site, lui, garde la main : un super-administrateur tient son rang
       // de SECRET_ADMIN_EMAILS, pas d'un formulaire.

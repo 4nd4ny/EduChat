@@ -5,9 +5,10 @@ import { MdCompareArrows, MdSend } from "react-icons/md";
 import AssistantMessageContent from "../chat/AssistantMessageContent";
 import { providerDefaults, type ProviderId, type ReasoningLevel } from "../shared/providers";
 import { useFournisseurs } from "../chat/useFournisseurs";
+import NoteAIAct from "../chat/NoteAIAct";
 import { requestCompletion } from "../utils/streamCompletion";
 import { getClientId } from "../utils/clientId";
-import { getAccount, getToken } from "../utils/account";
+import { authHeaders, getAccount, getToken } from "../utils/account";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 import { useT } from "../i18n/useT";
 import { useRouter } from "next/router";
@@ -95,7 +96,8 @@ export default function DuelPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/prompts?sort=name")
+    // Avec le jeton : les tuteurs réservés de l'école active en font partie.
+    fetch("/api/prompts?sort=name", { headers: authHeaders() })
       .then(r => r.json())
       .then(data => {
         const names = (data.prompts ?? []).map((p: any) => p.name);
@@ -118,7 +120,13 @@ export default function DuelPage() {
   // mais après coup, par une erreur, là où il ne fallait tout simplement pas
   // proposer le choix. Le serveur décide (réseau d'établissement d'abord,
   // certification adulte ensuite) ; cette page ne fait que le refléter.
-  const { served, visibles } = useFournisseurs({ surface: "duel" });
+  //
+  // AVEC UNE PARTICULARITÉ QUI N'APPARTIENT QU'À ELLE : ici le modèle s'écrit
+  // à la main, donc OpenRouter cesse d'être un intermédiaire vers l'échelle
+  // réglée par l'administration. La surface « duel » le retire de la liste
+  // publique pour cette raison — il revient avec les fournisseurs écartés, au
+  // même visiteur et au même titre, puisque c'est le même droit.
+  const { served, visibles, motifAIAct } = useFournisseurs({ surface: "duel" });
 
   // Une colonne peut pointer un fournisseur qui vient de sortir de la liste —
   // au changement de compte, ou parce que la réponse du serveur arrive après
@@ -255,6 +263,10 @@ export default function DuelPage() {
         </button>
       </div>
 
+      {/* La même note que dans le chat, au-dessus des menus de fournisseurs :
+          c'est ici qu'on constate leur absence, c'est donc ici qu'on l'explique. */}
+      <div className="mt-4"><NoteAIAct motif={motifAIAct} duel /></div>
+
       {/* Configuration */}
       <div data-tour="duel-colonneA" className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-secondary p-4 text-xs md:grid-cols-2">
         {mode === "prompts" ? (
@@ -281,8 +293,9 @@ export default function DuelPage() {
                       : providerDefaults[id].wrng ? ` · ${t("chat.input.wrng.tag")}` : ""}
                     {/* Pas de « clé personnelle » sur un drapeau rouge : ces
                         fournisseurs ne se montrent qu'à un compte adulte hors
-                        établissement, qui apporte forcément sa clé. Le drapeau
-                        WRNG, lui, dit tout ce qu'il y a à dire. */}
+                        établissement, qui apporte forcément sa clé — la
+                        plateforme ne les finance jamais. Le drapeau WRNG, lui,
+                        dit tout ce qu'il y a à dire. */}
                     {served !== null && !served.includes(id) && !providerDefaults[id].wrng
                       ? ` · ${t("chat.input.ownKeyOnly")}` : ""}
                   </option>

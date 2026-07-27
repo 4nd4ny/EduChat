@@ -117,6 +117,50 @@ export function requireGestionTuteurs(req: NextApiRequest): PorteeTuteurs | null
 }
 
 /**
+ * Le drapeau de requête qui demande « borne-toi à l'école active ».
+ *
+ * `?portee=ecole` sur /api/admin/prompts et /api/admin/comments. Il n'ÉLARGIT
+ * jamais rien : il ne peut que resserrer une portée déjà accordée.
+ */
+export const PORTEE_ECOLE = 'ecole';
+
+/**
+ * LA MÊME PORTÉE, RAMENÉE À L'ÉCOLE ACTIVE — ce que demande /enseignant.
+ *
+ * POURQUOI CELA NE CONCERNE QUE LE SUPER. Les portées « ecole » et
+ * « enseignant » se résolvent déjà sur l'école active (requireAdmin,
+ * requireGestionTuteurs) : elles sont bornées par construction. La portée
+ * « super », elle, ne filtre rien — c'est sa raison d'être sur /admin, où l'on
+ * modère le catalogue de la PLATEFORME et où il faut tout voir.
+ *
+ * Or /enseignant et /admin partagent leurs composants de modération. Le
+ * super-administrateur qui prépare sa classe y lisait donc les tuteurs et les
+ * commentaires de TOUS les établissements, pendant que le sélecteur d'école
+ * affichait le nom d'un seul. Ce n'est pas une fuite de droits — il les a
+ * — mais c'est un écran qui ment sur ce qu'il montre, et une file de
+ * modération inutilisable : celle des autres écoles s'y mélange à la sienne.
+ *
+ * Ici, un super devient donc administrateur DE L'ÉCOLE SÉLECTIONNÉE, sans
+ * sémantique nouvelle : mêmes requêtes, même filtre, y compris les tuteurs de
+ * la plateforme (rattachement NULL) qu'un administrateur d'école modère déjà.
+ * Le filtre se pose ainsi dans la REQUÊTE, jamais à l'affichage : une liste
+ * qu'on tronque après coup reste une liste qui a traversé le réseau.
+ *
+ * SANS le drapeau, rien ne change : /admin garde sa vue entière. Ne pas
+ * « simplifier » ce paramètre en croyant qu'il ne sert à rien — c'est lui qui
+ * distingue les deux pages, et il n'existe rien d'autre pour le faire.
+ *
+ * @returns null si le compte n'a AUCUNE école active : on ne rend alors rien
+ *   plutôt que tout. Un super sans rattachement n'a rien à modérer ici.
+ */
+export function porteeEcoleActive(req: NextApiRequest, portee: PorteeTuteurs): PorteeTuteurs | null {
+  if (portee.niveau !== 'super') return portee;
+  const etablissementId = ecoleActivePourCompte(portee.auth.email, choixEcole(req));
+  if (etablissementId === null) return null;
+  return { niveau: 'ecole', auth: portee.auth, etablissementId };
+}
+
+/**
  * Ce tuteur relève-t-il de cette portée ? — la garde de toute ACTION sur un
  * tuteur (modifier, valider, modérer ses commentaires).
  *
@@ -149,18 +193,19 @@ export function requireSuperAdmin(req: NextApiRequest): AdminScope | null {
  *
  * Le lien d'appartenance se RAMASSE : vérifier son adresse depuis une IP
  * d'établissement en pose un (src/pages/api/verify/confirm.ts), élèves
- * compris, et l'inscription en libre-service laisse un inconnu DÉCLARER
- * lui-même les IP de « son » école. Fonder la portée sur estMembre revenait
- * donc à ceci : j'inscris une école sur une adresse que je contrôle, je
- * vérifie un SECOND compte depuis cette adresse, et le voilà dans ma portée.
- * Or la portée commande la CERTIFICATION DE MAJORITÉ, qui ouvre les
- * fournisseurs écartés au titre de l'AI Act (Gemini, Grok, DeepSeek… hors
- * réseau scolaire, en clé personnelle). La garde « personne ne se certifie
- * soi-même » ne voit rien passer : les deux comptes sont deux adresses. Le
- * commentaire de cette garde, dans /api/admin/users, tenait justement pour
- * acquis que « deux inscrits en libre-service atterrissent dans DEUX écoles,
- * donc hors de la portée l'un de l'autre » — estMembre effaçait la
- * démonstration sans la remplacer, et le complice n'avait plus à être
+ * compris, et l'inscription en libre-service crée une école sur le réseau d'où
+ * l'on écrit — celui d'un domicile, d'un café, de n'importe quelle adresse que
+ * l'on contrôle. Fonder la portée sur estMembre revenait donc à ceci :
+ * j'inscris une école depuis une adresse que je contrôle, je vérifie un SECOND
+ * compte depuis cette même adresse, et le voilà dans ma portée. Or la portée
+ * commande la CERTIFICATION DE MAJORITÉ, qui ouvre les fournisseurs écartés au
+ * titre de l'AI Act et le nommage libre d'un modèle derrière un intermédiaire
+ * (mayUseAdultProviders, src/server/adult.ts). La garde « personne ne se
+ * certifie soi-même » ne verrait rien passer : les deux comptes sont deux
+ * adresses. Le commentaire de cette garde, dans /api/admin/users, tient
+ * justement pour acquis que « deux inscrits en libre-service atterrissent dans
+ * DEUX écoles, donc hors de la portée l'un de l'autre » — estMembre effacerait
+ * la démonstration sans la remplacer, et le complice n'aurait plus à être
  * complice.
  *
  * users.etablissement_id, lui, ne se ramasse pas : il est posé par le site

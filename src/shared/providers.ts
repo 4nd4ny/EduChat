@@ -42,11 +42,15 @@ export const providerDefaults: Record<ProviderId, {
   label: string; model: string; gdpr?: boolean; wrng?: boolean;
   images?: boolean; pdf?: boolean; voice?: boolean;
   /**
-   * `adultOnly` : fournisseur RETIRÉ de l'interface publique au titre du
-   * règlement européen sur l'IA (AI Act), qui interdit d'exposer des mineurs
-   * à certains systèmes. Le code reste entier — ces fournisseurs
-   * reviendront derrière le futur « compte adulte vérifié ». D'ici là ils
-   * n'apparaissent nulle part, et la clé d'une école ne les finance jamais.
+   * `adultOnly` : fournisseur ÉCARTÉ au titre du règlement européen sur l'IA
+   * (AI Act), qui interdit d'exposer des mineurs à certains systèmes.
+   *
+   * DEUX GARDES, ET ELLES NE SE REMPLACENT PAS (src/server/adult.ts porte la
+   * démonstration). Depuis l'IP d'un établissement, ces fournisseurs n'existent
+   * pour personne — compte ou pas, clé ou pas. Ailleurs, ils demandent un compte
+   * dont la majorité a été vérifiée : « hors du wifi du collège » n'est pas
+   * « adulte », c'est aussi la chambre d'un élève. Une clé de la plateforme, elle,
+   * ne les finance JAMAIS, nulle part.
    */
   adultOnly?: boolean;
 }> = {
@@ -126,8 +130,10 @@ export type ErrorCode = (typeof ERR)[keyof typeof ERR];
 
 /**
  * Fournisseurs proposés dans l'interface publique — ceux qu'un mineur peut
- * légitimement rencontrer. Les autres ne sont pas supprimés : ils attendent
- * le mode « compte adulte vérifié ».
+ * légitimement rencontrer. Les autres ne sont pas supprimés : ils attendent un
+ * compte dont la majorité a été vérifiée, HORS d'un réseau scolaire. C'est
+ * aussi la liste servie par défaut tant que le serveur n'a pas répondu : la
+ * plus restrictive des deux, jamais l'inverse.
  */
 export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
   id => !providerDefaults[id].adultOnly);
@@ -140,9 +146,14 @@ export const PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
  * choisit pas de modèle — l'administration règle l'échelle, aujourd'hui Mistral
  * et Claude — donc OpenRouter n'est qu'un intermédiaire vers des modèles
  * conformes, et son drapeau WRNG suffit à le dire. Sur la page « duel », le
- * modèle est écrit à la main : rien n'empêcherait d'y demander un modèle
- * chinois à travers OpenRouter. Là, il doit donc être traité comme les
- * fournisseurs réservés aux adultes.
+ * modèle est écrit à la main : rien n'empêcherait d'y demander n'importe quoi à
+ * travers OpenRouter, y compris ce qu'aucune de nos listes ne contient. Là, il
+ * doit donc être traité comme les fournisseurs réservés aux adultes.
+ *
+ * CETTE CONSTANTE NE PORTE QUE LE CAS LE PLUS RESTRICTIF : useFournisseurs
+ * rend la liste entière — OpenRouter compris — au visiteur qui a droit aux
+ * fournisseurs écartés, puisque c'est exactement le même droit. Le serveur le
+ * revérifie de toute façon (/api/completion, garde OpenRouter hors échelle).
  */
 export const DUEL_PUBLIC_PROVIDER_IDS: ProviderId[] = PROVIDER_IDS.filter(
   id => !providerDefaults[id].adultOnly && !providerDefaults[id].wrng);

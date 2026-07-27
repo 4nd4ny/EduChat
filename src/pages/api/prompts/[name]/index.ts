@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb, PromptRow } from '../../../../server/db';
 import {
-  getPublishedByName, getByName, toCard, isValidPromptName, porteeDepuisIp,
+  getPublishedByName, getByName, toCard, isValidPromptName, porteeAppelant,
   CLAUSE_VISIBLE, parametresPortee, MAX_PROMPT_BYTES, MAX_USER_BYTES,
 } from '../../../../server/prompts';
 import { requireAuth, isAdminEmail, TokenPayload } from '../../../../server/token';
@@ -92,7 +92,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Même portée que le catalogue : un tuteur réservé à une autre école n'a
     // pas de fiche ici, il n'existe pas pour cet appelant (404, pas 403 — dire
     // « interdit » avouerait déjà son existence).
-    const portee = porteeDepuisIp(getClientIp(req));
+    //
+    // La portée dépend du jeton (l'école du compte l'emporte sur celle de l'IP)
+    // autant que du réseau : la réponse est donc « private », et jamais
+    // mutualisée — un cache partagé servirait la fiche réservée d'une école au
+    // visiteur suivant, et la garde d'à côté ne verrait rien passer.
+    res.setHeader('Cache-Control', 'private, no-store');
+    const portee = porteeAppelant(req, getClientIp(req));
     const row = getPublishedByName(name, portee);
     if (!row) return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
     const db = getDb();

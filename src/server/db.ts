@@ -518,6 +518,20 @@ export function getDb(): Database.Database {
        par              TEXT NOT NULL DEFAULT '',  -- qui a saisi, pour la relecture
        PRIMARY KEY (etablissement_id, periode)
      )`,
+    // L'ATELIER DE PROMPTAGOGUE, DANS LES MURS DE L'ÉCOLE.
+    //
+    // Depuis le réseau d'un établissement, l'accueil montre « Enseignant » et
+    // masque « Promptagogue » : dans une salle de classe, écrire des tuteurs
+    // n'est pas ce qu'on vient y faire, et la tuile ouvrait un atelier que
+    // l'école n'a pas forcément voulu. Ce réglage la lui rend — DÉFAUT FERMÉ,
+    // parce qu'un atelier qui apparaît tout seul est un atelier que personne
+    // n'a décidé d'ouvrir.
+    //
+    // CE QU'IL NE FAIT PAS : fermer /duel ni /publier. Une tuile est une
+    // affordance, pas une serrure ; les pages gardent leurs propres gardes
+    // (identification, rang de promptagogue). Cacher l'entrée ne prétend donc
+    // pas interdire l'adresse — le dire ici évite qu'on s'y fie un jour.
+    "ALTER TABLE etablissements ADD COLUMN atelier_promptagogue INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { db.exec(alter); } catch { /* colonne déjà présente */ }
   }

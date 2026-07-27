@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../server/db';
-import { requireGestionTuteurs } from '../../../server/admin';
+import { PORTEE_ECOLE, porteeEcoleActive, requireGestionTuteurs } from '../../../server/admin';
 import { ERR } from '../../../shared/providers';
 
 // Tous les commentaires, vus par l'ADMINISTRATION — la modération elle-même
@@ -12,12 +12,18 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // portant sur les tuteurs de SON école. La file qu'il reçoit ici est
   // exactement celle sur laquelle la route de modération lui obéira — une
   // liste plus large ne lui donnerait que des boutons répondant 403.
-  const scope = requireGestionTuteurs(req);
-  if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  const accorde = requireGestionTuteurs(req);
+  if (!accorde) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
   }
+  // Même resserrement que pour les tuteurs, et pour la même raison : sur
+  // /enseignant, la file de modération est celle de l'ÉCOLE SÉLECTIONNÉE. Deux
+  // listes qui se répondent doivent se borner ensemble — un commentaire visible
+  // dont le tuteur ne l'est pas n'apprendrait rien à qui doit le modérer.
+  const scope = req.query.portee === PORTEE_ECOLE ? porteeEcoleActive(req, accorde) : accorde;
+  if (!scope) return res.status(200).json({ comments: [], moderatedTotal: 0 });
   const db = getDb();
   // PORTÉE, comme pour les tuteurs eux-mêmes : chaque ligne porte le NOM du
   // tuteur commenté. Servir la file entière à un administrateur d'école lui

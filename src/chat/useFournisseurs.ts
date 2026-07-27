@@ -16,13 +16,31 @@ import { authHeaders } from '../utils/account';
 // pas voir l'option. Une règle de conformité recopiée est une règle qui finira
 // par diverger — celle-ci n'a plus qu'un seul point d'application.
 
+/**
+ * POURQUOI LE REFUS EST RENDU, ET PAS SEULEMENT L'AUTORISATION.
+ *
+ * Une absence non expliquée se lit comme une panne. Les deux motifs n'appellent
+ * pourtant pas la même phrase : « réseau scolaire » ne se lève par AUCUN
+ * compte, « pas certifié » se lève en s'adressant à l'administration. Les
+ * confondre enverrait un enseignant réclamer dans son collège une certification
+ * qui n'y changerait rien.
+ *
+ * `null` = le serveur n'a pas encore répondu. Ce troisième état compte : sans
+ * lui, l'écran afficherait « certifiez-vous » une fraction de seconde à un
+ * adulte déjà certifié, à chaque chargement.
+ */
+export type MotifAIAct = 'ecole' | 'certification' | null;
+
 export function useFournisseurs(options?: { surface?: 'chat' | 'duel' }) {
   // « duel » retire en plus OpenRouter : voir DUEL_PUBLIC_PROVIDER_IDS — on y
   // nomme le modèle à la main, donc l'intermédiaire ne garantit plus rien.
   const publique = options?.surface === 'duel' ? DUEL_PUBLIC_PROVIDER_IDS : PUBLIC_PROVIDER_IDS;
   const [served, setServed] = useState<string[] | null>(null);
   const [adulteAutorise, setAdulteAutorise] = useState(false);
-  const [bloqueParEcole, setBloqueParEcole] = useState(false);
+  // Le verdict AI Act tel qu'il est arrivé du serveur, ou null tant qu'il n'est
+  // pas arrivé. Un SEUL état pour les deux informations : deux booléens séparés
+  // se seraient inévitablement retrouvés en désaccord le temps d'un rendu.
+  const [motifAIAct, setMotifAIAct] = useState<MotifAIAct>(null);
 
   useEffect(() => {
     // AVEC le jeton : sans lui, le serveur ne peut pas savoir que ce compte est
@@ -35,7 +53,10 @@ export function useFournisseurs(options?: { surface?: 'chat' | 'duel' }) {
         .then(d => {
           setServed(d.served ?? []);
           setAdulteAutorise(!!d.adultAllowed);
-          setBloqueParEcole(!!d.adultBlockedBySchool);
+          // « école » PRIME, comme sur le serveur : c'est le motif qu'aucun
+          // compte ne lève, donc celui qu'il faut annoncer quand les deux
+          // pourraient s'appliquer.
+          setMotifAIAct(d.adultAllowed ? null : d.adultBlockedBySchool ? 'ecole' : 'certification');
         })
         .catch(() => { /* liste inconnue : on retombe sur la liste publique */ });
     };
@@ -48,8 +69,8 @@ export function useFournisseurs(options?: { surface?: 'chat' | 'duel' }) {
     /** Servis par la clé interne ; les autres exigent une clé personnelle. */
     served,
     adulteAutorise,
-    /** Refusé PARCE QUE l'on est sur le réseau d'une école, compte adulte ou non. */
-    bloqueParEcole,
+    /** Pourquoi les fournisseurs écartés ne sont pas proposés, ou null. */
+    motifAIAct,
     /** La liste à afficher. Tant que la réponse n'est pas là : la plus restrictive. */
     visibles: (adulteAutorise ? PROVIDER_IDS : publique) as readonly ProviderId[],
   };

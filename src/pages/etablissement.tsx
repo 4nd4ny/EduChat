@@ -20,6 +20,12 @@ type Data = {
   etablissement: {
     name: string; ips: string; respire: boolean; hours: HourSlot[];
     quotaPerStudentDaily: number; tokenQuotaMonthly: number;
+    /**
+     * L'atelier de promptagogue est-il proposé sur l'accueil, depuis le réseau
+     * de l'école ? Masqué par défaut dans les murs d'un établissement ; ce
+     * réglage le fait reparaître (src/pages/index.tsx pour l'effet).
+     */
+    atelierPromptagogue: boolean;
   };
   /**
    * LE SIGNATAIRE EST-IL ADMINISTRATEUR DE L'ÉCOLE ACTIVE ?
@@ -42,11 +48,12 @@ type Data = {
 // relève (ou null), et les tuteurs accessibles depuis ce réseau. Servi sans
 // jeton par /api/etablissement/accueil — voir l'en-tête de cette route pour
 // ce que l'absence de jeton n'ouvre PAS.
+// LA LISTE NE CONTIENT PLUS QUE LES TUTEURS DE L'ÉCOLE : la marque « de votre
+// école » a donc disparu avec la mixité qu'elle servait à débrouiller. Ceux de
+// la plateforme restent sur l'accueil du site, où le visiteur les trouve déjà.
 type Tuteur = {
   name: string; title: string; description: string;
   authorName: string; language: string;
-  /** Ce tuteur appartient-il à l'école du visiteur ? (marque d'affichage) */
-  maison: boolean;
 };
 type Accueil = { ecole: { name: string } | null; tuteurs: Tuteur[] };
 
@@ -76,6 +83,10 @@ export default function EtablissementPage() {
   const [hours, setHours] = useState<HourSlot[]>([]);
   const [perStudent, setPerStudent] = useState("");
   const [monthly, setMonthly] = useState("");
+  // L'atelier de promptagogue, proposé ou non sur l'accueil vu depuis le
+  // réseau de l'école. Réglage à part entière : il s'enregistre avec les
+  // horaires et les quotas, par le même bouton.
+  const [atelier, setAtelier] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -87,31 +98,36 @@ export default function EtablissementPage() {
   // refus d'accès et sa réparation.
   const [inscription, setInscription] = useState(false);
   const [nomEcole, setNomEcole] = useState("");
-  const [ipsEcole, setIpsEcole] = useState("");
-  const [adresseEcole, setAdresseEcole] = useState("");
+  const [nomAdmin, setNomAdmin] = useState("");
   const [inscriptionBusy, setInscriptionBusy] = useState(false);
   const [inscriptionErreur, setInscriptionErreur] = useState("");
-  const [inscriptionFaite, setInscriptionFaite] = useState(false);
+  // Une fois l'inscription faite : l'adresse RÉELLEMENT enregistrée telle que
+  // la route la renvoie (chaîne vide = école créée sans reconnaissance).
+  const [inscriptionFaite, setInscriptionFaite] = useState<{ ip: string } | null>(null);
 
-  // L'IP publique du visiteur est PROPOSÉE, jamais imposée : /api/ip renvoie
-  // exactement le getClientIp que verront l'accès élèves et la facturation —
-  // c'est donc la seule valeur dont on sache d'avance qu'elle fonctionnera.
-  // Une école qui s'inscrit depuis chez elle la corrigera.
+  // L'ADRESSE IP N'EST PLUS UN CHAMP, C'EST UNE INFORMATION.
   //
-  // SAUF QUAND LE RÉSEAU EST DÉJÀ CELUI D'UNE ÉCOLE. On n'arrive alors sur ce
-  // formulaire que par « mon établissement n'est pas celui-ci » : préremplir
-  // l'adresse d'où l'on écrit, c'est proposer une IP que la route refusera à
-  // coup sûr (ERR_IP_TAKEN, unicité des IP entre écoles). Le champ reste vide
-  // — il est facultatif, et l'administration posera l'adresse ensuite.
+  // Elle se saisissait, et deux choses n'allaient pas. Personne ne sait ce
+  // qu'est une adresse IP, et surtout : rien n'empêchait d'y écrire celle du
+  // collège voisin, donc de s'attribuer ses élèves. La route prend désormais
+  // l'adresse qu'elle VOIT. /api/ip renvoie exactement ce même getClientIp —
+  // on l'affiche donc pour que le responsable sache SUR QUOI ses élèves seront
+  // reconnus, sans lui demander de la taper.
+  //
+  // `null` = pas encore répondu ; `ip: ""` = le serveur n'a rien su lire.
+  // `revendiquee` vient du SERVEUR (resolveEtablissementByIp), et non d'une
+  // déduction d'écran : c'est lui qui décidera, et il doit dire la même chose.
+  const [ipVisiteur, setIpVisiteur] = useState<{ ip: string; revendiquee: boolean } | null>(null);
   useEffect(() => {
-    if (!inscription || accueil?.ecole) return;
+    if (!inscription) return;
     fetch("/api/ip")
       .then(r => r.json())
-      .then((d: { ip?: string }) => {
-        if (d?.ip && d.ip !== "unknown") setIpsEcole(prev => prev || d.ip!);
-      })
-      .catch(() => { /* simple confort de saisie : un échec ne gêne personne */ });
-  }, [inscription, accueil?.ecole]);
+      .then((d: { ip?: string; revendiquee?: boolean }) => setIpVisiteur({
+        ip: d?.ip && d.ip !== "unknown" ? d.ip : "",
+        revendiquee: !!d?.revendiquee,
+      }))
+      .catch(() => setIpVisiteur({ ip: "", revendiquee: false }));
+  }, [inscription]);
 
   // DÉMONSTRATION (?visite=1) : l'espace s'ouvre avec un établissement
   // FICTIF et tous les réglages inertes. Aucun appel au serveur : on montre
@@ -138,6 +154,10 @@ export default function EtablissementPage() {
           name: "", ips: "203.0.113.0/24", respire: true,
           hours: [{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }],
           quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000,
+          // L'école fictive a rouvert son atelier : une case cochée montre le
+          // réglage dans son état le moins évident (le défaut, lui, est fermé),
+          // et la démonstration est justement là pour faire voir qu'il existe.
+          atelierPromptagogue: true,
         },
         usage: { monthTokens: 412350, byProvider: [
           { provider: "mistral", requests: 1240, tokens: 318900, servi: true },
@@ -148,7 +168,7 @@ export default function EtablissementPage() {
         ] },
       });
       setHours([{ day: 1, start: "08:00", end: "17:00" }, { day: 3, start: "08:00", end: "12:00" }]);
-      setPerStudent("20000"); setMonthly("3000000");
+      setPerStudent("20000"); setMonthly("3000000"); setAtelier(true);
       setState("ready");
       return;
     }
@@ -164,6 +184,7 @@ export default function EtablissementPage() {
         setHours(d.etablissement.hours);
         setPerStudent(d.etablissement.quotaPerStudentDaily ? String(d.etablissement.quotaPerStudentDaily) : "");
         setMonthly(d.etablissement.tokenQuotaMonthly ? String(d.etablissement.tokenQuotaMonthly) : "");
+        setAtelier(!!d.etablissement.atelierPromptagogue);
         setState("ready");
       })
       .catch(() => setState("auth"));
@@ -180,13 +201,17 @@ export default function EtablissementPage() {
   // démonstration ne le charge pas : elle ne doit toucher à rien de réel.
   useEffect(() => {
     if (!router.isReady || demo) return;
-    fetch(`/api/etablissement/accueil?locale=${router.locale ?? "fr"}`)
+    // Le jeton et l'école active voyagent avec : hors du réseau de son
+    // établissement, c'est la seule chose qui permette encore de le reconnaître.
+    fetch(`/api/etablissement/accueil?locale=${router.locale ?? "fr"}`, { headers: authHeaders() })
       .then(r => r.json())
       .then((d: Accueil) => setAccueil({ ecole: d?.ecole ?? null, tuteurs: d?.tuteurs ?? [] }))
       // Un accueil qui échoue ne doit pas laisser la page en suspens : on
       // retombe sur « aucune école reconnue », c'est-à-dire l'inscription.
       .catch(() => setAccueil({ ecole: null, tuteurs: [] }));
-  }, [demo, router.isReady, router.locale]);
+    // `ecoles.active` déclenche la relecture : changer d'école dans le
+    // sélecteur doit changer l'accueil affiché, pas seulement les réglages.
+  }, [demo, router.isReady, router.locale, ecoles.active]);
 
   const addSlot = () => setHours([...hours, { day: 1, start: "08:00", end: "17:00" }]);
   const updateSlot = (i: number, patch: Partial<HourSlot>) =>
@@ -206,6 +231,7 @@ export default function EtablissementPage() {
         hours,
         quotaPerStudentDaily: Number(perStudent) || 0,
         tokenQuotaMonthly: Number(monthly) || 0,
+        atelierPromptagogue: atelier,
       }),
     });
     setBusy(false);
@@ -218,9 +244,8 @@ export default function EtablissementPage() {
   const messageRefus = (code: string) => {
     switch (code) {
       case "ERR_ALREADY_ATTACHED": return t("etab.signup.err.attached");
-      case "ERR_IP_TAKEN": return t("etab.signup.err.ipTaken");
       case "ERR_NAME_INVALID": return t("etab.signup.err.name");
-      case "ERR_IP_INVALID": return t("etab.signup.err.ip");
+      case "ERR_ADMIN_NAME_INVALID": return t("etab.signup.err.adminName");
       case "ERR_RATE_LIMIT": return t("etab.signup.err.rate");
       case "ERR_AUTH_REQUIRED": return t("etab.signup.err.auth");
       default: return t("etab.signup.err.generic");
@@ -233,10 +258,12 @@ export default function EtablissementPage() {
     const response = await fetch("/api/etablissement/inscription", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      // Aucun champ de statut n'est envoyé — respire, solde et quotas ne sont
-      // pas oubliés ici, ils n'appartiennent tout simplement pas à l'inscrit
-      // (la route les refuserait de toute façon : elle ne les lit pas).
-      body: JSON.stringify({ name: nomEcole, ips: ipsEcole, billingAddress: adresseEcole }),
+      // DEUX CHAMPS, ET RIEN D'AUTRE. Aucun statut — respire, solde et quotas
+      // ne sont pas oubliés ici, ils n'appartiennent tout simplement pas à
+      // l'inscrit (la route les refuserait : elle ne les lit pas). AUCUNE IP
+      // non plus : la route prend celle qu'elle voit, précisément pour qu'on
+      // ne puisse pas revendiquer le réseau d'autrui depuis ce formulaire.
+      body: JSON.stringify({ name: nomEcole, adminName: nomAdmin }),
     }).catch(() => null);
     setInscriptionBusy(false);
     if (!response?.ok) {
@@ -244,7 +271,10 @@ export default function EtablissementPage() {
       setInscriptionErreur(messageRefus(String(data?.error?.code ?? "")));
       return;
     }
-    setInscriptionFaite(true);
+    // On retient l'adresse RÉELLEMENT enregistrée : entre l'affichage du
+    // formulaire et son envoi, une autre école a pu revendiquer la nôtre.
+    const data = await response.json().catch(() => ({} as { ipRetenue?: string }));
+    setInscriptionFaite({ ip: String(data?.ipRetenue ?? "") });
   };
 
   // On attend AUSSI l'accueil public tant qu'on n'est pas responsable : sans
@@ -286,9 +316,13 @@ export default function EtablissementPage() {
               <p className="mt-2 opacity-80">{t("etab.public.welcome")}</p>
             </header>
 
+            {/* LES TUTEURS DE L'ÉTABLISSEMENT, ET EUX SEULS. La phrase
+                « ceux de votre établissement d'abord, puis ceux de la
+                plateforme » a disparu avec la liste mêlée qu'elle décrivait :
+                le catalogue commun est sur l'accueil du site, et l'y renvoyer
+                une seconde fois noyait le peu que cette page dit en propre. */}
             <section className="mt-8">
               <h2 className="text-lg font-bold">{t("etab.public.tutorsTitle")}</h2>
-              <p className="mt-1 text-sm opacity-70">{t("etab.public.tutorsHelp")}</p>
               {accueil!.tuteurs.length === 0 ? (
                 <p className="mt-4 text-sm opacity-60">{t("etab.public.tutorsEmpty")}</p>
               ) : (
@@ -296,17 +330,10 @@ export default function EtablissementPage() {
                   {accueil!.tuteurs.map(tuteur => (
                     <li key={tuteur.name}
                       className="flex flex-col gap-2 rounded-lg border border-white/10 bg-secondary p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <Link href={`/p/${encodeURIComponent(tuteur.name)}`}
-                          className="text-lg font-bold hover:underline">{tuteur.title}</Link>
-                        {/* La marque « maison » n'est qu'un repère : le droit de
-                            voir la carte a été tranché en base, pas ici. */}
-                        {tuteur.maison && (
-                          <span className="shrink-0 rounded border border-[#DC6521]/60 px-2 py-0.5 text-[11px] text-[#DC6521]">
-                            {t("etab.public.own")}
-                          </span>
-                        )}
-                      </div>
+                      {/* Plus de marque « de votre école » : toutes le sont
+                          désormais, et une marque que tout porte ne marque rien. */}
+                      <Link href={`/p/${encodeURIComponent(tuteur.name)}`}
+                        className="text-lg font-bold hover:underline">{tuteur.title}</Link>
                       <p className="flex-grow text-sm opacity-80">{tuteur.description}</p>
                       <div className="flex flex-wrap items-center gap-x-3 text-xs opacity-60">
                         <span>{t("home.by")} {tuteur.authorName || t("admin.anonymous")}</span>
@@ -330,25 +357,28 @@ export default function EtablissementPage() {
 
             <div className="mt-8"><PourquoiEduChat /></div>
 
-            {/* Le responsable, lui, n'est pas perdu : la porte de gestion reste
-                visible, en bas et en petit — l'écran appartient d'abord aux
-                élèves et aux enseignants qui passent. */}
-            <p className="mt-6 text-sm opacity-70">
-              {state === "auth" ? (
-                <>
-                  {t("etab.public.teacherHint")}{" "}
-                  <Link href="/verifier" className="underline">{t("compte.anonymousCta")}</Link>
-                </>
-              ) : (
-                t("etab.public.notMember")
-              )}
-            </p>
+            {/* PLUS DE « VOUS ENSEIGNEZ ICI ? / VÉRIFIER MON EMAIL » (décision
+                du client). Le bloc proposait une formalité de compte sur une
+                page qui s'adresse d'abord aux élèves de la salle 12, et il
+                sous-entendait qu'un email vérifié suffirait à faire de vous un
+                enseignant de cette école — or un rattachement se reçoit de
+                l'administration, il ne se prend pas. La phrase ci-dessous, elle,
+                s'adresse à qui EST identifié et n'a pourtant pas d'école : elle
+                lui dit où aller, et c'est un renseignement, pas une invitation. */}
+            {state === "none" && (
+              <p className="mt-6 text-sm opacity-70">{t("etab.public.notMember")}</p>
+            )}
             {!inscription && !inscriptionFaite && (
-              <p className="mt-2 text-sm">
-                <button onClick={ouvrirInscription} className="underline opacity-70 hover:opacity-100">
-                  {t("etab.public.otherSchool")}
+              // MÊME BOUTON QUE LES ACTIONS PRINCIPALES DU SITE (orange, texte
+              // foncé, gras). Ce n'était qu'un lien souligné à demi effacé :
+              // c'est pourtant le seul chemin de tout un établissement qui
+              // s'inscrit depuis le réseau d'un autre, et personne ne le voyait.
+              <div className="mt-6">
+                <button onClick={ouvrirInscription}
+                  className="flex items-center gap-1 rounded bg-[#DC6521] px-4 py-2 font-bold text-[#111827] hover:opacity-90">
+                  <MdSchool /> {t("etab.public.otherSchool")}
                 </button>
-              </p>
+              </div>
             )}
           </>
         ) : (
@@ -389,7 +419,17 @@ export default function EtablissementPage() {
               </Link>
             </div>
 
-            <div className="mt-8"><PourquoiEduChat /></div>
+            {/* L'ARGUMENT AVANT LE GESTE, PAS PENDANT. Le bloc explique
+                pourquoi une école passe par la plateforme : c'est ce qu'on lit
+                POUR décider de s'inscrire. Une fois « Inscrire mon école »
+                cliqué, la décision est prise et le formulaire est le sujet —
+                laisser quatre paragraphes au-dessus des champs, c'est repousser
+                la première ligne à remplir sous la ligne de flottaison. Même
+                condition que le bouton ci-dessus : ils apparaissent et
+                disparaissent ensemble. */}
+            {!inscription && !inscriptionFaite && (
+              <div className="mt-8"><PourquoiEduChat /></div>
+            )}
           </>
         )}
 
@@ -410,28 +450,45 @@ export default function EtablissementPage() {
             className="mt-8 flex flex-col gap-4 rounded-lg border border-white/10 bg-secondary p-4 text-left text-sm">
             <h2 className="text-lg font-bold">{t("etab.signup.formTitle")}</h2>
 
+            {/* L'ADRESSE DE RECONNAISSANCE, MONTRÉE ET NON DEMANDÉE.
+                C'est le seul endroit du parcours où l'on peut expliquer, à
+                l'avance et en une phrase, à quoi tient l'accès des élèves :
+                à cette adresse-là. Elle n'est pas modifiable — le serveur
+                prend celle qu'il voit, quoi que porte cet écran (voir
+                src/pages/api/etablissement/inscription.ts). */}
+            <div className="rounded border border-white/15 bg-tertiary p-3">
+              <div className="text-xs uppercase opacity-60">{t("etab.signup.ipTitle")}</div>
+              <div className="mt-1 break-all font-mono text-base">
+                {ipVisiteur === null ? "…" : ipVisiteur.ip || t("etab.signup.ipUnknown")}
+              </div>
+              <p className="mt-2 text-xs opacity-70">
+                {/* Trois situations, trois phrases — et surtout : celle de
+                    l'adresse DÉJÀ PRISE se lit AVANT de valider. Découvrir
+                    après coup qu'une école a été créée sans reconnaissance
+                    serait une mauvaise surprise ; le lire ici est un choix. */}
+                {ipVisiteur === null ? t("common.loading")
+                  : !ipVisiteur.ip ? t("etab.signup.ipNone")
+                    : ipVisiteur.revendiquee ? t("etab.signup.ipTaken")
+                      : t("etab.signup.ipMine")}
+              </p>
+            </div>
+
             <label className="flex flex-col gap-1">
               {t("etab.signup.name")}
               <input value={nomEcole} onChange={e => setNomEcole(e.target.value)} required maxLength={120}
                 placeholder={t("etab.signup.namePlaceholder")} className="rounded bg-tertiary p-2" />
             </label>
 
+            {/* LE NOM DE LA PERSONNE RESPONSABLE. Côté école c'est ainsi qu'on
+                le dit ; côté base, c'est ce compte-ci qui devient l'enseignant-
+                administrateur. Le serveur ne l'écrit sur le compte que s'il n'y
+                a pas déjà un nom : un nom choisi dans /compte n'est pas écrasé
+                par un formulaire. */}
             <label className="flex flex-col gap-1">
-              {t("etab.signup.ips")}
-              <input value={ipsEcole} onChange={e => setIpsEcole(e.target.value)}
-                placeholder="203.0.113.7, 203.0.113.8" className="rounded bg-tertiary p-2 font-mono" />
-              <span className="text-xs opacity-60">{t("etab.signup.ipsHint")}</span>
-            </label>
-
-            <label className="flex flex-col gap-1">
-              {t("etab.signup.address")}
-              <textarea value={adresseEcole} onChange={e => setAdresseEcole(e.target.value)} rows={3} maxLength={500}
-                placeholder={t("etab.signup.addressPlaceholder")} className="rounded bg-tertiary p-2" />
-              {/* Pas d'interpolation de l'adresse email : le jeton peut avoir
-                  expiré entre le chargement et le rendu, et « les factures
-                  partiront à  » ne veut plus rien dire. Le serveur prend de
-                  toute façon l'adresse du JETON, pas celle du formulaire. */}
-              <span className="text-xs opacity-60">{t("etab.signup.addressHint")}</span>
+              {t("etab.signup.adminName")}
+              <input value={nomAdmin} onChange={e => setNomAdmin(e.target.value)} required maxLength={120}
+                placeholder={t("etab.signup.adminNamePlaceholder")} className="rounded bg-tertiary p-2" />
+              <span className="text-xs opacity-60">{t("etab.signup.adminNameHint")}</span>
             </label>
 
             {/* L'HONNÊTETÉ AVANT LA SIGNATURE, pas après : le porte-monnaie
@@ -461,6 +518,14 @@ export default function EtablissementPage() {
           <div className="mt-8 rounded-lg border border-green-500/40 bg-green-500/10 p-4 text-left text-sm">
             <p className="font-bold">{t("etab.signup.doneTitle")}</p>
             <p className="mt-2 opacity-90">{t("etab.signup.done")}</p>
+            {/* CE QUI A RÉELLEMENT ÉTÉ ENREGISTRÉ, dit par le serveur et non
+                répété depuis le formulaire : entre l'affichage et l'envoi, une
+                autre école a pu revendiquer cette adresse. */}
+            <p className="mt-2 opacity-90">
+              {inscriptionFaite.ip
+                ? t("etab.signup.doneIp", { ip: inscriptionFaite.ip })
+                : t("etab.signup.doneNoIp")}
+            </p>
             {/* Répété APRÈS l'inscription : c'est maintenant que la question
                 « et mes élèves, ils font comment ? » se pose vraiment. */}
             <p className="mt-2 opacity-90">{t("etab.signup.doneWallet")}</p>
@@ -562,6 +627,24 @@ export default function EtablissementPage() {
             <span className="text-xs opacity-50">{t("etab.quotas.monthlyHint")}</span>
           </label>
         </div>
+      </section>
+
+      {/* --- Ce que l'accueil propose depuis le réseau de l'école ---
+          Dans les murs d'un établissement, l'accueil montre l'espace de
+          l'enseignant et masque l'atelier de promptagogue : une salle de classe
+          n'est pas un lieu où l'on vient écrire des tuteurs. Certaines écoles
+          le veulent pourtant — voici la case qui le rouvre, et elle est FERMÉE
+          tant que personne ne l'a cochée.
+          NE PROMET RIEN DE PLUS QU'UNE TUILE : /duel et /publier gardent leurs
+          propres gardes, cocher ou décocher ici n'ouvre ni ne ferme de porte. */}
+      <section data-tour="etab-atelier" className="mt-8">
+        <h2 className="text-lg font-bold">{t("etab.workshop.title")}</h2>
+        <p className="mt-1 text-sm opacity-70">{t("etab.workshop.help")}</p>
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input type="checkbox" disabled={fige} checked={atelier}
+            onChange={e => setAtelier(e.target.checked)} className="mt-1" />
+          <span>{t("etab.workshop.label")}</span>
+        </label>
       </section>
 
       {/* Le bouton d'enregistrement DISPARAÎT pour qui ne règle rien, au lieu
@@ -669,8 +752,13 @@ export default function EtablissementPage() {
           responsable qui devra l'expliquer à sa direction ou à son service
           informatique, et ces quatre phrases sont celles qu'il pourra reprendre
           telles quelles (le mécanisme du virement, et ce que le contrat d'API
-          protège exactement). */}
-      <section className="mt-10"><PourquoiEduChat /></section>
+          protège exactement).
+          MAIS PAS EN DÉMONSTRATION. La visite guidée (?visite=1) commente les
+          réglages un à un ; ce pavé de texte n'a aucune ancre `data-tour`, donc
+          aucune étape ne s'y arrête — il ne fait qu'allonger la page que le
+          voile doit faire défiler. Le lire suppose du reste d'être responsable
+          d'une école, ce que le visiteur de la démonstration n'est pas. */}
+      {!demo && <section className="mt-10"><PourquoiEduChat /></section>}
 
       {/* --- Contact / assistance ---
           Placé juste après le bloc « géré par l'administration » : c'est déjà

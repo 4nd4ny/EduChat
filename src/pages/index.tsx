@@ -7,13 +7,13 @@ import {
   MdAddCircleOutline, MdSchool, MdSettings, MdCompareArrows,
 } from "react-icons/md";
 import { useAnthropic } from "../context/AnthropicProvider";
+import { authHeaders } from "../utils/account";
 import { getFavorites, toggleFavorite } from "../utils/favorites";
 import { formatTokens } from "../utils/formatTokens";
 import { useT } from "../i18n/useT";
 import type { TranslationKey } from "../i18n/dictionaries";
 import DemoChat from "../chat/DemoChat";
 import SiteStats from "../site/SiteStats";
-import PourquoiEduChat from "../site/PourquoiEduChat";
 
 type Card = {
   name: string;
@@ -32,22 +32,27 @@ const SORT_KEYS = ["score", "uses", "rating", "recent", "tokens", "name"] as con
 // commune à tout le site.
 type ProfileId = "learner" | "teacher" | "school" | "promptagogue";
 
-const PROFILES: Array<{
+type Profile = {
   id: ProfileId;
   labelKey: TranslationKey;
   actionKey: TranslationKey;
   href: string;
   icon: React.ReactNode;
-}> = [
-  { id: "learner", labelKey: "nav.learner", actionKey: "nav.freeChat", href: "/chat", icon: <MdChatBubbleOutline /> },
-  // /enseignant, et non plus /session : la répartition par niveau (décision A)
-  // nomme chaque espace par la personne à qui il s'adresse. L'ancienne adresse
-  // reste servie (src/pages/session.tsx la réexporte) — les quatre guides y
-  // mènent encore.
-  { id: "teacher", labelKey: "nav.teacher", actionKey: "nav.session", href: "/enseignant", icon: <MdSchool /> },
-  { id: "school", labelKey: "nav.school", actionKey: "nav.settings", href: "/etablissement", icon: <MdSettings /> },
-  { id: "promptagogue", labelKey: "nav.promptagogue", actionKey: "nav.duel", href: "/duel", icon: <MdCompareArrows /> },
-];
+};
+
+const LEARNER: Profile = { id: "learner", labelKey: "nav.learner", actionKey: "nav.freeChat", href: "/chat", icon: <MdChatBubbleOutline /> };
+// /enseignant, et non plus /session : la répartition par niveau (décision A)
+// nomme chaque espace par la personne à qui il s'adresse. L'ancienne adresse
+// reste servie (src/pages/session.tsx la réexporte) — les quatre guides y
+// mènent encore.
+const TEACHER: Profile = { id: "teacher", labelKey: "nav.teacher", actionKey: "nav.session", href: "/enseignant", icon: <MdSchool /> };
+const SCHOOL: Profile = { id: "school", labelKey: "nav.school", actionKey: "nav.settings", href: "/etablissement", icon: <MdSettings /> };
+const PROMPTAGOGUE: Profile = { id: "promptagogue", labelKey: "nav.promptagogue", actionKey: "nav.duel", href: "/duel", icon: <MdCompareArrows /> };
+
+// Tailwind compile les classes qu'il LIT dans les sources : `md:grid-cols-${n}`
+// ne produirait aucune règle. Les deux seules largeurs possibles sont donc
+// écrites en toutes lettres.
+const COLONNES: Record<number, string> = { 3: "md:grid-cols-3", 4: "md:grid-cols-4" };
 
 // Toutes les cases partagent la même géométrie : la grille impose la largeur,
 // cette classe la hauteur et le centrage. `min-w-0 break-words` est
@@ -76,33 +81,69 @@ export default function Catalogue() {
   // Tuteur ouvert en démo inline (null = fermé). « Essayer » ouvre la démo.
   const [demo, setDemo] = useState<string | null>(null);
   const demoRef = React.useRef<HTMLDivElement>(null);
-  // Le nom de l'école dont relève le RÉSEAU du visiteur (résolu par IP côté
-  // serveur), ou null hors établissement.
-  const [ecole, setEcole] = useState<string | null>(null);
+  // CE QUE LE SERVEUR SAIT DU RÉSEAU D'OÙ L'ON ARRIVE. `null` = pas encore
+  // répondu ; c'est un troisième état, et il compte (voir la ligne de profils).
+  const [reseau, setReseau] = useState<{ ecole: string | null; atelier: boolean } | null>(null);
+  const ecole = reseau?.ecole ?? null;
 
   useEffect(() => setFavorites(getFavorites()), []);
 
-  // « bref=1 » : l'accueil n'a besoin que de savoir s'il parle à une école —
-  // pas de son catalogue, qu'il charge déjà par /api/prompts.
+  // « bref=1 » : l'accueil n'a besoin que de savoir s'il parle à une école, et
+  // si elle ouvre son atelier de promptagogue — pas de son catalogue, qu'il
+  // charge déjà par /api/prompts.
+  //
+  // LA RÉPONSE VIENT DU SERVEUR, ET C'EST TOUT L'INTÉRÊT : resolveEtablissementByIp
+  // travaille sur l'adresse que pose le proxy, la même qui reconnaît les élèves
+  // et qui facture. Le navigateur ne devine rien ; il reçoit un verdict.
+  //
+  // SANS LE JETON, ET C'EST DÉLIBÉRÉ. Partout ailleurs, l'école ACTIVE d'un
+  // enseignant identifié l'emporte maintenant sur l'IP — il retrouve son
+  // établissement de chez lui. Pas ici : cette ligne-là répond à « OÙ EST CE
+  // NAVIGATEUR ? », pas à « qui regarde ». C'est la salle de classe qui masque
+  // l'atelier de promptagogue, et un enseignant chez lui n'a aucune raison de
+  // le perdre. La route applique la même distinction (voir le bloc « bref »
+  // de src/pages/api/etablissement/accueil.ts) : l'en-tête n'y changerait rien,
+  // le poser laisserait seulement croire le contraire.
   useEffect(() => {
     fetch("/api/etablissement/accueil?bref=1")
       .then(r => r.json())
-      .then((d: { ecole?: { name: string } | null }) => setEcole(d?.ecole?.name ?? null))
-      .catch(() => { /* sans réponse, l'accueil reste celui de tout le monde */ });
+      .then((d: { ecole?: { name: string } | null; atelierPromptagogue?: boolean }) =>
+        setReseau({ ecole: d?.ecole?.name ?? null, atelier: !!d?.atelierPromptagogue }))
+      // Sans réponse, l'accueil reste celui de tout le monde : hors école.
+      .catch(() => setReseau({ ecole: null, atelier: false }));
   }, []);
 
-  // QUAND LE VISITEUR ARRIVE DU RÉSEAU D'UNE ÉCOLE, SA TUILE PASSE EN TÊTE.
-  // Pour lui, « Établissement » n'est plus un réglage d'administrateur : c'est
-  // la page de SON école, et elle porte son nom. Ailleurs, l'ordre habituel.
-  const profils = useMemo(
-    () => (ecole ? [...PROFILES].sort((a, b) => Number(b.id === "school") - Number(a.id === "school")) : PROFILES),
-    [ecole],
-  );
+  // QUI ENTRE DANS LA LIGNE, ET DANS QUEL ORDRE (décision du client).
+  //
+  //   · réseau INCONNU → Apprenant, Promptagogue, Établissement. L'enseignant
+  //     est masqué : hors d'une école, « gérer une séance » ne mène nulle part.
+  //   · réseau D'UNE ÉCOLE → Apprenant, Enseignant, Établissement. Le
+  //     promptagogue est masqué : dans une salle de classe, l'atelier d'écriture
+  //     de tuteurs n'est pas ce qu'on vient y faire — sauf si l'administration
+  //     de l'école l'a rouvert (etablissements.atelier_promptagogue), et il
+  //     reparaît alors derrière l'enseignant.
+  //
+  // TANT QUE LE SERVEUR N'A PAS RÉPONDU, la deuxième case reste VIDE plutôt que
+  // de parier. Peindre le promptagogue par défaut le ferait apparaître une
+  // fraction de seconde dans chaque école — cliquable pendant ce temps —, ce
+  // qui est exactement ce que « masqué » veut éviter ; et parier sur
+  // l'enseignant l'afficherait à tous les visiteurs de passage. La case garde
+  // sa place pour que la ligne ne saute pas quand la réponse arrive.
+  const profils = useMemo<Array<Profile | null>>(() => {
+    if (!reseau) return [LEARNER, null, SCHOOL];
+    if (!reseau.ecole) return [LEARNER, PROMPTAGOGUE, SCHOOL];
+    return reseau.atelier
+      ? [LEARNER, TEACHER, PROMPTAGOGUE, SCHOOL]
+      : [LEARNER, TEACHER, SCHOOL];
+  }, [reseau]);
 
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/prompts?sort=${sort}&q=${encodeURIComponent(query)}&locale=${locale}`, { signal: controller.signal })
+      // Le jeton porte l'école active : le catalogue d'un enseignant contient
+      // les tuteurs réservés de son établissement, où qu'il se trouve.
+      fetch(`/api/prompts?sort=${sort}&q=${encodeURIComponent(query)}&locale=${locale}`,
+        { signal: controller.signal, headers: authHeaders() })
         .then(r => r.json())
         .then(data => { setCards(data.prompts ?? []); setLoading(false); })
         .catch(() => {});
@@ -137,10 +178,16 @@ export default function Catalogue() {
         <h1 className="text-4xl font-bold">EduChat</h1>
         <p className="text-lg opacity-80">{t("home.tagline")}</p>
 
-        {/* Une ligne, quatre profils : chaque case EST l'entrée de son espace
-            de travail (le libellé secondaire annonce ce qui va s'ouvrir). */}
-        <nav className="mt-2 grid w-full max-w-3xl grid-cols-2 gap-2 text-sm md:grid-cols-4">
-          {profils.map(item => item.id === "learner" ? (
+        {/* Une ligne, un profil par case : chaque case EST l'entrée de son
+            espace de travail (le libellé secondaire annonce ce qui va
+            s'ouvrir). Trois cases en général, quatre quand une école rouvre
+            son atelier de promptagogue. */}
+        <nav className={`mt-2 grid w-full max-w-3xl grid-cols-2 gap-2 text-sm ${COLONNES[profils.length] ?? "md:grid-cols-3"}`}>
+          {profils.map((item, i) => !item ? (
+            // La case en attente : elle occupe la place, elle ne propose rien.
+            // `aria-hidden` pour qu'un lecteur d'écran n'annonce pas un vide.
+            <div key={`attente-${i}`} aria-hidden className={`${CELL} pointer-events-none opacity-0`} />
+          ) : item.id === "learner" ? (
             // Le chat libre remet le tuteur à zéro : c'est une action, pas un lien.
             <button key={item.id} onClick={() => usePrompt("")} className={CELL}>
               <span className="flex items-center gap-1.5 font-semibold">{item.icon} {t(item.labelKey)}</span>
@@ -160,11 +207,13 @@ export default function Catalogue() {
         </nav>
       </header>
 
-      {/* POURQUOI CE SITE EXISTE — au-dessus du catalogue, parce qu'un visiteur
-          qui ne comprend pas ce que la plateforme apporte ne comprend pas
-          davantage ce que ce catalogue vient faire là. Même bloc, mot pour mot,
-          que sur la page d'un établissement. */}
-      <div className="mb-6"><PourquoiEduChat /></div>
+      {/* PLUS DE BLOC « POURQUOI PASSER PAR EDUCHAT » ICI. Il expliquait un
+          montage financier — contrat d'API, virement, contribution aux frais —
+          à qui vient chercher un tuteur : l'élève, le premier visiteur de
+          cette page, n'a rien à en faire, et le catalogue commençait quatre
+          paragraphes trop bas. L'argument reste là où il sert, sur
+          /etablissement, devant la personne qui devra le répéter à sa
+          direction. */}
 
       {/* Démo inline : « Essayer » un tuteur ouvre ce panneau ici même. */}
       <div ref={demoRef} className="scroll-mt-4">

@@ -2,13 +2,11 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import crypto from 'crypto';
 import { getDb } from '../../../server/db';
 import {
-  listPublished, isValidPromptName, getByName, porteeDepuisIp,
+  listPublished, isValidPromptName, getByName, porteeAppelant,
   MAX_PROMPT_BYTES, MAX_USER_BYTES,
 } from '../../../server/prompts';
 import { requireAuth } from '../../../server/token';
-import {
-  choixEcole, ecoleActivePourCompte, estAdminDe, estEnseignantDe, ecolePrincipale,
-} from '../../../server/appartenance';
+import { ecoleEnseignante, ecolePrincipale } from '../../../server/appartenance';
 import { resolveEtablissementByIp } from '../../../server/etablissements';
 import { getClientIp, isRateLimited } from '../../../server/access';
 import { ERR } from '../../../shared/providers';
@@ -16,8 +14,10 @@ import { ERR } from '../../../shared/providers';
 export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 
 // GET  /api/prompts — catalogue trié en base, et FILTRÉ SELON L'APPELANT :
-//   l'IP dit de quelle école il relève, l'école dit ce que ses élèves voient
-//   (voir porteeDepuisIp, src/server/prompts.ts).
+//   son école dit quels tuteurs réservés il voit, le réseau d'où il écrit dit
+//   si les publics du dehors lui parviennent (voir porteeAppelant,
+//   src/server/prompts.ts). Un enseignant identifié emporte donc son école
+//   chez lui : c'est là qu'il prépare la classe du lendemain.
 // POST /api/prompts — créer un BROUILLON (« en construction ») :
 //   - signé (Authorization: Bearer) : rattaché à l'auteur, soumis à son quota de 1 Mo ;
 //   - anonyme : possible (décision client), la validation sera le seul filtre.
@@ -33,11 +33,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // reçoit pas du routage i18n, et la déduire de Accept-Language
     // contredirait le choix de langue explicite du visiteur.
     const locale = String(req.query.locale ?? '').slice(0, 5);
-    // Le catalogue dépend de QUI appelle : l'IP dit de quelle école relève le
-    // navigateur, et l'école décide de ce que ses élèves voient. Un visiteur
-    // hors établissement reçoit le catalogue public — celui d'avant.
+    // La réponse dépend du jeton et de l'école active annoncée : un cache
+    // partagé servirait le catalogue réservé d'une école au visiteur suivant.
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.status(200).json({
-      prompts: listPublished(sort, q, locale, porteeDepuisIp(getClientIp(req))),
+      prompts: listPublished(sort, q, locale, porteeAppelant(req, getClientIp(req))),
     });
   }
 
@@ -103,7 +103,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // l'adresse ne quitte pas cette fonction. Hors établissement, le rattachement
   // reste NULL : le catalogue de la plateforme, visible de tous, comme avant.
   //
-  // ─── POURQUOI PAS « ecoleActivePourCompte » TOUT SEUL ───
+  // ─── POURQUOI PAS L'ÉCOLE ACTIVE TOUTE SEULE ───
   //
   // RATTACHER, C'EST CONFISQUER, et il faut le dire ainsi pour choisir juste.
   // Un tuteur rattaché à une école sort du catalogue public : CLAUSE_VISIBLE
@@ -120,23 +120,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // disparaître du catalogue public au profit de ce collège-là, sans rien lui
   // dire et sans pouvoir l'en sortir lui-même.
   //
-  // ON EXIGE DONC UN TITRE, exactement comme les quatre autres gardes issues
-  // du multi-écoles (requireGestionTuteurs, /api/etablissement, session-settings,
-  // dansLaPortee) : administrer cette école, ou en être l'enseignant au sens où
-  // elle en répond. C'est ce qui rend à la décision B ce qui lui revient — un
-  // enseignant partagé entre deux collèges rattache bien son tuteur à celui
-  // qu'il a choisi — sans donner la même chose à qui n'a fait que passer.
+  // ON EXIGE DONC UN TITRE — c'est très exactement ce que rend ecoleEnseignante
+  // (src/server/appartenance.ts), la fonction commune à toutes les vues où
+  // l'école du compte l'emporte sur celle de l'IP : administrer cette école, ou
+  // en être l'enseignant au sens où elle en répond. C'est ce qui rend à la
+  // décision B ce qui lui revient — un enseignant partagé entre deux collèges
+  // rattache bien son tuteur à celui qu'il a choisi — sans donner la même chose
+  // à qui n'a fait que passer.
   //
   // LE REPLI SUR L'ÉCOLE PRINCIPALE n'est pas décoratif : c'est le
   // comportement d'avant le multi-écoles (users.etablissement_id), et il couvre
   // le PROMPTAGOGUE NON-ENSEIGNANT qu'une administration a rattaché — ni admin,
-  // ni is_teacher, donc invisible des deux tests ci-dessus, et dont les tuteurs
+  // ni is_teacher, donc invisible du test ci-dessus, et dont les tuteurs
   // doivent pourtant continuer d'appartenir à son école.
-  const active = auth ? ecoleActivePourCompte(auth.email, choixEcole(req)) : null;
-  const parLeCompte = !auth ? null
-    : (active !== null && (estAdminDe(auth.email, active) || estEnseignantDe(auth.email, active)))
-      ? active
-      : ecolePrincipale(auth.email);
+  const parLeCompte = !auth ? null : (ecoleEnseignante(req) ?? ecolePrincipale(auth.email));
   const etablissementId = parLeCompte ?? resolveEtablissementByIp(ip)?.id ?? null;
 
   const now = Date.now();

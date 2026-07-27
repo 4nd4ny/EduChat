@@ -23,6 +23,15 @@ import {
 // ceux de la plateforme ; ce composant affiche ce qu'il reçoit. Changer
 // d'école dans le sélecteur change l'en-tête, donc la réponse : d'où la
 // dépendance à `ecole` dans les effets de relecture.
+//
+// UNE SEULE EXCEPTION, ET C'EST UNE DEMANDE, PAS UN FILTRE : sur /enseignant,
+// la requête porte `?portee=ecole`. Le SUPER-ADMINISTRATEUR est le seul dont
+// la portée n'était bornée par rien — il lisait donc, sur la page où il
+// prépare sa classe, les files de modération de tous les établissements du
+// site. Le drapeau lui dit « borne-toi à l'école du sélecteur ». Il ne peut
+// rien élargir, et le serveur reste seul à trancher (server/admin.ts).
+// On ne coupe RIEN à l'affichage : ce qui n'a pas à être lu ne doit pas
+// traverser le réseau.
 
 /** Ce que les deux sections ont besoin de savoir de leur page d'accueil. */
 type Props = {
@@ -30,9 +39,23 @@ type Props = {
   ecole: number | null;
   /** Démonstration (?visite=1) : aucun appel au serveur, aucune donnée réelle. */
   demo?: boolean;
+  /**
+   * Demander au serveur de se borner à l'école active (/enseignant).
+   * Absent sur /admin, qui modère aussi le catalogue de la plateforme.
+   */
+  limiterAEcole?: boolean;
 };
 
-export function ModerationTuteurs({ ecole, demo }: Props) {
+/**
+ * Le suffixe de requête qui porte la demande de portée.
+ *
+ * La valeur doit rester égale à PORTEE_ECOLE (src/server/admin.ts). On ne
+ * l'importe pas : ce module-là ouvre la base SQLite, et le faire entrer dans
+ * un composant l'emmènerait dans le paquet du navigateur.
+ */
+const SUFFIXE_ECOLE = '?portee=ecole';
+
+export function ModerationTuteurs({ ecole, demo, limiterAEcole }: Props) {
   const t = useT();
   const seule = useListeSeule();
   const [prompts, setPrompts] = useState<AdminPrompt[]>([]);
@@ -51,11 +74,11 @@ export function ModerationTuteurs({ ecole, demo }: Props) {
 
   const reload = useCallback(() => {
     if (demo) return;
-    fetch("/api/admin/prompts", { headers: authHeaders() })
+    fetch(`/api/admin/prompts${limiterAEcole ? SUFFIXE_ECOLE : ""}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => setPrompts(data.prompts ?? []))
       .catch(() => setPrompts([]));
-  }, [demo]);
+  }, [demo, limiterAEcole]);
 
   // `ecole` n'est pas lu dans le corps de l'effet — il voyage dans l'en-tête
   // que pose authHeaders(). Il figure ici comme DÉCLENCHEUR : changer d'école
@@ -351,7 +374,7 @@ export function ModerationTuteurs({ ecole, demo }: Props) {
   );
 }
 
-export function ModerationCommentaires({ ecole, demo }: Props) {
+export function ModerationCommentaires({ ecole, demo, limiterAEcole }: Props) {
   const t = useT();
   const seule = useListeSeule();
   const [comments, setComments] = useState<AdminComment[]>([]);
@@ -360,11 +383,11 @@ export function ModerationCommentaires({ ecole, demo }: Props) {
 
   const reload = useCallback(() => {
     if (demo) return;
-    fetch("/api/admin/comments", { headers: authHeaders() })
+    fetch(`/api/admin/comments${limiterAEcole ? SUFFIXE_ECOLE : ""}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => { setComments(data.comments ?? []); setModeratedTotal(data.moderatedTotal ?? 0); })
       .catch(() => { setComments([]); setModeratedTotal(0); });
-  }, [demo]);
+  }, [demo, limiterAEcole]);
 
   useEffect(() => { reload(); }, [reload, ecole]);
 

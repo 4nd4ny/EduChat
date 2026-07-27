@@ -122,6 +122,22 @@ export function isKnownIp(ip: string): boolean {
  * /etablissement) ; un établissement sans horaires propres retombe sur les
  * horaires globaux du serveur, et les IP hors base (amorçage SECRET_ALLOWED_IPS)
  * restent régies par ces horaires globaux.
+ *
+ * ─── CETTE FONCTION NE PREND QU'UNE IP, ET C'EST TOUTE LA RÈGLE ──────────────
+ *
+ * NE JAMAIS y substituer — ni y ajouter — l'école ACTIVE du compte appelant
+ * (src/server/appartenance.ts, ecoleEnseignante). Depuis le multi-écoles,
+ * l'école active l'emporte sur l'IP partout où il s'agit d'ENSEIGNER : un
+ * enseignant retrouve chez lui son espace, son catalogue et sa modération.
+ * Elle ne l'emporte NULLE PART où il s'agit de DÉPENSER.
+ *
+ * La raison tient en une phrase : payer sur la clé d'une école exige d'être
+ * physiquement sur son réseau. Autrement, un enseignant rattaché ferait payer
+ * son établissement depuis son salon, un dimanche à minuit, hors de toute
+ * séance et sans qu'aucun horaire ne l'arrête — et le porte-monnaie que
+ * /etablissement affiche cesserait d'être le budget d'un lieu pour devenir un
+ * compte ouvert au nom de chacun de ses membres. Le paramètre est une IP parce
+ * que la question posée est « d'où appelle-t-on ? », jamais « qui appelle ? ».
  */
 export async function mayUseServerKeys(ip: string): Promise<boolean> {
   if (await checkAuthLock()) return true;

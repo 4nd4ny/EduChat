@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import InterfaceTour from "../chat/InterfaceTour";
 import { useT } from "../i18n/useT";
-import { getAccount } from "../utils/account";
+import { authHeaders, getAccount } from "../utils/account";
 import { useListeSeule } from "../site/ListePaginee";
 import SelecteurEcole, { ecolesDemo, useEcoles } from "../site/SelecteurEcole";
 import { ZoneAdmin, ZoneEnseignant } from "../administration/commun";
@@ -36,7 +36,16 @@ import { MdLockOpen, MdLockOutline, MdSchool, MdWifiTethering } from "react-icon
 
 type Status = {
   ip: string;
+  /** LA SALLE, reconnue par l'IP : le lieu d'où part la requête. */
   etablissement: { name: string; hasOwnHours: boolean } | null;
+  /**
+   * L'ÉCOLE DONT ON S'OCCUPE — l'école active du compte quand il a un titre
+   * d'enseignement, la salle sinon. C'est elle que décrivent `settings` et
+   * `schoolProviders`, et c'est elle que visera le déploiement.
+   */
+  ecole: { id: number; name: string } | null;
+  /** Est-on physiquement sur le réseau de `ecole` ? */
+  surPlace: boolean;
   open: boolean;
   lockExpiresAt: number | null;
   withinSchedule: boolean;
@@ -108,6 +117,7 @@ export default function EnseignantPage() {
       setStatus({
         ip: "203.0.113.10",
         etablissement: { name: t("session.demo.school"), hasOwnHours: true },
+        ecole: { id: 1, name: t("session.demo.school") }, surPlace: true,
         open: false, lockExpiresAt: null, withinSchedule: true, maxUnlockMinutes: 240,
         // Salle fictive : on montre TOUTE la liste scolaire, sans regarder
         // quelles clés la plateforme détient réellement.
@@ -124,7 +134,11 @@ export default function EnseignantPage() {
       ]);
       return;
     }
-    fetch("/api/session-status")
+    // AVEC LE JETON ET L'ÉCOLE ACTIVE. Sans eux, le serveur ne connaît que la
+    // salle : l'enseignant qui prépare sa leçon chez lui verrait « aucun
+    // établissement reconnu » et perdrait la séance de son école. La route rend
+    // les DEUX (la salle et l'école de travail) et l'écran les distingue.
+    fetch("/api/session-status", { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then((data: Status) => {
         setStatus(data);
@@ -149,11 +163,20 @@ export default function EnseignantPage() {
     if (!router.isReady) return;   // ?visite=1 n'est lisible qu'ensuite
     refresh();
     if (demo) return;              // en démonstration, rien ne vient du serveur
-    fetch("/api/prompts?sort=uses")
+    // LES TUTEURS DE L'ÉCOLE, et pas seulement le catalogue public : le jeton
+    // porte l'école active, et /api/prompts y ajoute alors les tuteurs réservés
+    // de l'établissement (porteeAppelant, src/server/prompts.ts). C'est
+    // précisément la liste dans laquelle on choisit ce qu'on déploie ; sans
+    // elle, l'enseignant ne trouvait pas le tuteur écrit par son collègue.
+    fetch("/api/prompts?sort=uses", { headers: authHeaders() })
       .then(r => r.json())
       .then(data => setPrompts((data.prompts ?? []).map((p: any) => ({ name: p.name, description: p.description }))))
       .catch(() => {});
-  }, [refresh, router.isReady, demo]);
+    // `ecoles.active` est un DÉCLENCHEUR : il ne figure pas dans le corps de
+    // l'effet, il voyage dans l'en-tête que pose authHeaders(). Changer d'école
+    // dans le sélecteur doit relire l'état ET la liste des tuteurs, sans quoi
+    // l'écran garderait la séance de l'autre établissement.
+  }, [refresh, router.isReady, demo, ecoles.active]);
 
   // Ouvrir : le mot de passe porte la durée en suffixe (convention de
   // /api/auth, plafonnée côté serveur par SECRET_MAX_UNLOCK_MINUTES).
@@ -207,13 +230,26 @@ export default function EnseignantPage() {
       // « aucun fournisseur » que personne n'a demandée. Omettre le champ
       // reconduit la séance en cours — c'est le contrat de /api/session-settings.
       //
-      // AUCUN EN-TÊTE D'IDENTITÉ ICI, ET C'EST VOULU : la séance vise la salle
-      // reconnue par son IP. Joindre le jeton ferait basculer la cible sur
-      // l'école du COMPTE (voir /api/session-settings) — un enseignant venu
-      // donner cours dans un autre établissement déploierait alors chez lui.
+      // AVEC LE JETON ET L'ÉCOLE ACTIVE — décision de cette vague, et elle
+      // renverse la précédente. La séance visait la salle reconnue par son IP ;
+      // elle vise désormais l'ÉCOLE que montre le sélecteur, dès que le compte
+      // a un titre d'enseignement pour elle (/api/session-settings, qui garde
+      // l'IP comme repli pour le chemin sans compte : le mot de passe de salle).
+      //
+      // POURQUOI : préparer la classe du lendemain depuis chez soi est l'usage
+      // même de cette page. Sans le jeton, l'enseignant chez lui écrivait dans
+      // le vide — « aucun établissement reconnu » — alors qu'il voyait juste
+      // au-dessous le nom de son école.
+      //
+      // CE QU'ON ACCEPTE EN ÉCHANGE, dit franchement : l'enseignant ITINÉRANT,
+      // venu donner cours dans un autre établissement, déploie sur l'école de
+      // son sélecteur et non sur la salle où il se tient. C'est pour cela que
+      // l'écran affiche cette école EN TOUTES LETTRES juste au-dessus du bouton
+      // et signale, quand il n'est pas sur son réseau, qu'il travaille à
+      // distance. Ce qui est visible se corrige ; ce qui est implicite, non.
       const proposeFournisseurs = (status?.schoolProviders?.length ?? 0) > 0;
       const response = await fetch("/api/session-settings", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
+        method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           promptName, webSearch,
           ...(proposeFournisseurs ? { providers: fournisseurs } : {}),
@@ -285,6 +321,28 @@ export default function EnseignantPage() {
     && (ecoleCourante.isAdmin || (ecoles.isTeacher && ecoleCourante.principale));
   const administre = !demo && ecoles.administre;
 
+  // RATTACHÉ, MAIS PAS ENCORE RECONNU ENSEIGNANT ICI — le cas qu'il faut DIRE,
+  // sous peine de laisser croire à une panne.
+  //
+  // Vérifier son adresse depuis le réseau d'un collège rattache le compte à ce
+  // collège (src/pages/api/verify/confirm.ts) : c'est un lien d'APPARTENANCE,
+  // et il ne donne rien de plus, exprès — élèves compris. Le TITRE
+  // d'enseignant, lui, se pose par une administration (estEnseignantDe :
+  // is_teacher ET école principale). Entre les deux moments, l'enseignant voit
+  // son école dans le sélecteur et aucune des sections qui vont avec : sans
+  // cette ligne, il conclut que le site est cassé et il a raison de le croire.
+  //
+  // ET C'EST POURQUOI LA PHRASE EST RÉSERVÉE À QUI S'EST DÉCLARÉ ENSEIGNANT.
+  // `ecoles.isTeacher` (users.is_teacher) n'autorise rien — c'est une case
+  // cochée sur /verifier —, mais il dit exactement à QUI ce texte s'adresse.
+  // Sans lui, tout ÉLÈVE ayant vérifié son adresse sur le wifi du collège
+  // lirait « demandez votre rattachement d'enseignant » : on inviterait des
+  // centaines de mineurs à écrire à leur direction pour un rôle qui ne les
+  // concerne pas, et le lien par IP existe précisément pour ne rien leur
+  // donner. Qui n'a pas coché la case ne voit rien, et c'est très bien ainsi.
+  const rattacheSansTitre = !demo && ecoles.identifie && ecoles.isTeacher
+    && !!ecoleCourante && !peutModerer;
+
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 text-primary">
       <Head><title>{`${t("session.title")} — EduChat`}</title></Head>
@@ -301,14 +359,25 @@ export default function EnseignantPage() {
       </h1>
 
       {/* LE SÉLECTEUR D'ÉCOLE ACTIVE, en haut de l'espace enseignant : c'est
-          lui qui décide de quelle école parlent la modération plus bas et
-          l'espace /etablissement. La séance de classe, elle, reste réglée par
-          l'IP de la salle — les deux ne répondent pas à la même question.
+          lui qui décide de quelle école parle TOUTE la page — la séance qu'on
+          déploie, la modération plus bas, l'espace /etablissement. Depuis cette
+          vague, l'école du compte l'emporte sur celle de l'IP : l'enseignant
+          retrouve son établissement de chez lui, et ce sélecteur est le seul
+          endroit où il voit lequel. Ce qui dépend encore du LIEU, et qui ne
+          bougera pas — l'ouverture de la salle, la clé interne qui paie —
+          s'affiche à part, dans l'état ci-dessous.
           En démonstration, deux écoles fictives : c'est là qu'on comprend
           qu'un même compte peut enseigner dans plusieurs établissements. */}
       <div className="mt-4">
         <SelecteurEcole etat={demo ? ecolesDemo(t("session.demo.school"), t("ecole.demo.second")) : ecoles} />
       </div>
+
+      {/* Rattaché sans titre : on explique, et on ne montre pas de section vide. */}
+      {rattacheSansTitre && (
+        <p className="mt-1 rounded-lg border border-white/15 bg-secondary p-3 text-sm opacity-90">
+          {t("ecole.pasEncoreEnseignant", { ecole: ecoleCourante!.name })}
+        </p>
+      )}
 
       {!seule && (<>
       <p className="mt-2 text-sm opacity-80">{t("session.intro")}</p>
@@ -334,6 +403,22 @@ export default function EnseignantPage() {
                     {t("session.state.noSchoolAfter")}</>}
             </span>
           </li>
+          {/* HORS DES MURS. Deux faits que l'écran doit tenir séparés : l'école
+              dont on s'occupe (celle du sélecteur) et la salle d'où l'on écrit.
+              Quand elles diffèrent, le dire est la seule façon d'empêcher deux
+              contresens symétriques — croire que « fermé » parle de son école
+              alors qu'il parle du salon, et croire qu'ouvrir ici ouvrirait
+              là-bas. La clé de l'école ne se dépense que sur son réseau : c'est
+              une règle du serveur (mayUseServerKeys), pas une limite d'écran. */}
+          {status.ecole && !status.surPlace && (
+            <li className="flex items-start gap-2">
+              <MdSchool className="mt-0.5 shrink-0 text-[#DC6521]" />
+              <span>
+                {t("session.state.remoteBefore")} <b>{status.ecole.name}</b>{" "}
+                {t("session.state.remoteAfter")}
+              </span>
+            </li>
+          )}
           {status.lockExpiresAt && (
             <li>{t("session.state.unlockedUntil")} <b>{clock(status.lockExpiresAt)}</b>.</li>
           )}
@@ -412,6 +497,16 @@ export default function EnseignantPage() {
       {/* --- Déployer un tuteur --- */}
       <section className="mt-5 rounded-lg border border-white/15 bg-secondary p-4">
         <h2 className="font-bold">{t("session.deploy.title")}</h2>
+        {/* LA CIBLE, ÉCRITE EN TOUTES LETTRES au-dessus du bouton. Le
+            déploiement ne vise plus la salle mais l'école du sélecteur : dire
+            laquelle est ce qui rend le renversement sûr pour l'enseignant
+            itinérant, qui verrait sinon sa séance partir dans un autre
+            établissement sans qu'aucun mot ne l'en avertisse. */}
+        {status.ecole && (
+          <p className="mt-1 text-sm">
+            {t("session.deploy.cible")} <b>{status.ecole.name}</b>
+          </p>
+        )}
         <p className="mt-1 text-xs opacity-70">{t("session.deploy.hint")}</p>
         <label className="mt-3 flex flex-col gap-1 text-sm">
           {t("session.deploy.tutor")}
@@ -454,7 +549,10 @@ export default function EnseignantPage() {
           </fieldset>
         )}
 
-        <button data-tour="session-deployer" onClick={deployTutor} disabled={fige || !status.etablissement}
+        {/* Le bouton suit l'ÉCOLE DE TRAVAIL, non la salle : sans école active
+            ni établissement reconnu, il n'y a rien à viser et le geste n'a pas
+            de sens. Avec une école, il en a un, même de chez soi. */}
+        <button data-tour="session-deployer" onClick={deployTutor} disabled={fige || !status.ecole}
           className="mt-3 rounded border border-[#DC6521]/60 bg-[#DC6521]/10 px-4 py-2 text-sm font-semibold hover:bg-[#DC6521]/20 disabled:opacity-40">
           {t("session.deploy.cta")}
         </button>
@@ -467,12 +565,20 @@ export default function EnseignantPage() {
       {/* ─── CE QUI RELÈVE DE L'ÉCOLE, ET QUE TOUT ENSEIGNANT PEUT FAIRE ───
           La modération descend ici depuis /admin : valider le tuteur d'un
           collègue et relire un commentaire déposé sur une fiche sont des
-          gestes d'enseignement, pas d'exploitation de plateforme. Le serveur
-          borne déjà ce qui remonte — d'où l'absence de tout filtre ici. */}
+          gestes d'enseignement, pas d'exploitation de plateforme.
+
+          `limiterAEcole` DIT AU SERVEUR DE S'EN TENIR À L'ÉCOLE DU SÉLECTEUR,
+          et c'est ce qui rend ces deux listes utilisables. Elles étaient déjà
+          bornées pour un enseignant et pour un administrateur d'école ; le
+          super-administrateur, lui, recevait ici la modération de TOUS les
+          établissements du site — la file de son collège noyée dans celle des
+          autres, sous le nom d'une seule école affiché juste au-dessus. Le
+          filtre part donc AVEC la requête : rien à trier à l'écran, rien
+          d'inutile sur le réseau. */}
       {peutModerer && (
         <ZoneEnseignant titre={t("ens.moderation.title")} aide={t("ens.moderation.help")} tour="ens-moderation">
-          <ModerationTuteurs ecole={ecoles.active} />
-          <ModerationCommentaires ecole={ecoles.active} />
+          <ModerationTuteurs ecole={ecoles.active} limiterAEcole />
+          <ModerationCommentaires ecole={ecoles.active} limiterAEcole />
         </ZoneEnseignant>
       )}
 

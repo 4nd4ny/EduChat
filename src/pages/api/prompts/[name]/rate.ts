@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { getDb } from '../../../../server/db';
-import { getPublishedByName, porteeDepuisIp } from '../../../../server/prompts';
+import { getPublishedByName, porteeAppelant } from '../../../../server/prompts';
 import { getClientIp, isRateLimited } from '../../../../server/access';
 import { ERR } from '../../../../shared/providers';
 
@@ -28,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // On ne note que ce qu'on a le droit de voir. Sans cette portée, la route
   // deviendrait un oracle : un 404 ou un 200 sur un nom deviné révélerait
   // l'existence d'un tuteur réservé à une autre école.
-  const portee = porteeDepuisIp(ip);
+  const portee = porteeAppelant(req, ip);
   const row = getPublishedByName(String(req.query.name ?? ''), portee);
   if (!row) return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
 

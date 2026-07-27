@@ -21,7 +21,8 @@ import { ERR } from '../../shared/providers';
 // toujours la consommation du premier — l'écran mentirait sans rien signaler.
 //
 // L'administrateur de l'école peut modifier : les HORAIRES d'accès libre, le
-// QUOTA QUOTIDIEN PAR ÉLÈVE et le PLAFOND MENSUEL. Il ne peut PAS modifier :
+// QUOTA QUOTIDIEN PAR ÉLÈVE, le PLAFOND MENSUEL et l'OUVERTURE DE L'ATELIER DE
+// PROMPTAGOGUE sur l'accueil vu depuis son réseau. Il ne peut PAS modifier :
 // les IP (l'identité même de l'établissement — le site uniquement), le statut
 // RESPIRE ni l'email de facturation.
 
@@ -84,6 +85,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hours: parseHours(etab.hours),
         quotaPerStudentDaily: etab.quota_per_student_daily,
         tokenQuotaMonthly: etab.token_quota_monthly,
+        // L'atelier de promptagogue est-il proposé sur l'accueil, depuis le
+        // réseau de l'école ? Réglage de l'école sur elle-même, au même titre
+        // que ses horaires — d'où sa présence ici plutôt que dans /admin.
+        atelierPromptagogue: !!etab.atelier_promptagogue,
       },
       usage: {
         // TOTAL DU MOIS tel que le compte le PLAFOND MENSUEL (voir
@@ -142,9 +147,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const quotaPerStudentDaily = Math.max(0, Math.min(10_000_000, Number(req.body?.quotaPerStudentDaily) || 0));
   const tokenQuotaMonthly = Math.max(0, Math.min(10_000_000_000, Number(req.body?.tokenQuotaMonthly) || 0));
-
-  getDb().prepare('UPDATE etablissements SET hours = ?, quota_per_student_daily = ?, token_quota_monthly = ? WHERE id = ?')
+  // L'ATELIER NE SE MODIFIE QUE SI LE CORPS EN PARLE — la PRÉSENCE du champ
+  // décide, pas sa valeur. Un booléen absent lu comme « false » ferait
+  // refermer, sans erreur ni trace, un réglage qu'un administrateur a
+  // délibérément ouvert : il suffirait d'un appelant qui n'enregistre que les
+  // horaires. Aujourd'hui l'écran envoie toujours les trois réglages ensemble ;
+  // cette écriture conditionnelle est ce qui fait qu'un futur appelant partiel
+  // ne cassera rien en silence.
+  const db = getDb();
+  db.prepare('UPDATE etablissements SET hours = ?, quota_per_student_daily = ?, token_quota_monthly = ? WHERE id = ?')
     .run(JSON.stringify(hours), quotaPerStudentDaily, tokenQuotaMonthly, etab.id);
+  if (req.body !== null && typeof req.body === 'object' && 'atelierPromptagogue' in req.body) {
+    db.prepare('UPDATE etablissements SET atelier_promptagogue = ? WHERE id = ?')
+      .run(req.body.atelierPromptagogue ? 1 : 0, etab.id);
+  }
 
   res.status(200).json({ ok: true });
 }

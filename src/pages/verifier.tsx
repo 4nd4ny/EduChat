@@ -2,7 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
-import { getAccount, storeToken, clearToken } from "../utils/account";
+import { getAccount, storeToken, clearToken, setEcoleActive } from "../utils/account";
 import { deleteServerProfile, syncProfile } from "../utils/profileSync";
 import { useT } from "../i18n/useT";
 
@@ -23,6 +23,13 @@ export default function VerifierPage() {
   const [isTeacher, setIsTeacher] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // L'ÉCOLE RECONNUE À L'INSTANT PAR L'IP (src/pages/api/verify/confirm.ts).
+  // Le rattachement se faisait en silence : la personne héritait d'un sélecteur
+  // d'école sans avoir jamais lu d'où il venait, et l'on ne pouvait pas
+  // constater de l'extérieur que le mécanisme marchait. On l'annonce donc, une
+  // fois, à l'écran même où il vient de se produire.
+  const [ecoleReconnue, setEcoleReconnue] =
+    useState<{ name: string; nouvelle: boolean } | null>(null);
   const account = typeof window !== "undefined" ? getAccount() : null;
 
   // Code pré-rempli depuis le fragment d'URL (lien de l'email).
@@ -73,6 +80,17 @@ export default function VerifierPage() {
       return;
     }
     storeToken(data.token);
+    if (data.ecole) {
+      setEcoleReconnue({ name: String(data.ecole.name), nouvelle: !!data.ecole.nouvelle });
+      // École ACTIVE posée sur celle qu'on vient de reconnaître, et seulement
+      // quand le lien est NEUF : c'est là qu'on travaille, et le sélecteur doit
+      // s'ouvrir dessus. Sur un lien déjà connu, on ne touche à rien — écraser
+      // le choix d'un enseignant qui repasse par la vérification depuis un
+      // autre collège lui déplacerait son école sous les doigts. Ce n'est
+      // qu'une PRÉFÉRENCE : le serveur revérifie le lien à chaque requête
+      // (src/server/appartenance.ts).
+      if (data.ecole.nouvelle) setEcoleActive(Number(data.ecole.id));
+    }
     setStep("done");
     // Connexion réussie : si l'option est active, on synchronise dans la foulée
     // (récupère le profil d'un autre navigateur, puis pousse l'état fusionné).
@@ -154,6 +172,29 @@ export default function VerifierPage() {
             Votre nom d'affichage reprend pour l'instant le début de votre adresse ; il se
             personnalise depuis <Link href="/compte" className="underline">Mes données</Link>.
           </p>
+          {/* LE RATTACHEMENT, DIT UNE FOIS, LÀ OÙ IL VIENT D'AVOIR LIEU.
+              Deux phrases distinctes, parce que ce ne sont pas deux fois la
+              même nouvelle : « vous venez d'être rattaché » s'annonce, « vous
+              l'étiez déjà » se rappelle. Et la seconde ligne dit tout de suite
+              ce que ce lien NE donne PAS — sans quoi l'enseignant croirait
+              trouver sa console de classe et repartirait déçu. */}
+          {ecoleReconnue && (
+            <p className="rounded border border-white/15 bg-secondary p-3 text-sm">
+              {ecoleReconnue.nouvelle
+                ? <>{t("verify.ecole.rattache")} <b>{ecoleReconnue.name}</b>.</>
+                : <>{t("verify.ecole.deja")} <b>{ecoleReconnue.name}</b>.</>}
+              {/* CE QUE LE LIEN NE DONNE PAS — mais seulement à qui vient de
+                  demander le rôle d'enseignant. Le rattachement lui-même
+                  s'annonce à tout le monde (c'est un fait sur son compte) ;
+                  la limite du rôle, elle, ne répond qu'à une question posée.
+                  L'élève qui vérifie son adresse en classe n'a pas demandé de
+                  console : lui expliquer qu'elle lui est fermée l'inviterait à
+                  la réclamer. */}
+              {isTeacher && (
+                <>{" "}<span className="opacity-80">{t("verify.ecole.portee")}</span></>
+              )}
+            </p>
+          )}
           <Link href="/publier" className="rounded bg-[#DC6521] px-4 py-2 text-center font-bold hover:opacity-90">
             {t("verify.publish")}
           </Link>

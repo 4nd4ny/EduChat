@@ -3,6 +3,7 @@ import { ProviderId, providerDefaults, ReasoningLevel, useAnthropic } from "../c
 import { authHeaders, getAccount } from "../utils/account";
 import { useT } from "../i18n/useT";
 import { useFournisseurs } from "./useFournisseurs";
+import NoteAIAct from "./NoteAIAct";
 import { fr as frDict, type TranslationKey } from "../i18n/dictionaries";
 
 // Réglages de la conversation (fournisseur, modèle, raisonnement, clé
@@ -50,7 +51,7 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
   // Fournisseurs que le serveur peut servir sans clé personnelle, et lesquels
   // ce visiteur a le droit de voir. La règle vit dans useFournisseurs — la même
   // que celle appliquée sur la page « duel », et une seule fois écrite.
-  const { served, visibles } = useFournisseurs();
+  const { served, visibles, motifAIAct } = useFournisseurs();
 
   useEffect(() => { setHasAccount(!!getAccount()); }, []);
 
@@ -147,9 +148,10 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             aria-label={t("chat.input.provider")}
             className={`${FIELD} w-full ${bar && drapeau ? "rounded-l-none" : ""}`}
           >
-            {/* AI Act : les fournisseurs réservés aux adultes ne figurent pas
-                dans la liste. Le code les connaît toujours — ils reviendront
-                avec le compte adulte vérifié. */}
+            {/* AI Act : depuis l'IP d'une école, les fournisseurs écartés ne
+                figurent pas dans la liste — pour tout le monde, compte ou pas.
+                Ailleurs, ils n'y figurent que pour un compte dont la majorité
+                a été vérifiée. La note sous le menu dit lequel des deux. */}
             {visibles.map(id => {
               const item = providerDefaults[id];
               // « clé personnelle » ne se dit QUE là où l'information apprend
@@ -169,6 +171,12 @@ export default function ChatSettings({ layout }: { layout: "bar" | "panel" }) {
             })}
           </select>
         </div>
+        {/* L'absence s'explique SOUS le menu où on la constate : c'est là que
+            la question se pose, et pas dans une page d'aide qu'on n'ouvre
+            qu'après avoir renoncé. En barre (layout « bar »), la note
+            passerait à la ligne sous un contrôle étroit — on la réserve donc
+            au panneau, où elle a la place d'être lue. */}
+        {!bar && <div className="mt-2"><NoteAIAct motif={motifAIAct} /></div>}
       </Wrap>
       </div>
 
