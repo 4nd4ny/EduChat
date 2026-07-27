@@ -381,7 +381,38 @@ export default function EnseignantPage() {
         </p>
       )}
 
-      {!seule && (<>
+      {/* NI CONSOLE, NI PAGE BLANCHE. Depuis que la console est réservée au
+          titre, qui ne l'a pas verrait le sélecteur d'école et plus rien —
+          c'est-à-dire un écran cassé, et c'est ainsi qu'on remplit une boîte de
+          réception de messages inquiets.
+          Ce mot-ci ne remplace PAS `ecole.pasEncoreEnseignant` : celui-là
+          s'adresse à qui s'est déclaré enseignant et attend son rattachement,
+          et il invite à le demander. Celui-ci s'adresse à tous les autres —
+          élèves compris — et n'invite à RIEN : dire à des mineurs de réclamer
+          un titre d'enseignant à leur direction est exactement ce qu'on veut
+          éviter. Il constate, et il rouvre la porte du catalogue. */}
+      {!demo && !peutModerer && !rattacheSansTitre && (
+        <div className="mt-1 rounded-lg border border-white/15 bg-secondary p-3 text-sm">
+          <p className="opacity-90">{t("ens.denied.notTeacher")}</p>
+          <Link href="/" className="mt-3 inline-block rounded border border-white/20 px-4 py-2 hover:bg-tertiary">
+            {t("admin.denied.backCatalogue")}
+          </Link>
+        </div>
+      )}
+
+      {/* LA CONSOLE DE SÉANCE NE SE LIT PAS PAR-DESSUS L'ÉPAULE DU PROFESSEUR.
+          Elle s'affichait à quiconque ouvrait cette adresse depuis le réseau
+          d'une école — élèves compris. Rien ne s'y écrivait, /api/session-settings
+          refuse un compte sans titre (403), mais on montrait à un élève le
+          tuteur déployé, les fournisseurs cochés et l'état de sa salle : une
+          réponse à une question qu'il n'avait pas à poser, et le moyen de
+          savoir ce que son professeur venait de changer.
+          MÊME CONDITION QUE LA MODÉRATION ci-dessous (`peutModerer` : titre posé
+          par une administration, jamais ramassé au passage d'une IP), pour que
+          les deux moitiés de cet écran s'accordent. Qui n'a pas le titre voit
+          désormais le sélecteur d'école et la phrase qui lui explique où il en
+          est — et rien d'autre. */}
+      {!seule && (peutModerer || demo) && (<>
       <p className="mt-2 text-sm opacity-80">{t("session.intro")}</p>
 
       {/* --- État courant --- */}

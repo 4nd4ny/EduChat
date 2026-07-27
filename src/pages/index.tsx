@@ -14,6 +14,8 @@ import { useT } from "../i18n/useT";
 import type { TranslationKey } from "../i18n/dictionaries";
 import DemoChat from "../chat/DemoChat";
 import SiteStats from "../site/SiteStats";
+// Le TITRE d'enseignement se lit du compte, pas du réseau : voir `profils`.
+import { useEcoles } from "../site/SelecteurEcole";
 
 type Card = {
   name: string;
@@ -84,6 +86,7 @@ export default function Catalogue() {
   // CE QUE LE SERVEUR SAIT DU RÉSEAU D'OÙ L'ON ARRIVE. `null` = pas encore
   // répondu ; c'est un troisième état, et il compte (voir la ligne de profils).
   const [reseau, setReseau] = useState<{ ecole: string | null; atelier: boolean } | null>(null);
+  const ecoles = useEcoles();
   const ecole = reseau?.ecole ?? null;
 
   useEffect(() => setFavorites(getFavorites()), []);
@@ -129,13 +132,41 @@ export default function Catalogue() {
   // qui est exactement ce que « masqué » veut éviter ; et parier sur
   // l'enseignant l'afficherait à tous les visiteurs de passage. La case garde
   // sa place pour que la ligne ne saute pas quand la réponse arrive.
+  // ET « ENSEIGNANT » NE S'OUVRE PAS À TOUTE UNE SALLE DE CLASSE.
+  //
+  // Le réseau disait jusqu'ici à lui seul quelles cases paraissent, et sur le
+  // réseau d'un collège la case « Enseignant » paraissait donc pour TOUT LE
+  // MONDE — les élèves compris. Un élève y trouvait la console de séance en
+  // lecture : le tuteur déployé, les fournisseurs cochés, l'état de la salle.
+  // Rien ne s'écrivait — /api/session-settings refuse un compte sans titre
+  // (403) — mais on lui montrait les réglages de son professeur, et c'est déjà
+  // une réponse à une question qu'il n'avait pas à poser.
+  //
+  // LA SYMÉTRIE EST CELLE QUE LE CLIENT DEMANDE : le promptagogue est masqué
+  // dans une salle de classe parce que ce n'est pas ce qu'on vient y faire ;
+  // l'enseignant se masque pour qui n'enseigne pas, par la même raison.
+  //
+  // LE TITRE, PAS LA CASE COCHÉE. `isTeacher` seul est une case de /verifier
+  // que n'importe qui coche ; ce qui compte est le titre POSÉ PAR UNE
+  // ADMINISTRATION — administrateur de cette école, ou enseignant dans son
+  // école principale. C'est exactement `peutModerer` de /enseignant, et les
+  // deux écrans doivent s'accorder : offrir une porte qui s'ouvre sur un refus
+  // est pire que ne pas l'offrir.
+  const enseigneQuelquePart = ecoles.pret
+    && ecoles.ecoles.some(e => e.isAdmin || (ecoles.isTeacher && e.principale));
+
   const profils = useMemo<Array<Profile | null>>(() => {
-    if (!reseau) return [LEARNER, null, SCHOOL];
+    // TANT QUE LE RÉSEAU **OU** LE COMPTE N'EST PAS LU, on ne parie pas : la
+    // case reste vide plutôt que d'afficher une porte qu'on retirerait aussitôt
+    // — et « Enseignant » ne doit surtout pas clignoter dans une salle de
+    // classe, cliquable le temps d'une fraction de seconde.
+    if (!reseau || !ecoles.pret) return [LEARNER, null, SCHOOL];
     if (!reseau.ecole) return [LEARNER, PROMPTAGOGUE, SCHOOL];
-    return reseau.atelier
-      ? [LEARNER, TEACHER, PROMPTAGOGUE, SCHOOL]
-      : [LEARNER, TEACHER, SCHOOL];
-  }, [reseau]);
+    // Une fois la réponse là, l'élève n'a PAS de case vide à la place : on ne
+    // lui montre pas l'emplacement d'une porte qui n'est pas pour lui.
+    const debut = enseigneQuelquePart ? [LEARNER, TEACHER] : [LEARNER];
+    return reseau.atelier ? [...debut, PROMPTAGOGUE, SCHOOL] : [...debut, SCHOOL];
+  }, [reseau, ecoles.pret, enseigneQuelquePart]);
 
   useEffect(() => {
     const controller = new AbortController();

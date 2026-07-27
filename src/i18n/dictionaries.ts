@@ -1162,6 +1162,7 @@ export const fr = {
   'etab.tarif.verify': 'vérifier',
   'compte.wallet.prices': 'Les jetons sont décomptés au prix coûtant du fournisseur, sans rien y ajouter : la participation aux frais a déjà été prélevée à la recharge, une seule fois. Un compte personnel peut employer n\'importe quel modèle de n\'importe quel fournisseur — en dresser ici la grille entière serait interminable, et faux dès la sortie du modèle suivant. Le prix de chacun, entrée et sortie, se lit au catalogue public, tenu à jour par ceux dont c\'est le métier.',
   'compte.wallet.pricesLink': 'Voir le prix de chaque modèle',
+  'ens.denied.notTeacher': 'Cet espace est celui des enseignants d\'un établissement : on y ouvre une séance et on y déploie un tuteur pour une classe. Votre compte n\'a pas de séance à régler ici. Les tuteurs, eux, sont dans le catalogue.',
 } as const;
 
 export type TranslationKey = keyof typeof fr;
@@ -2296,6 +2297,7 @@ export const en: Record<TranslationKey, string> = {
   'etab.tarif.verify': 'verify',
   'compte.wallet.prices': 'Tokens are debited at the provider\'s cost price, with nothing added: the contribution to costs was already withheld at top-up, once. A personal account may use any model from any provider — laying out the whole grid here would be endless, and wrong the day the next model ships. The price of each one, input and output, is published in the public catalogue, kept up to date by those whose job it is.',
   'compte.wallet.pricesLink': 'See the price of every model',
+  'ens.denied.notTeacher': 'This space belongs to a school\'s teachers: it is where a session is opened and a tutor deployed for a class. Your account has no session to set here. The tutors themselves are in the catalogue.',
 };
 
 export const it: Record<TranslationKey, string> = {
@@ -3428,6 +3430,7 @@ export const it: Record<TranslationKey, string> = {
   'etab.tarif.verify': 'verificare',
   'compte.wallet.prices': 'I gettoni sono addebitati al prezzo di costo del fornitore, senza alcuna aggiunta: il contributo alle spese è già stato trattenuto alla ricarica, una sola volta. Un conto personale può impiegare qualsiasi modello di qualsiasi fornitore — riportarne qui l\'intera griglia sarebbe interminabile, e falso già all\'uscita del modello successivo. Il prezzo di ciascuno, ingresso e uscita, si legge nel catalogo pubblico, tenuto aggiornato da chi lo fa di mestiere.',
   'compte.wallet.pricesLink': 'Vedere il prezzo di ogni modello',
+  'ens.denied.notTeacher': 'Questo spazio è quello dei docenti di un istituto: qui si apre una sessione e si distribuisce un tutore a una classe. Il Suo account non ha alcuna sessione da impostare qui. I tutori, invece, si trovano nel catalogo.',
 };
 
 export const de: Record<TranslationKey, string> = {
@@ -4560,6 +4563,7 @@ export const de: Record<TranslationKey, string> = {
   'etab.tarif.verify': 'prüfen',
   'compte.wallet.prices': 'Token werden zum Selbstkostenpreis des Anbieters abgebucht, ohne jeden Zuschlag: Der Kostenbeitrag wurde bereits beim Aufladen einbehalten, ein einziges Mal. Ein persönliches Konto kann jedes Modell jedes Anbieters nutzen — die ganze Tabelle hier aufzuführen wäre endlos und schon mit dem nächsten Modell falsch. Der Preis jedes einzelnen, Eingabe und Ausgabe, steht im öffentlichen Katalog, den jene pflegen, deren Beruf es ist.',
   'compte.wallet.pricesLink': 'Den Preis jedes Modells ansehen',
+  'ens.denied.notTeacher': 'Dieser Bereich gehört den Lehrpersonen einer Schule: hier wird eine Lektion eröffnet und ein Tutor für eine Klasse aufgeschaltet. Ihr Konto hat hier keine Lektion einzustellen. Die Tutoren selbst finden Sie im Katalog.',
 };
 
 export const dictionaries = { fr, en, it, de } as const;
