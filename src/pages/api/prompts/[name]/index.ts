@@ -23,7 +23,8 @@ export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 // réversible ; « archive » (admin) masque définitivement le prompt de
 // l'interface d'administration, mais la ligne reste en base.
 // L'auteur d'un brouillon est identifié par son jeton, OU par l'URL secrète
-// (share_token) pour les propositions anonymes.
+// (share_token) pour les propositions anonymes — cette dernière TANT QUE LE
+// TUTEUR EST EN CONSTRUCTION (draft) seulement : voir resolveRights.
 //
 // UN SECOND AXE, INDÉPENDANT DU STATUT : la PORTÉE. « publié » dit que le
 // tuteur est bon ; « partager / reserver » dit jusqu'où il paraît. Un tuteur
@@ -31,7 +32,7 @@ export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
 // son administration ne l'a pas partagé (voir src/server/prompts.ts).
 
 type Rights = {
-  isAuthor: boolean;      // jeton de l'auteur, ou share_token du brouillon
+  isAuthor: boolean;      // jeton de l'auteur, ou share_token d'un tuteur ENCORE brouillon
   isAdmin: boolean;
   isPromptagogue: boolean; // compte vérifié : peut approuver (décision client)
   auth: TokenPayload | null;
@@ -55,7 +56,14 @@ function resolveRights(req: NextApiRequest, row: PromptRow): Rights {
   const auth = requireAuth(req);
   const shareToken = String(req.body?.shareToken ?? '');
   const byToken = !!auth && !!row.author_email && auth.email === row.author_email;
-  const byShare = !!row.share_token && shareToken === row.share_token;
+  // L'URL secrète n'est une clé d'auteur que pour un BROUILLON. Elle circule
+  // auprès des testeurs (c'est le mécanisme d'invitation) et reste lisible par
+  // /api/drafts/[token] après publication : si elle valait encore droit
+  // d'écriture, n'importe quel testeur réécrirait un tuteur soumis ou PUBLIÉ
+  // sans nouvelle modération. Une fois soumis, l'auteur anonyme n'a plus rien
+  // à faire lui-même (l'atelier ne propose l'édition qu'en brouillon) ; la
+  // suite appartient à la modération, et l'auteur identifié garde son jeton.
+  const byShare = row.status === 'draft' && !!row.share_token && shareToken === row.share_token;
   const isAdmin = !!auth && isAdminEmail(auth.email);
   let isPromptagogue = false;
   if (auth) {
@@ -188,7 +196,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // TOUTE modification du texte crée une nouvelle version (décision client
     // du 25 juillet) : l'historique reste lisible quel que soit l'état du
     // prompt, et les conversations en cours restent sur la leur — la bascule
-    // demeure explicite (décision n°9).
+    // demeure explicite (décision n°9). Il n'y a donc plus de réécriture « sur
+    // place » d'une version existante : une version publiée ne change jamais.
     const bumpVersion = bodyChanged;
     const version = bumpVersion ? row.version + 1 : row.version;
     db.transaction(() => {
@@ -197,9 +206,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (bumpVersion) {
         db.prepare('INSERT INTO prompt_versions (prompt_id, version, body, created_at) VALUES (?, ?, ?, ?)')
           .run(row.id, version, body, now);
-      } else if (bodyChanged) {
-        db.prepare('UPDATE prompt_versions SET body = ?, created_at = ? WHERE prompt_id = ? AND version = ?')
-          .run(body, now, row.id, row.version);
       }
     })();
 

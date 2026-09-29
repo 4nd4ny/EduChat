@@ -67,7 +67,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'PUT') {
-    const code = String(req.body?.code ?? '').trim();
+    // Même normalisation que /api/verify/confirm : le code part sous la forme
+    // « 123-456 », mais la personne le recopie souvent sans tiret ou avec une
+    // espace. Refuser « 123456 » comme un code FAUX lui coûtait un essai sur
+    // cinq pour une simple question de mise en forme. Ce qui n'a pas six
+    // chiffres reste tel quel : il échouera à la comparaison, et compte.
+    const saisi = String(req.body?.code ?? '').replace(/[\s-]/g, '');
+    const code = /^\d{6}$/.test(saisi) ? `${saisi.slice(0, 3)}-${saisi.slice(3)}` : saisi;
     const row = db.prepare('SELECT new_email AS newEmail, code_hash AS hash, expires_at AS expires, attempts FROM email_changes WHERE old_email = ?')
       .get(auth.email) as { newEmail: string; hash: string; expires: number; attempts: number } | undefined;
     if (!row) return res.status(404).json({ error: { code: 'ERR_CODE_UNKNOWN' } });
@@ -124,6 +130,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Même raison que comments.moderated_by : une trace de relecture n'a de
       // valeur que si elle désigne encore quelqu'un.
       db.prepare('UPDATE facture_mentions SET par = ? WHERE par = ?').run(nouveau, ancien);
+      db.prepare('UPDATE credit_mouvements SET par = ? WHERE par = ?').run(nouveau, ancien);
+      db.prepare('UPDATE recharges SET par = ? WHERE par = ?').run(nouveau, ancien);
+      db.prepare('UPDATE users SET adult_verified_by = ? WHERE adult_verified_by = ?').run(nouveau, ancien);
+      // LE PORTE-MONNAIE PERSONNEL : users.solde a suivi avec la ligne users,
+      // mais le registre et les intentions de recharge désignent leur titulaire
+      // par son adresse. Sans ces deux lignes, le relevé disparaissait de la
+      // nouvelle adresse (et de son export), le compte passait pour n'avoir
+      // jamais provisionné, et une recharge PayPal EN ATTENTE aurait crédité
+      // au retour l'ancienne adresse — qui n'a plus de compte.
+      db.prepare('UPDATE credit_mouvements SET titulaire_email = ? WHERE titulaire_email = ?').run(nouveau, ancien);
+      db.prepare('UPDATE recharges SET titulaire_email = ? WHERE titulaire_email = ?').run(nouveau, ancien);
       db.prepare('DELETE FROM email_changes WHERE old_email = ?').run(ancien);
     })();
 

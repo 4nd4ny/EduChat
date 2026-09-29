@@ -187,16 +187,29 @@ describe('Scénarios d’erreur à la confirmation', () => {
     expect((await base()).prepare('SELECT 1 FROM users WHERE email=?').get('a@ecole.ch')).toBeDefined();
   });
 
-  it('le code doit être recopié AVEC son tiret (pas de normalisation, contrairement à /api/verify)', async () => {
-    // Voir « Anomalies constatées » : « 123456 » ou « 123 456 » comptent comme un essai faux.
+  it('le code se recopie avec ou sans tiret, avec des espaces (même normalisation que /api/verify)', async () => {
+    // Anomalie corrigée : « 123456 » ou « 123 456 » ne comptent plus comme un essai faux.
     const jeton = await creerCompte('a@ecole.ch');
     await demander(jeton, 'b@ecole.ch');
-    const r = await confirmer(jeton, codes[0].code.replace('-', ''));
-    expect(r.status).toBe(403);
+    const chiffres = codes[0].code.replace('-', '');
+    // Un code de bonne forme mais faux compte toujours comme un essai.
+    const faux = chiffres === '100100' ? '200 200' : '100 100';
+    expect((await confirmer(jeton, faux)).status).toBe(403);
     const essais = (await base()).prepare('SELECT attempts FROM email_changes').get() as any;
     expect(essais.attempts).toBe(1);
-    // Les espaces autour sont en revanche tolérés.
-    expect((await confirmer(jeton, `  ${codes[0].code} `)).status).toBe(200);
+    const r = await confirmer(jeton, `${chiffres.slice(0, 3)} ${chiffres.slice(3)}`);
+    expect(r.status).toBe(200);
+    expect(r.json.email).toBe('b@ecole.ch');
+  });
+
+  it('les formes « 123456 » et «  123-456  » sont acceptées elles aussi', async () => {
+    for (const forme of [(c: string) => c.replace('-', ''), (c: string) => `  ${c} `]) {
+      await viderBase();
+      codes.length = 0;
+      const jeton = await creerCompte('a@ecole.ch');
+      await demander(jeton, 'b@ecole.ch');
+      expect((await confirmer(jeton, forme(codes[0].code))).status).toBe(200);
+    }
   });
 
   it('code expiré : 410 et la demande est effacée', async () => {
@@ -236,21 +249,34 @@ describe('Scénarios d’erreur à la confirmation', () => {
   });
 });
 
-describe('Anomalie constatée : le porte-monnaie personnel ne suit pas', () => {
-  it('le solde suit la personne, mais pas le relevé ni les recharges (titulaire_email)', async () => {
-    // Comportement ACTUEL, décrit dans « Anomalies constatées » de UC-05.
+describe('Non-régression : le porte-monnaie personnel suit la personne', () => {
+  it('le solde, le relevé, les recharges et les traces « par » suivent la nouvelle adresse', async () => {
+    // Anomalie corrigée : titulaire_email et les colonnes de traçabilité sont migrés.
     const jeton = await creerCompte('a@ecole.ch', { solde: 12 });
+    const etab = await creerEtablissement();
     const db = await base();
     db.prepare(`INSERT INTO credit_mouvements (etablissement_id, titulaire_email, ts, genre, montant, solde, detail, par)
                 VALUES (0, ?, ?, 'recharge', 12, 12, '', 'paypal')`).run('a@ecole.ch', Date.now());
+    // Mouvement de l'ÉCOLE saisi par la personne : seule la trace « par » la désigne.
+    db.prepare(`INSERT INTO credit_mouvements (etablissement_id, titulaire_email, ts, genre, montant, solde, detail, par)
+                VALUES (?, NULL, ?, 'ajustement', 3, 3, '', ?)`).run(etab, Date.now(), 'a@ecole.ch');
     db.prepare(`INSERT INTO recharges (order_id, etablissement_id, titulaire_email, montant, cree_at, par)
                 VALUES ('ORD-1', 0, ?, 5, ?, ?)`).run('a@ecole.ch', Date.now(), 'a@ecole.ch');
+    await creerCompte('eleve@ecole.ch');
+    db.prepare('UPDATE users SET adult_verified_by = ? WHERE email = ?').run('a@ecole.ch', 'eleve@ecole.ch');
     await demander(jeton, 'b@ecole.ch');
     expect((await confirmer(jeton, codes[0].code)).status).toBe(200);
 
     expect((db.prepare('SELECT solde FROM users WHERE email=?').get('b@ecole.ch') as any).solde).toBe(12);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM credit_mouvements WHERE titulaire_email=?').get('b@ecole.ch')).toEqual({ n: 0 });
-    expect(db.prepare('SELECT COUNT(*) AS n FROM credit_mouvements WHERE titulaire_email=?').get('a@ecole.ch')).toEqual({ n: 1 });
-    expect((db.prepare('SELECT titulaire_email FROM recharges WHERE order_id=?').get('ORD-1') as any).titulaire_email).toBe('a@ecole.ch');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM credit_mouvements WHERE titulaire_email=?').get('b@ecole.ch')).toEqual({ n: 1 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM credit_mouvements WHERE titulaire_email=?').get('a@ecole.ch')).toEqual({ n: 0 });
+    // La recharge EN ATTENTE créditera la nouvelle adresse au retour de PayPal.
+    expect(db.prepare('SELECT titulaire_email, par, etat FROM recharges WHERE order_id=?').get('ORD-1'))
+      .toEqual({ titulaire_email: 'b@ecole.ch', par: 'b@ecole.ch', etat: 'attente' });
+    // Traces de saisie : l'adresse migre, les valeurs techniques (« paypal ») ne bougent pas.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM credit_mouvements WHERE par = 'a@ecole.ch'").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM credit_mouvements WHERE par = 'b@ecole.ch'").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM credit_mouvements WHERE par = 'paypal'").get()).toEqual({ n: 1 });
+    expect((db.prepare('SELECT adult_verified_by FROM users WHERE email=?').get('eleve@ecole.ch') as any).adult_verified_by).toBe('b@ecole.ch');
   });
 });

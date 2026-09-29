@@ -230,18 +230,42 @@ describe('Scénario alternatif : retoucher un tuteur déjà publié', () => {
     expect((await ligne('Socrate')).status).toBe('published'); // pas de nouvelle modération
   });
 
-  // Comportement ACTUEL, signalé dans « Anomalies constatées » : l'URL secrète
-  // reste une clé d'auteur après la publication. Qui la détient (elle a pu
-  // circuler auprès des testeurs) réécrit le tuteur publié sans nouvelle
-  // modération ; seule une notification part à l'administration.
-  it('l’URL secrète d’une proposition anonyme permet encore de réécrire le tuteur une fois publié', async () => {
+  // Anomalie corrigée : l'URL secrète n'est une clé d'auteur que tant que le
+  // tuteur est un brouillon. Elle a circulé auprès des testeurs ; une fois le
+  // tuteur publié, elle ne sert plus qu'à le LIRE depuis l'atelier.
+  it('l’URL secrète d’une proposition anonyme ne permet plus de réécrire le tuteur une fois publié', async () => {
     const r = await deposerTuteur({ name: 'Hypatie' });
     (await base()).prepare("UPDATE prompts SET status = 'published' WHERE name = 'Hypatie'").run();
     const essai = await appeler(brouillon, { query: { token: r.json.shareToken } });
+    expect(essai.status).toBe(200);
     expect(essai.json.prompt.status).toBe('published');
     const edit = await patcher('Hypatie', { action: 'edit', body: CORPS_2, shareToken: r.json.shareToken });
-    expect(edit.status).toBe(200);
-    expect((await ligne('Hypatie')).status).toBe('published');
+    expect(edit.status).toBe(403);
+    expect(edit.json.error.code).toBe('ERR_FORBIDDEN');
+    const row = await ligne('Hypatie');
+    expect(row.status).toBe('published');
+    expect(row.body).toBe(CORPS);
+    expect(row.version).toBe(1);
+    expect(notifications).toEqual([]);
+  });
+
+  it('ni un tuteur soumis ni un tuteur dépublié ne se réécrivent par l’URL secrète', async () => {
+    for (const statut of ['pending', 'retired']) {
+      await viderBase();
+      const r = await deposerTuteur({ name: 'Hypatie' });
+      (await base()).prepare('UPDATE prompts SET status = ? WHERE name = ?').run(statut, 'Hypatie');
+      const edit = await patcher('Hypatie', { action: 'edit', body: CORPS_2, shareToken: r.json.shareToken });
+      expect(edit.status).toBe(403);
+      expect((await ligne('Hypatie')).body).toBe(CORPS);
+    }
+  });
+
+  it('l’auteur identifié garde, lui, la main sur son tuteur publié par son jeton', async () => {
+    const jeton = await creerCompte('auteur@ecole.ch');
+    const r = await deposerTuteur({ name: 'Socrate' }, { token: jeton });
+    (await base()).prepare("UPDATE prompts SET status = 'published' WHERE name = 'Socrate'").run();
+    expect((await patcher('Socrate', { action: 'edit', body: CORPS_2, shareToken: r.json.shareToken })).status).toBe(403);
+    expect((await patcher('Socrate', { action: 'edit', body: CORPS_2 }, jeton)).json).toEqual({ ok: true, version: 2 });
   });
 });
 

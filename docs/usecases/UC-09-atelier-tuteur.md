@@ -45,8 +45,10 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 
 - **A1 — Dépôt anonyme.** Sans jeton, le tuteur est créé sans auteur (`author_email = NULL`,
   `author_name = ''`) et sans quota. L'URL secrète est la **seule clé** : présenter
-  `shareToken` dans le corps du `PATCH` donne les droits d'auteur (`edit`, `submit`). La
-  notification de soumission indique « ANONYME ».
+  `shareToken` dans le corps du `PATCH` donne les droits d'auteur (`edit`, `submit`) **tant que
+  le tuteur est un brouillon**. Une fois soumis, publié ou dépublié, le lien ne sert plus qu'à
+  lire et tester (`GET /api/drafts/[token]`, `/api/completion`). La notification de soumission
+  indique « ANONYME ».
 - **A2 — Variante.** `/publier?variante=Socrate` pré-remplit le formulaire depuis la fiche
   originale (sans `?locale=`, donc le texte original). `inspiredBy` est résolu en
   `prompts.inspired_by` ; une source inconnue est ignorée silencieusement.
@@ -63,8 +65,9 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 - **A4 — Correction par un collègue.** Un enseignant ou administrateur de l'école propriétaire
   (`requireGestionTuteurs` + `tuteurDeLEcole`) peut éditer le tuteur d'un collègue. Un tuteur de
   la plateforme (`NULL`) n'appartient à aucune école.
-- **A5 — Retouche d'un tuteur publié.** L'édition du corps d'un tuteur publié crée une version,
-  le laisse publié, périme ses traductions (UC-24) et notifie « Traductions à revérifier ».
+- **A5 — Retouche d'un tuteur publié.** Par son **jeton** d'auteur (ou un gestionnaire),
+  jamais par l'URL secrète : l'édition du corps d'un tuteur publié crée une version, le laisse
+  publié, périme ses traductions (UC-24) et notifie « Traductions à revérifier ».
 
 ## Scénarios d'erreur
 
@@ -79,7 +82,8 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 | Plus de 20 écritures (`PATCH`/`DELETE`) / min depuis une IP | `429 ERR_RATE_LIMIT` |
 | URL secrète inconnue, mal formée, ou tuteur archivé | `404 ERR_PROMPT_UNKNOWN` |
 | Tuteur inconnu au `PATCH` | `404 ERR_PROMPT_UNKNOWN` |
-| Édition/soumission sans être auteur (jeton ou `shareToken`) ni gestionnaire | `403 ERR_FORBIDDEN` |
+| Édition/soumission sans être auteur (jeton, ou `shareToken` d'un **brouillon**) ni gestionnaire | `403 ERR_FORBIDDEN` |
+| `shareToken` présenté pour un tuteur soumis, publié ou dépublié | `403 ERR_FORBIDDEN` |
 | Soumettre autre chose qu'un brouillon | `409 ERR_STATUS` |
 | Tuteur archivé | `409 ERR_ARCHIVED` |
 | Action inconnue | `400 ERR_ACTION_UNKNOWN` |
@@ -90,7 +94,9 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 
 - Le `share_token` n'apparaît jamais dans une carte publique (`toCard`) ; il n'est rendu qu'à la
   création et par `GET /api/drafts/[token]` (à qui le connaît déjà).
-- `getByShareToken` refuse tout jeton qui n'est pas de l'hexadécimal minuscule de 24 à 64
+- L'URL secrète ne vaut droit d'écriture que sur un **brouillon** (`resolveRights`) : elle
+  circule auprès des testeurs, et un tuteur soumis ou publié ne se réécrit pas sans modération.
+- `getByShareToken` résout le jeton quel que soit le statut (lecture seule) ; il refuse tout jeton qui n'est pas de l'hexadécimal minuscule de 24 à 64
   caractères, et ignore les tuteurs archivés.
 - Le quota d'auteur exclut les tuteurs archivés : il reste libérable.
 - La langue hors `fr/en/it/de` retombe sur `fr` ; la description est tronquée à 500 caractères.
@@ -104,14 +110,18 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 
 ## Anomalies constatées
 
-- **L'URL secrète reste une clé d'auteur après publication.** `resolveRights`
+- **Corrigée** — `resolveRights` n'accepte plus `shareToken` que pour un tuteur au statut
+  `draft` ; `getByShareToken` reste une simple lecture (l'atelier suit son tuteur publié). Constat
+  d'origine : **l'URL secrète restait une clé d'auteur après publication.** `resolveRights`
   (`src/pages/api/prompts/[name]/index.ts:58`) accepte `shareToken` quel que soit le statut, et
   `getByShareToken` (`src/server/prompts.ts:247`) le résout aussi pour un tuteur publié. Quiconque
   a reçu le lien d'essai (les testeurs invités) peut donc réécrire un tuteur **publié** sans
-  nouvelle modération (seule la notification « Traductions à revérifier » part). Test :
-  `atelier.test.ts` › « l'URL secrète d'une proposition anonyme permet encore de réécrire… ».
-- Mineur : la branche `else if (bodyChanged)` de l'édition (`[name]/index.ts:200`) est
-  inatteignable depuis que `bumpVersion === bodyChanged`.
+  nouvelle modération (seule la notification « Traductions à revérifier » part). Tests :
+  `atelier.test.ts` › « l'URL secrète d'une proposition anonyme ne permet plus de réécrire… »,
+  « ni un tuteur soumis ni un tuteur dépublié… », « l'auteur identifié garde, lui, la main… ».
+- **Corrigée** — branche morte supprimée. Constat d'origine : mineur, la branche
+  `else if (bodyChanged)` de l'édition (`[name]/index.ts:200`) était inatteignable depuis que
+  `bumpVersion === bodyChanged`.
 
 ## Tests
 
@@ -133,7 +143,7 @@ tuteur n'entre au catalogue qu'après validation (UC-10).
 | A3 | école de l'enseignant, IP de l'école pour l'anonyme, NULL sans titre, école principale du promptagogue, choix par en-tête, jamais reçu du client |
 | A2 | variante liée à sa source ; source inconnue ignorée |
 | A4 | collègue de l'école propriétaire autorisé, autre école refusée, tuteur NULL refusé |
-| A5 | retouche d'un tuteur publié : version + notification ; anomalie de l'URL secrète |
+| A5 | retouche d'un tuteur publié par le jeton d'auteur : version + notification ; l'URL secrète ne réécrit ni un tuteur publié, ni soumis, ni dépublié |
 | Erreurs | nom invalide/réservé/pris ; corps trop court/long ; quota (archivés exclus) ; anonyme sans quota ; langue/description normalisées ; 429 au dépôt ; 405 |
 | Erreurs | URL secrète inconnue, mal formée, archivée ; 405 |
 | Erreurs | édition trop courte/longue/hors quota ; double soumission ; tuteur/action inconnus ; `DELETE` désactivé ; archivé figé ; 429 en écriture |

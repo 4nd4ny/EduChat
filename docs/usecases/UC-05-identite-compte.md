@@ -44,11 +44,18 @@ les tables dans une seule transaction.
    `email_changes` (clé : l'ancienne adresse, validité 15 min, compteur d'essais remis à 0).
 3. Le code part à la **nouvelle** adresse (sans copie cachée ; le suivi reçoit un avis **sans le
    code**) ; un avertissement part à l'**ancienne** adresse, en tâche de fond.
-4. Le titulaire recopie le code : `PUT /api/me/email { code }`.
+4. Le titulaire recopie le code : `PUT /api/me/email { code }`. Comme pour `/api/verify/confirm`
+   (UC-04), espaces et tirets sont ignorés : `123-456`, `123456` et `123 456` sont équivalents.
 5. Le serveur vérifie le code puis, dans **une transaction**, remplace l'adresse dans `users`,
    `profiles`, `profile_deletions`, `user_keys`, `prompts.author_email`, `usage_log.teacher_email`,
    `session_settings.set_by_email`, `comments.moderated_by`, `user_etablissements` (le rang
-   d'administrateur d'école suit la personne), `facture_mentions.par`, et supprime la demande.
+   d'administrateur d'école suit la personne), le porte-monnaie personnel
+   (`credit_mouvements.titulaire_email`, `recharges.titulaire_email` : relevé et recharges en
+   attente ; `users.solde` suit avec la ligne `users`), les traces de saisie
+   (`facture_mentions.par`, `credit_mouvements.par`, `recharges.par`, `users.adult_verified_by`),
+   et supprime la demande. Ne sont volontairement pas touchés : `etablissements.billing_email`
+   (contact de facturation de l'école, que l'école administre elle-même) et `email_codes` (code
+   de connexion éphémère d'une adresse, sans lien avec le compte).
 6. La réponse `{ ok, email, token }` porte un **nouveau jeton** (l'ancien désigne une adresse qui
    n'est plus un compte) ; la page le range et recharge tout.
 
@@ -79,7 +86,7 @@ les tables dans une seule transaction.
 | Adresse déjà portée par un compte (à la demande ou à la confirmation) | `409 ERR_EMAIL_TAKEN` |
 | Confirmation sans demande en cours | `404 ERR_CODE_UNKNOWN` |
 | Code expiré (demande effacée) | `410 ERR_CODE_EXPIRED` |
-| Code faux (essai compté) | `403 ERR_CODE_INVALID` |
+| Code faux, ou autre chose que six chiffres une fois espaces et tirets retirés (essai compté) | `403 ERR_CODE_INVALID` |
 | 5 essais faux | `429 ERR_TOO_MANY_ATTEMPTS`, même avec le bon code |
 | Lien d'école déjà posé sur la nouvelle adresse | exception SQL → **toute** la transaction est annulée (500) |
 | Méthode autre que POST/PUT sur `/api/me/email` | `405` (`Allow: POST, PUT`) |
@@ -101,18 +108,21 @@ les tables dans une seule transaction.
 
 ## Anomalies constatées
 
-1. **Le porte-monnaie personnel ne suit pas le changement d'adresse**
-   (`src/pages/api/me/email.ts:90-128`). La transaction migre `users.solde` (avec la ligne
-   `users`) mais **ni `credit_mouvements.titulaire_email` ni `recharges.titulaire_email`**.
-   Conséquences : le relevé disparaît de « Mes données » et de l'export de la nouvelle adresse ;
-   `aUnPorteMonnaie` repasse à faux (le compte est traité comme n'ayant jamais provisionné) ; une
-   recharge PayPal en attente créditerait l'**ancienne** adresse, qui n'a plus de ligne `users`
-   (`bouger` lève « Porte-monnaie introuvable »). Les colonnes de traçabilité
-   `credit_mouvements.par`, `recharges.par` et `users.adult_verified_by` ne sont pas migrées non
-   plus. Test : `changementEmail.test.ts` › « le porte-monnaie personnel ne suit pas ».
-2. **Le code n'est pas normalisé** (`src/pages/api/me/email.ts:70`) : contrairement à
-   `/api/verify/confirm` (UC-04), `123456` ou `123 456` sont refusés comme **code faux** et
-   consomment un des 5 essais. Test : « le code doit être recopié AVEC son tiret ».
+1. **Corrigée** — la transaction migre désormais `titulaire_email` et les colonnes `par` /
+   `adult_verified_by` : relevé, recharges en attente et traces suivent la nouvelle adresse
+   (`changementEmail.test.ts` › « le porte-monnaie personnel suit la personne »). Constat
+   d'origine : **le porte-monnaie personnel ne suivait pas le changement d'adresse**
+   (`src/pages/api/me/email.ts:90-128`). La transaction migrait `users.solde` (avec la ligne
+   `users`) mais **ni `credit_mouvements.titulaire_email` ni `recharges.titulaire_email`** : le
+   relevé disparaissait de « Mes données » et de l'export, `aUnPorteMonnaie` repassait à faux, et
+   une recharge PayPal en attente aurait crédité l'**ancienne** adresse, sans ligne `users`
+   (`bouger` lève « Porte-monnaie introuvable »). `credit_mouvements.par`, `recharges.par` et
+   `users.adult_verified_by` n'étaient pas migrées non plus.
+2. **Corrigée** — le code est normalisé comme dans `/api/verify/confirm` (`123456`, `123 456`,
+   `123-456` équivalents). Constat d'origine : **le code n'était pas normalisé**
+   (`src/pages/api/me/email.ts:70`), `123456` ou `123 456` étaient refusés comme **code faux** et
+   consommaient un des 5 essais. Tests : « le code se recopie avec ou sans tiret… », « les formes
+   « 123456 » et « 123-456 » sont acceptées ».
 3. Mineur : `PUT /api/me { name }` met à jour `prompts.author_name` même quand le compte n'existe
    pas / n'est pas vérifié (`src/pages/api/me.ts:42`, non gardé comme les lignes 33 et 38).
 
@@ -136,5 +146,5 @@ les tables dans une seule transaction.
 | Nominal (adresse) | `changementEmail.test.ts` › code vers la nouvelle + avertissement ; migration de toutes les tables, nouveau jeton, ancien jeton refusé |
 | A4 | `changementEmail.test.ts` › une nouvelle demande remplace la précédente |
 | Erreurs (demande) | `changementEmail.test.ts` › invalide / identique / prise ; 401 ; 429 ; 405 |
-| Erreurs (confirmation) | `changementEmail.test.ts` › 404 ; 403 puis 429 ; code sans tiret ; 410 ; 409 ; annulation complète de la transaction |
-| Anomalie 1 | `changementEmail.test.ts` › le porte-monnaie personnel ne suit pas |
+| Erreurs (confirmation) | `changementEmail.test.ts` › 404 ; 403 puis 429 ; code avec ou sans tiret / espaces ; 410 ; 409 ; annulation complète de la transaction |
+| Anomalie 1 (corrigée) | `changementEmail.test.ts` › le porte-monnaie personnel suit la personne (solde, relevé, recharge en attente, traces `par`, `adult_verified_by`) |

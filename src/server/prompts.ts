@@ -244,6 +244,11 @@ export function getByName(name: string): PromptRow | undefined {
   return getDb().prepare('SELECT * FROM prompts WHERE name = ?').get(name) as PromptRow | undefined;
 }
 
+// Résout l'URL secrète QUEL QUE SOIT le statut (hors archivés) : l'atelier
+// suit ainsi son tuteur après soumission et publication (bandeau « en
+// attente », lien vers la fiche). C'est une LECTURE, pas une autorisation :
+// le droit d'écriture qu'elle confère se limite aux brouillons et se décide
+// dans resolveRights (src/pages/api/prompts/[name]/index.ts).
 export function getByShareToken(token: string): PromptRow | undefined {
   if (!/^[a-f0-9]{24,64}$/.test(token)) return undefined;
   return getDb().prepare('SELECT * FROM prompts WHERE share_token = ? AND archived = 0')
