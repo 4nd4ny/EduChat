@@ -93,9 +93,19 @@ export async function deleteServerConversations(ids: string[]): Promise<boolean>
   }
 }
 
+/**
+ * Effacement TOTAL du profil serveur. Comme les trois autres fonctions, une
+ * coupure réseau se traduit par `false` et ne lève jamais : l'appelant
+ * (verifier.tsx) affiche alors « Échec de la suppression » au lieu d'une
+ * promesse rejetée silencieuse.
+ */
 export async function deleteServerProfile(): Promise<boolean> {
   const token = getToken();
   if (!token) return false;
-  const response = await fetch('/api/profile', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-  return response.ok;
+  try {
+    const response = await fetch('/api/profile', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

@@ -70,7 +70,7 @@ les tables dans une seule transaction.
 - **A4 — Nouvelle demande de changement.** Elle remplace la précédente (même ligne
   `email_changes`) : seul le dernier code est valable.
 - **A5 — Jeton dont le compte a disparu.** `GET /api/me` répond quand même (nom du jeton, aucun
-  rôle) ; `PUT /api/me` répond `ok` sans rien écrire dans `users`.
+  rôle) ; `PUT /api/me` répond `ok` sans rien écrire dans `users` ni dans `prompts.author_name`.
 
 ## Scénarios d'erreur
 
@@ -123,8 +123,12 @@ les tables dans une seule transaction.
    (`src/pages/api/me/email.ts:70`), `123456` ou `123 456` étaient refusés comme **code faux** et
    consommaient un des 5 essais. Tests : « le code se recopie avec ou sans tiret… », « les formes
    « 123456 » et « 123-456 » sont acceptées ».
-3. Mineur : `PUT /api/me { name }` met à jour `prompts.author_name` même quand le compte n'existe
-   pas / n'est pas vérifié (`src/pages/api/me.ts:42`, non gardé comme les lignes 33 et 38).
+3. **Corrigée** — le report sur `prompts.author_name` n'a lieu que si la mise à jour de `users`
+   (gardée par `verified_at IS NOT NULL`) a touché une ligne : un jeton sans compte vérifié ne
+   renomme plus aucun tuteur (`identite.test.ts` › « un compte absent ou non vérifié ne renomme
+   pas les tuteurs… »). Constat d'origine : mineur, `PUT /api/me { name }` mettait à jour
+   `prompts.author_name` même quand le compte n'existait pas / n'était pas vérifié
+   (`src/pages/api/me.ts:42`, non gardé comme les lignes 33 et 38).
 
 ## Tests
 
@@ -143,6 +147,7 @@ les tables dans une seule transaction.
 | A2 / A3 | `identite.test.ts` › plusieurs écoles et école active ; école annoncée non liée corrigée ; enseignant gestionnaire de tuteurs |
 | Nominal (nom, sync) / A1 | `identite.test.ts` › nom rogné et reporté sur les tuteurs ; nom vide → nom dérivé ; consentement donné/retiré ; deux champs à la fois |
 | Erreurs / A5 | `identite.test.ts` › 401 ; 400 `ERR_PROFILE_INVALID` ; 405 ; jeton sans compte |
+| Anomalie 3 (corrigée) | `identite.test.ts` › un compte absent ou non vérifié ne renomme pas les tuteurs portant son adresse |
 | Nominal (adresse) | `changementEmail.test.ts` › code vers la nouvelle + avertissement ; migration de toutes les tables, nouveau jeton, ancien jeton refusé |
 | A4 | `changementEmail.test.ts` › une nouvelle demande remplace la précédente |
 | Erreurs (demande) | `changementEmail.test.ts` › invalide / identique / prise ; 401 ; 429 ; 405 |

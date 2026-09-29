@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getClientIp, isRateLimited } from '../../server/access';
 import { requireAuth } from '../../server/token';
 import { canSealSecrets } from '../../server/secretbox';
+import { isVerifiedAccount } from '../../server/accountData';
 import { forgetUserKey, keysOptin, listUserKeyProviders, setKeysOptin, storeUserKey } from '../../server/userKeys';
 import { ERR, isProviderId } from '../../shared/providers';
 
@@ -42,6 +43,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // clé de chiffrement configurée : il faut pouvoir effacer.
     if ((wantsOptin === true || wantsStore) && !canSealSecrets()) {
       return res.status(503).json({ error: { code: 'ERR_KEYS_UNAVAILABLE' } });
+    }
+    // Consentir ou déposer une clé exige un compte VÉRIFIÉ en base, comme
+    // /api/me/data ou /api/me/email : la signature du jeton ne suffit pas (un
+    // compte supprimé garde un jeton valide 90 jours). Sans cette garde, le
+    // consentement ne s'écrivait nulle part (aucune ligne users) mais la clé,
+    // elle, était stockée pour une adresse sans compte — et la réponse
+    // annonçait `optin: false` avec une clé enregistrée.
+    // Le retrait et l'effacement restent ouverts : ils n'écrivent rien de neuf.
+    if ((wantsOptin === true || wantsStore) && !isVerifiedAccount(auth.email)) {
+      return res.status(401).json({ error: { code: 'ERR_AUTH_REQUIRED' } });
     }
     if (wantsStore) {
       if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });

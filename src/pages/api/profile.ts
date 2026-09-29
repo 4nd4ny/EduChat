@@ -72,6 +72,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         profile.conversations = merged;
         profile.favorites = Array.from(new Set([...(previous.favorites ?? []), ...(profile.favorites ?? [])]));
         profile.ratings = { ...(previous.ratings ?? {}), ...(profile.ratings ?? {}) };
+        // Le compteur déclaré ne fait que croître : on garde le MAXIMUM, comme
+        // applyProfile côté client. Sinon la sauvegarde automatique d'un
+        // appareil au compteur plus bas le ferait baisser sur « Mes données ».
+        profile.totalTokens = Math.max(Number(previous.totalTokens) || 0, Number(profile.totalTokens) || 0);
       } catch {
         /* profil serveur illisible : on repart du profil reçu */
       }
@@ -99,9 +103,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === 'DELETE') {
     // Droit à l'effacement, à la carte ou en bloc.
-    const demandees = Array.isArray(req.body?.conversations) ? req.body.conversations : null;
+    // Le champ `conversations` PRÉSENT signale une sélection : elle doit
+    // alors être une liste non vide. Une liste vide (ou autre chose qu'une
+    // liste) ne doit surtout pas retomber dans l'effacement TOTAL, qui est
+    // irréversible et coupe la sauvegarde — seul un DELETE sans sélection
+    // le déclenche.
+    const selection = req.body?.conversations;
+    if (selection !== undefined && (!Array.isArray(selection) || !selection.length)) {
+      return res.status(400).json({ error: { code: 'ERR_PROFILE_INVALID' } });
+    }
+    const demandees: unknown[] | null = Array.isArray(selection) ? selection : null;
 
-    if (demandees && demandees.length) {
+    if (demandees) {
       const ids = demandees
         .map((id: unknown) => String(id ?? '').slice(0, 64))
         .filter(Boolean)

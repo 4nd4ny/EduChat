@@ -62,13 +62,18 @@ describe('Scénario nominal : fusion, jamais écrasement', () => {
     expect((await stocke('ada@ecole.ch')).conversations.a.name).toBe('Après');
   });
 
-  it('le compteur de jetons est pris tel quel du dernier envoi (pas de maximum côté serveur)', async () => {
-    // Voir « Anomalies constatées » : une sauvegarde automatique depuis un
-    // navigateur au compteur plus bas fait baisser le compteur déclaré.
+  it('le compteur de jetons garde le maximum des deux côtés (anomalie 2 corrigée)', async () => {
+    // Une sauvegarde automatique depuis un navigateur au compteur plus bas ne
+    // fait plus baisser le compteur déclaré ; un compteur plus haut l'emporte.
     const jeton = await creerCompte('ada@ecole.ch', { syncOptin: true });
     await pousser(jeton, profilDe({}, { totalTokens: 5000 }));
     await pousser(jeton, profilDe({}, { totalTokens: 12 }));
-    expect((await stocke('ada@ecole.ch')).totalTokens).toBe(12);
+    expect((await stocke('ada@ecole.ch')).totalTokens).toBe(5000);
+    await pousser(jeton, profilDe({}, { totalTokens: 7000 }));
+    expect((await stocke('ada@ecole.ch')).totalTokens).toBe(7000);
+    // Un compteur absent ou illisible ne fait pas régresser non plus.
+    await pousser(jeton, profilDe({}, { totalTokens: 'beaucoup' }));
+    expect((await stocke('ada@ecole.ch')).totalTokens).toBe(7000);
   });
 
   it('un profil serveur illisible est remplacé par le profil reçu', async () => {
@@ -127,15 +132,20 @@ describe('Scénario alternatif : effacement et pierres tombales', () => {
     expect(p.json.error.code).toBe('ERR_SYNC_OPTOUT');
   });
 
-  it('une sélection VIDE déclenche l’effacement total (anomalie)', async () => {
-    // Comportement ACTUEL — voir « Anomalies constatées ». Le client
-    // (deleteServerConversations) se garde d'envoyer une liste vide, mais la
-    // route traite { conversations: [] } comme un DELETE sans corps.
+  it('une sélection VIDE est refusée et n’efface rien (anomalie 1 corrigée)', async () => {
+    // { conversations: [] } n'est plus confondu avec un DELETE sans corps :
+    // 400, profil intact, consentement intact, aucune pierre tombale.
     const jeton = await creerCompte('ada@ecole.ch', { syncOptin: true });
     await pousser(jeton, profilDe({ a: conv('A', 1) }));
-    const d = await effacer(jeton, { conversations: [] });
-    expect(d.json).toEqual({ ok: true, syncDisabled: true });
-    expect(await stocke('ada@ecole.ch')).toBeUndefined();
+    for (const conversations of [[], 'a', 42, null, {}]) {
+      const d = await effacer(jeton, { conversations });
+      expect(d.status).toBe(400);
+      expect(d.json.error.code).toBe('ERR_PROFILE_INVALID');
+    }
+    expect(Object.keys((await stocke('ada@ecole.ch')).conversations)).toEqual(['a']);
+    const db = await base();
+    expect((db.prepare('SELECT sync_optin FROM users WHERE email=?').get('ada@ecole.ch') as any).sync_optin).toBe(1);
+    expect((await lire(jeton)).json.deletedConversations).toEqual([]);
   });
 });
 

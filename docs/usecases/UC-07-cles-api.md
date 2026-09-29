@@ -18,7 +18,8 @@ au moment d'appeler le fournisseur pour le compte de son titulaire.
 
 ## Préconditions
 
-- Jeton de compte valide.
+- Jeton de compte valide ; pour consentir ou déposer une clé, le compte doit **exister et être
+  vérifié** en base (`verified_at` non nul).
 - Le serveur a une clé `SECRET_TOKEN_KEY` réelle (≥ 16 caractères, pas la clé de repli de
   développement) pour mémoriser ; l'effacement reste possible sans elle.
 
@@ -53,6 +54,7 @@ au moment d'appeler le fournisseur pour le compte de son titulaire.
 | Cas | Réponse |
 |---|---|
 | Pas de jeton / jeton invalide | `401 ERR_AUTH_REQUIRED` |
+| Consentement (`optin: true`) ou clé demandés avec un compte absent ou non vérifié | `401 ERR_AUTH_REQUIRED` (lecture, retrait et effacement restent ouverts) |
 | Plus de 20 appels / min / IP | `429 ERR_RATE_LIMIT` |
 | Mémorisation ou consentement demandé sans clé de serveur utilisable | `503 ERR_KEYS_UNAVAILABLE` (le chat masque alors la case) |
 | Fournisseur absent ou inconnu (PUT avec clé, ou DELETE `?provider=`) | `400 ERR_PROVIDER_UNSUPPORTED` |
@@ -80,14 +82,18 @@ Dans tous les cas d'erreur, **rien n'est écrit** (ni consentement, ni clé).
 
 ## Anomalies constatées
 
-1. **Clé déposée pour un compte inexistant** (`src/pages/api/keys.ts:50` et `:56`). La route ne
+1. **Corrigée** — `PUT /api/keys` exige désormais un compte vérifié en base (`isVerifiedAccount`)
+   dès qu'il s'agit de consentir ou de déposer une clé : `401 ERR_AUTH_REQUIRED`, rien n'est
+   écrit ; lire, retirer son accord et effacer restent possibles (ils n'écrivent rien de neuf).
+   Constat d'origine : **clé déposée pour un compte inexistant** (`src/pages/api/keys.ts:50` et `:56`). La route ne
    vérifie que la signature du jeton, pas l'existence du compte (contrairement à
    `/api/me/data`, `/api/me/email`). Avec `{ optin: true, provider, apiKey }`, le contrôle de
    consentement est satisfait par la requête elle-même, `setKeysOptin` ne met à jour aucune ligne
    (pas de `users`), mais `storeUserKey` enregistre la clé. La réponse est alors incohérente
    (`optin: false`, `providers: ['openai']`) et la clé reste stockée pour une adresse sans compte
    (compte supprimé en base par l'administration avec un jeton encore valide 90 jours).
-   Test : `cles.test.ts` › « un jeton dont le compte n'existe pas peut quand même déposer une clé ».
+   Tests : `cles.test.ts` › « un jeton dont le compte n'existe pas ne peut ni consentir ni déposer
+   une clé », « un compte présent mais non vérifié ne peut pas déposer de clé ».
 
 ## Tests
 
@@ -107,6 +113,6 @@ Dans tous les cas d'erreur, **rien n'est écrit** (ni consentement, ni clé).
 | Nominal (étape 4) | `cles.test.ts` › le serveur utilise la clé mémorisée (`/api/models`, `Authorization: Bearer …` vers le fournisseur doublé) |
 | A2 / A3 / A4 | `cles.test.ts` › oubli d'une puis de toutes ; retrait du consentement ; isolement entre comptes |
 | Erreurs | `cles.test.ts` › 403 sans consentement ; 400 fournisseur/clé, rien d'écrit ; 400 au DELETE ; 401, 429, 405 |
-| Anomalie 1 | `cles.test.ts` › compte inexistant |
+| Anomalie 1 (corrigée) | `cles.test.ts` › compte inexistant : 401, rien d'écrit, retrait possible ; compte non vérifié : 401 |
 | Erreurs (503) / A4 | `configuration.test.ts` › sans clé de serveur : 503, mais retrait et effacement possibles |
 | A5 | `configuration.test.ts` › après changement de SECRET_TOKEN_KEY |
