@@ -88,26 +88,63 @@ describe('Règles de saisie', () => {
     expect(e.name).toHaveLength(120);
     expect([e.token_quota_monthly, e.quota_per_student_daily]).toEqual([0, 0]);
   });
-  it('ANOMALIE : l’enregistrement est un formulaire COMPLET — un champ absent est remis à zéro', async () => {
-    // L'écran src/administration/Etablissements.tsx n'envoie jamais
-    // activeProvider : chaque modification par le site efface donc le
-    // fournisseur actif de l'école. Test écrit sur le comportement actuel.
+  it('corrigé : un champ absent n’est plus remis à zéro — le fournisseur actif survit à une modification du site', async () => {
+    // L'écran src/administration/Etablissements.tsx n'envoyait jamais
+    // activeProvider : chaque modification par le site effaçait le fournisseur
+    // actif de l'école. Un champ absent ne s'écrit plus.
     const id = await creerEtablissement({ name: 'École', activeProvider: 'mistral', respire: true, ips: '192.0.2.5' });
-    await appeler(etablissements, { method: 'POST', token: sup, body: { id, name: 'École', ips: '192.0.2.5', respire: true } });
-    expect((await ligne(id)).active_provider).toBe('');
+    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id, name: 'École', ips: '192.0.2.5', respire: true } });
+    expect(r.status).toBe(200);
+    expect((await ligne(id)).active_provider).toBe('mistral');
   });
-  it('ANOMALIE : aucune unicité des IP côté site — deux écoles peuvent revendiquer la même adresse', async () => {
-    const a = await creerEtablissement({ name: 'A', ips: '192.0.2.77' });
-    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { name: 'B', ips: '192.0.2.77' } });
-    expect(r.status).toBe(201);
-    // La résolution par IP retient alors la première ligne rencontrée.
+  it('non-régression : seuls les champs présents s’écrivent (quotas, facturation, IP gardés)', async () => {
+    const id = await creerEtablissement({ name: 'École', activeProvider: 'mistral', ips: '192.0.2.5', billingEmail: 'c@e.ch' });
+    (await base()).prepare('UPDATE etablissements SET token_quota_monthly = 7, quota_per_student_daily = 3 WHERE id = ?').run(id);
+    await appeler(etablissements, { method: 'POST', token: sup, body: { id, name: 'Renommée' } });
+    expect(await ligne(id)).toMatchObject({
+      name: 'Renommée', ips: '192.0.2.5', active_provider: 'mistral', billing_email: 'c@e.ch',
+      token_quota_monthly: 7, quota_per_student_daily: 3,
+    });
+    // Un champ PRÉSENT garde sa lecture : fournisseur hors périmètre → vide, quota vide → 0.
+    await appeler(etablissements, { method: 'POST', token: sup, body: { id, name: 'Renommée', activeProvider: 'openrouter', tokenQuotaMonthly: '' } });
+    expect(await ligne(id)).toMatchObject({ active_provider: '', token_quota_monthly: 0, quota_per_student_daily: 3 });
+  });
+  it('corrigé : une IP déjà revendiquée par une AUTRE école est refusée (409 ERR_IP_TAKEN), graphies comprises', async () => {
+    const a = await creerEtablissement({ name: 'A', ips: '192.0.2.77,2001:db8::1' });
+    for (const ips of ['192.0.2.77', '10.0.0.1, ::ffff:192.0.2.77', '2001:DB8:0:0::1']) {
+      const r = await appeler(etablissements, { method: 'POST', token: sup, body: { name: 'B', ips } });
+      expect(r.status).toBe(409);
+      expect(r.json.error.code).toBe('ERR_IP_TAKEN');
+    }
+    expect(((await base()).prepare('SELECT COUNT(*) AS n FROM etablissements').get() as any).n).toBe(1);
+    // Modifier une autre école pour lui donner l'adresse de A : refusé aussi, rien n'est écrit.
+    const b = await creerEtablissement({ name: 'B', ips: '192.0.2.88' });
+    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id: b, name: 'B', ips: '192.0.2.77' } });
+    expect(r.status).toBe(409);
+    expect((await ligne(b)).ips).toBe('192.0.2.88');
     expect(resolveEtablissementByIp('192.0.2.77')?.id).toBe(a);
   });
-  it('ANOMALIE : modifier un identifiant inexistant répond « ok » sans rien écrire', async () => {
-    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id: 424242, name: 'Fantôme' } });
+  it('non-régression : une école garde ses propres IP en se modifiant', async () => {
+    const a = await creerEtablissement({ name: 'A', ips: '192.0.2.77' });
+    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id: a, name: 'A bis', ips: '192.0.2.77, 192.0.2.78' } });
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ ok: true, id: 424242 });
+    expect((await ligne(a)).ips).toBe('192.0.2.77,192.0.2.78');
+  });
+  it('une IP mal formée est refusée : 400 ERR_IP_INVALID, rien n’est écrit', async () => {
+    const id = await creerEtablissement({ name: 'A', ips: '192.0.2.5' });
+    for (const ips of ['192.0.2.300', 'collège', '192.0.2.0/24']) {
+      const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id, name: 'A', ips } });
+      expect(r.status).toBe(400);
+      expect(r.json.error.code).toBe('ERR_IP_INVALID');
+    }
+    expect((await ligne(id)).ips).toBe('192.0.2.5');
+  });
+  it('corrigé : modifier un identifiant inexistant répond 404 ERR_ETAB_UNKNOWN', async () => {
+    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { id: 424242, name: 'Fantôme' } });
+    expect(r.status).toBe(404);
+    expect(r.json.error.code).toBe('ERR_ETAB_UNKNOWN');
     expect(await ligne(424242)).toBeUndefined();
+    expect(((await base()).prepare('SELECT COUNT(*) AS n FROM etablissements').get() as any).n).toBe(0);
   });
 });
 
@@ -132,6 +169,11 @@ describe('Scénarios d’erreur', () => {
     const r = await appeler(etablissements, { method: 'POST', token: sup, body: { name: '   ' } });
     expect(r.status).toBe(400);
     expect(r.json.error.code).toBe('ERR_NAME_INVALID');
+  });
+  it('catalogue par le super sur un id inexistant : 404 ERR_ETAB_UNKNOWN', async () => {
+    const r = await appeler(etablissements, { method: 'POST', token: sup, body: { action: 'catalogue', id: 424242, catalogueOuvert: true } });
+    expect(r.status).toBe(404);
+    expect(r.json.error.code).toBe('ERR_ETAB_UNKNOWN');
   });
   it('catalogue par le super sans id : 400 ERR_ETAB_UNKNOWN', async () => {
     const r = await appeler(etablissements, { method: 'POST', token: sup, body: { action: 'catalogue', catalogueOuvert: true } });

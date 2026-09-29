@@ -125,14 +125,22 @@ describe('tarifDuModele — lecture des prix écrits par ce cas', () => {
     });
   });
 
-  it('ANOMALIE — d’anciens prix entrée/sortie sur « tarifs » masquent le prix unique réglé par le site', async () => {
+  it('corrigé — d’anciens prix entrée/sortie sur « tarifs » ne masquent plus le prix unique réglé par le site', async () => {
     // Colonnes tarifs.prix_entree_mtok / prix_sortie_mtok (migration ancienne) :
-    // plus aucun code ne les écrit ni ne les montre, mais tarifDuModele les lit
-    // AVANT prix_mtok. Le POST du site est alors sans effet sur la facturation.
+    // plus aucun code ne les écrit ni ne les montre ; tarifDuModele les lisait
+    // AVANT prix_mtok, rendant le POST du site sans effet. Elles sont ignorées.
     (await base()).prepare(`INSERT INTO tarifs (provider, prix_mtok, updated_at, prix_entree_mtok, prix_sortie_mtok)
       VALUES ('anthropic', 0, 1, 0.5, 0.5)`).run();
     reglerTarif('anthropic', 20);
     expect(tarifs().anthropic).toBe(20);
-    expect(tarifDuModele('anthropic', 'claude-x')).toMatchObject({ entree: 0.5, sortie: 0.5 });
+    expect(tarifDuModele('anthropic', 'claude-x')).toMatchObject({ entree: 20, sortie: 20 });
+  });
+
+  it('non-régression — ces colonnes mortes, seules, ne fabriquent pas de prix (prix unique à 0 → zéro dit)', async () => {
+    (await base()).prepare(`INSERT INTO tarifs (provider, prix_mtok, updated_at, prix_entree_mtok, prix_sortie_mtok)
+      VALUES ('anthropic', 0, 1, 0.5, 0.5)`).run();
+    const t = tarifDuModele('anthropic', 'claude-x');
+    expect(t).toMatchObject({ entree: 0, sortie: 0 });
+    expect(t.repli).toContain('rien n\'a été décompté');
   });
 });

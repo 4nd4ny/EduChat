@@ -296,6 +296,9 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
            u.provider AS provider, u.model AS modele,
            SUM(u.tokens) AS tokens,
            SUM(u.tokens_in) AS tokensIn, SUM(u.tokens_out) AS tokensOut,
+           -- Jetons des lignes qui n'ont que leur total (ni entrée ni sortie) :
+           -- lignes antérieures à la ventilation, traduction. Voir « ancien » plus bas.
+           SUM(CASE WHEN u.tokens_in = 0 AND u.tokens_out = 0 THEN u.tokens ELSE 0 END) AS nonVentiles,
            COUNT(*) AS appels, SUM(u.montant) AS montant,
            u.prix_entree_mtok AS prixEntree, u.prix_sortie_mtok AS prixSortie,
            MAX(u.tarif_repli) AS repli,
@@ -307,7 +310,7 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
              u.prix_entree_mtok, u.prix_sortie_mtok, u.tarif_at > 0
   `).all(debut, fin, etablissementId, etablissementId) as
     { id: number; provider: string; modele: string;
-      tokens: number; tokensIn: number; tokensOut: number; appels: number; montant: number;
+      tokens: number; tokensIn: number; tokensOut: number; nonVentiles: number; appels: number; montant: number;
       prixEntree: number; prixSortie: number; repli: string; tarifAt: number }[];
 
   // Une école sans consommation doit tout de même apparaître : « rien à payer »
@@ -334,6 +337,13 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
     // fournisseur, appliqué à l'entrée comme à la sortie —, et on le DIT
     // (`ancien`). Réévaluer le passé au tarif d'aujourd'hui changerait des
     // factures déjà émises et déjà payées.
+    //
+    // « COMME HIER », C'EST JETONS × PRIX UNIQUE — y compris pour les lignes qui
+    // ne portent que leur total (`tokens`, sans ventilation entrée/sortie) :
+    // celles d'avant la séparation, et celles que la traduction écrit encore.
+    // Ne multiplier que tokens_in/tokens_out les valorisait à ZÉRO. Le prix
+    // étant le même des deux côtés, ces jetons s'ajoutent simplement à l'un
+    // d'eux pour le calcul — sans toucher aux colonnes affichées.
     const lignes: LigneFacture[] = brut.filter(b => b.id === ecole.id).map(b => {
       const ancien = !b.tarifAt;
       const unique = prix[b.provider] ?? 0;
@@ -344,7 +354,7 @@ export function facturesDuMois(year: number, month: number, etablissementId: num
         tokens: b.tokens, tokensIn: b.tokensIn, tokensOut: b.tokensOut, appels: b.appels,
         prixEntreeMtok: prixEntree, prixSortieMtok: prixSortie,
         montant: ancien
-          ? coutAuTarif({ entree: prixEntree, sortie: prixSortie }, b.tokensIn, b.tokensOut, 0)
+          ? coutAuTarif({ entree: prixEntree, sortie: prixSortie }, b.tokensIn + (b.nonVentiles ?? 0), b.tokensOut, 0)
           : centimes(b.montant),
         repli: b.repli ?? '', ancien,
       };
@@ -437,6 +447,10 @@ export function impayees() {
   }>;
 }
 
+/** Une ligne de journal porte-t-elle des prix figés qu'on peut appliquer tels quels ? */
+const FIGE_UTILISABLE = `u.tarif_at > 0 AND (u.prix_entree_mtok > 0 OR u.prix_sortie_mtok > 0)
+  AND (u.tokens_in > 0 OR u.tokens_out > 0)`;
+
 /**
  * Ce que la contribution a rapporté ce mois-ci, et ce qu'elle a financé.
  *
@@ -481,17 +495,39 @@ export function bilanParticipation(year: number, month: number) {
   `).get(debut, fin) as { total: number };
   const collectee = encaisse.total;
 
+  // CE QUI A ÉTÉ OFFERT : la démonstration publique et les écoles RESPIRE.
+  //
+  // UN PORTE-MONNAIE PERSONNEL N'EST PAS UNE DÉMONSTRATION. /api/completion le
+  // journalise, lui aussi, sans IP ni établissement (la consommation d'une
+  // personne n'est la donnée d'aucune école) — mais il est PAYÉ : son `montant`
+  // porte ce qui a été prélevé. C'est ce montant qui le distingue, et lui seul
+  // sur la ligne (le titulaire vit au registre, pas au journal). Sans ce tri,
+  // une dépense encaissée gonflait « ce que la plateforme a offert ».
+  //
+  // VALORISÉ AUX PRIX FIGÉS SUR CHAQUE LIGNE, comme la facture : entrée et
+  // sortie à leur prix respectif, celui du modèle réellement appelé ce jour-là.
+  // Le prix unique du fournisseur (table `tarifs`) ne sert plus qu'aux lignes
+  // qui n'ont rien figé d'utilisable — lignes anciennes (tarif_at = 0), lignes
+  // sans ventilation, ou modèle dont aucun prix n'était connu (deux prix nuls,
+  // cas du modèle gratuit de démonstration) —, au total de leurs jetons.
   const offerts = db.prepare(`
     SELECT u.provider AS provider, SUM(u.tokens) AS tokens,
+           SUM(CASE WHEN ${FIGE_UTILISABLE}
+                    THEN u.tokens_in * u.prix_entree_mtok + u.tokens_out * u.prix_sortie_mtok
+                    ELSE 0 END) AS valeurFigee,
+           SUM(CASE WHEN ${FIGE_UTILISABLE} THEN 0 ELSE u.tokens END) AS jetonsPrixUnique,
            CASE WHEN u.etablissement_id IS NULL THEN 'demo' ELSE 'respire' END AS origine
     FROM usage_log u LEFT JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1
-      AND (u.etablissement_id IS NULL OR e.respire = 1)
+      AND ((u.etablissement_id IS NULL AND u.montant <= 0) OR e.respire = 1)
     GROUP BY origine, u.provider
-  `).all(debut, fin) as { provider: string; tokens: number; origine: 'demo' | 'respire' }[];
+  `).all(debut, fin) as {
+    provider: string; tokens: number; valeurFigee: number; jetonsPrixUnique: number;
+    origine: 'demo' | 'respire';
+  }[];
 
   const cout = (l: typeof offerts) => centimes(l.reduce(
-    (n, o) => n + (o.tokens / 1_000_000) * (prix[o.provider] ?? 0), 0));
+    (n, o) => n + (o.valeurFigee + o.jetonsPrixUnique * (prix[o.provider] ?? 0)) / 1_000_000, 0));
 
   // LA BASE, C'EST CE QUI A ÉTÉ VERSÉ — plus la consommation facturée. Rapporter
   // la commission à une consommation qu'elle ne touche plus donnerait un taux

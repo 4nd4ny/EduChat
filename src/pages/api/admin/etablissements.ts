@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { isIP } from 'net';
 import { getDb } from '../../../server/db';
 import { requireAdmin } from '../../../server/admin';
 import { notifyAdmin } from '../../../server/mail';
@@ -16,6 +17,28 @@ import { ERR, SCHOOL_PROVIDER_IDS } from '../../../shared/providers';
 // la demande. Ouvrir la grande écriture aux écoles reviendrait à leur laisser
 // cocher RESPIRE et se donner la gratuité — la portée n'est pas un détail
 // d'affichage, elle décide de ce qui est écrit.
+
+/**
+ * LA FORME CANONIQUE D'UNE ADRESSE — pour dédoublonner, et pour rien d'autre.
+ *
+ * Copie volontaire de celle de l'inscription en libre-service
+ * (src/pages/api/etablissement/inscription.ts), qui ne l'exporte pas : les deux
+ * portes qui écrivent des IP d'école doivent trancher « deux écoles
+ * désignent-elles la même machine ? » de la même façon, graphies IPv4 mappée
+ * et IPv6 comprises. Comme là-bas, on STOCKE la chaîne saisie (c'est elle que
+ * resolveEtablissementByIp compare) et on ne COMPARE que la forme canonique.
+ * Si l'une change, l'autre doit suivre.
+ */
+function canonique(brut: string): string {
+  const sansPrefixe = brut.replace(/^::ffff:/i, '');
+  if (isIP(sansPrefixe) === 4) return sansPrefixe;
+  if (isIP(brut) === 6) {
+    try { return new URL(`http://[${brut}]`).hostname.slice(1, -1); }
+    catch { return brut.toLowerCase(); }
+  }
+  return brut;
+}
+
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const scope = requireAdmin(req);
   if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
@@ -41,6 +64,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'POST' && req.body?.action === 'catalogue') {
     const cible = scope.niveau === 'super' ? Number(req.body?.id) || 0 : scope.etablissementId;
     if (!cible) return res.status(400).json({ error: { code: 'ERR_ETAB_UNKNOWN' } });
+    // Un identifiant qui ne désigne aucune école répondait « ok » sans rien
+    // écrire : le super croyait avoir ouvert un catalogue qui n'existe pas.
+    if (!db.prepare('SELECT 1 FROM etablissements WHERE id = ?').get(cible)) {
+      return res.status(404).json({ error: { code: 'ERR_ETAB_UNKNOWN' } });
+    }
     db.prepare('UPDATE etablissements SET catalogue_ouvert = ? WHERE id = ?')
       .run(req.body?.catalogueOuvert ? 1 : 0, cible);
     return res.status(200).json({ ok: true, id: cible });
@@ -53,7 +81,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'POST') {
     const id = Number(req.body?.id) || 0;
     const name = String(req.body?.name ?? '').trim().slice(0, 120);
-    const ips = String(req.body?.ips ?? '').split(',').map(s => s.trim()).filter(Boolean).join(',');
+    const listeIps = String(req.body?.ips ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    const ips = listeIps.join(',');
     const respire = req.body?.respire ? 1 : 0;
     const quota = Math.max(0, Number(req.body?.tokenQuotaMonthly) || 0);
     const perStudent = Math.max(0, Number(req.body?.quotaPerStudentDaily) || 0);
@@ -67,9 +96,51 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     const billingEmail = String(req.body?.billingEmail ?? '').trim().slice(0, 255);
     if (!name) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
 
+    // Modifier une école qui n'existe pas répondait « ok » sans rien écrire.
+    if (id && !db.prepare('SELECT 1 FROM etablissements WHERE id = ?').get(id)) {
+      return res.status(404).json({ error: { code: 'ERR_ETAB_UNKNOWN' } });
+    }
+
+    // LES IP SONT CE QUI RECONNAÎT LES ÉLÈVES — elles se valident comme telles.
+    // Une chaîne qui n'est pas une adresse ne reconnaîtra jamais personne, et
+    // deux écoles sur la même adresse se disputent ses élèves : la résolution
+    // par IP prend la première venue, l'autre paie pour sa voisine. Même règle
+    // que l'inscription en libre-service, sauf qu'ici l'adresse est SAISIE —
+    // on la refuse donc au lieu de l'abandonner, pour que le site corrige.
+    // Une adresse déjà portée par l'école modifiée elle-même n'est pas un conflit.
+    if (listeIps.some(ip => !isIP(ip))) return res.status(400).json({ error: { code: 'ERR_IP_INVALID' } });
+    if (listeIps.length) {
+      const prises = new Set<string>();
+      for (const row of db.prepare('SELECT ips FROM etablissements WHERE id != ?').all(id) as { ips: string }[]) {
+        for (const brut of row.ips.split(',')) {
+          const valeur = brut.trim();
+          if (valeur) prises.add(canonique(valeur));
+        }
+      }
+      if (listeIps.some(ip => prises.has(canonique(ip)))) {
+        return res.status(409).json({ error: { code: 'ERR_IP_TAKEN' } });
+      }
+    }
+
     if (id) {
-      db.prepare('UPDATE etablissements SET name=?, ips=?, respire=?, token_quota_monthly=?, quota_per_student_daily=?, active_provider=?, billing_email=? WHERE id=?')
-        .run(name, ips, respire, quota, perStudent, activeProvider, billingEmail, id);
+      // UN CHAMP ABSENT NE S'ÉCRIT PAS. L'enregistrement était un formulaire
+      // complet : l'écran du site n'envoyant pas activeProvider, chaque
+      // modification depuis /admin effaçait le fournisseur actif de l'école.
+      // La PRÉSENCE du champ décide, pas sa valeur — un champ présent garde sa
+      // lecture d'avant (activeProvider hors périmètre → '', quota illisible → 0).
+      // Le nom, lui, reste exigé.
+      const corps = req.body as Record<string, unknown>;
+      const colonnes: Array<[string, string, unknown]> = [
+        ['ips', 'ips', ips],
+        ['respire', 'respire', respire],
+        ['tokenQuotaMonthly', 'token_quota_monthly', quota],
+        ['quotaPerStudentDaily', 'quota_per_student_daily', perStudent],
+        ['activeProvider', 'active_provider', activeProvider],
+        ['billingEmail', 'billing_email', billingEmail],
+      ];
+      const ecrites = colonnes.filter(([champ]) => champ in corps);
+      db.prepare(`UPDATE etablissements SET name = ?${ecrites.map(([, col]) => `, ${col} = ?`).join('')} WHERE id = ?`)
+        .run(name, ...ecrites.map(([, , v]) => v), id);
       return res.status(200).json({ ok: true, id });
     }
     const info = db.prepare(`

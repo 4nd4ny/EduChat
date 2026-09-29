@@ -3,7 +3,7 @@
 //
 // Elle répond aux cinq points d'entrée qu'emploie src/server/paypal.ts :
 // jeton OAuth, création de commande, vérification de signature, lecture d'une
-// capture, remboursement d'une capture.
+// capture, remboursement d'une capture, lecture d'un remboursement.
 import { doublerFetch } from '../../helpers/fetch';
 
 export type FauxPaypal = {
@@ -22,6 +22,8 @@ export type FauxPaypal = {
   remboursements: Array<{ capture: string; value: string; currency_code: string }>;
   /** Faire échouer la création de commande. */
   panneCommande: boolean;
+  /** Remboursements connus de « PayPal » : id → montant, devise, statut, custom_id. */
+  remboursementsConnus: Map<string, { value: string; currency_code: string; status: string; custom_id?: string }>;
 };
 
 export function installerFauxPaypal(): FauxPaypal {
@@ -30,6 +32,7 @@ export function installerFauxPaypal(): FauxPaypal {
     espion: undefined as any,
     captures: new Map(), signature: 'SUCCESS', refusRemboursement: new Set(),
     commandes: [], verifications: [], remboursements: [], panneCommande: false,
+    remboursementsConnus: new Map(),
   };
   f.espion = doublerFetch((url, init) => {
     const u = new URL(url);
@@ -51,9 +54,22 @@ export function installerFauxPaypal(): FauxPaypal {
     if (rembourse) {
       const id = decodeURIComponent(rembourse[1]);
       if (f.refusRemboursement.has(id)) return { status: 422, json: { name: 'UNPROCESSABLE_ENTITY' } };
-      const { amount } = JSON.parse(corps);
+      const { amount, custom_id } = JSON.parse(corps);
       f.remboursements.push({ capture: id, ...amount });
-      return { status: 201, json: { id: `REFUND-${id}`, status: 'COMPLETED' } };
+      // Premier remboursement d'une capture : REFUND-<capture> (ce que
+      // evenementRemboursement annonce) ; les suivants sont numérotés.
+      let refund = `REFUND-${id}`;
+      for (let k = 2; f.remboursementsConnus.has(refund); k++) refund = `REFUND-${id}-${k}`;
+      f.remboursementsConnus.set(refund, { ...amount, status: 'COMPLETED', custom_id });
+      return { status: 201, json: { id: refund, status: 'COMPLETED' } };
+    }
+    const lectureRemboursement = u.pathname.match(/^\/v2\/payments\/refunds\/([^/]+)$/);
+    if (lectureRemboursement) {
+      const id = decodeURIComponent(lectureRemboursement[1]);
+      const r = f.remboursementsConnus.get(id);
+      if (!r) return { status: 404, json: { name: 'RESOURCE_NOT_FOUND' } };
+      return { json: { id, status: r.status, amount: { value: r.value, currency_code: r.currency_code },
+        ...(r.custom_id ? { custom_id: r.custom_id } : {}) } };
     }
     const capture = u.pathname.match(/^\/v2\/payments\/captures\/([^/]+)$/);
     if (capture) {
@@ -87,12 +103,21 @@ export function evenementCapture(captureId: string, orderId: string, montantAnno
   };
 }
 
+/**
+ * Un remboursement fait HORS de la plateforme (tableau de bord PayPal) : connu
+ * de « PayPal », sans le repère custom_id que pose `rembourser`.
+ */
+export function rembourserDepuisPaypal(f: FauxPaypal, captureId: string, value: string, refundId = `REFUND-${captureId}`) {
+  f.remboursementsConnus.set(refundId, { value, currency_code: 'CHF', status: 'COMPLETED' });
+  return refundId;
+}
+
 /** Une notification de remboursement : la ressource est le remboursement, la capture est dans le lien « up ». */
-export function evenementRemboursement(captureId: string, type = 'PAYMENT.CAPTURE.REFUNDED') {
+export function evenementRemboursement(captureId: string, type = 'PAYMENT.CAPTURE.REFUNDED', refundId = `REFUND-${captureId}`) {
   return {
-    id: `WH-R-${captureId}`, event_type: type,
+    id: `WH-R-${refundId}`, event_type: type,
     resource: {
-      id: `REFUND-${captureId}`,
+      id: refundId,
       links: [{ rel: 'up', href: `https://api.sandbox.paypal.com/v2/payments/captures/${captureId}` }],
     },
   };

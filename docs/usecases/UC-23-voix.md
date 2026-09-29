@@ -7,7 +7,7 @@
 | **Déclencheur** | Clic sur le micro (dictée) ou activation du haut-parleur (mode vocal) dans la zone de saisie du chat |
 | **Pages** | `src/chat/VoiceControls.tsx` (rendu par `src/chat/ChatInput.tsx` si `(clé utilisable ou clé interne) && voice`), `src/pages/chat.tsx` |
 | **API** | `POST /api/transcribe`, `POST /api/speak` |
-| **Code serveur** | `src/pages/api/transcribe.ts`, `src/pages/api/speak.ts`, `src/server/access.ts` (`mayUseServerKeys`, `isRateLimited`), `src/server/userKeys.ts` (`readUserKey`), `src/server/etablissements.ts` (`resolveEtablissementByIp`), `src/shared/providers.ts` (`voice`, `ERR`) |
+| **Code serveur** | `src/pages/api/transcribe.ts`, `src/pages/api/speak.ts`, `src/server/cleEcole.ts` (`controlerCleEcole`, `journaliserCleEcole`, `jetonsVoix`), `src/server/porteMonnaie.ts` (`aDuCredit`, `tarifDuModele`, `decompter`), `src/server/seance.ts`, `src/server/access.ts` (`mayUseServerKeys`, `isRateLimited`), `src/server/userKeys.ts` (`readUserKey`), `src/server/etablissements.ts` (`resolveEtablissementByIp`), `src/shared/providers.ts` (`voice`, `ERR`) |
 
 ## Objectif
 
@@ -20,7 +20,8 @@ sinon par la synthèse du navigateur (gratuite, rien ne quitte l'appareil).
 
 - Fournisseur doté d'une transcription (`voice` : OpenAI, Mistral).
 - Une clé : saisie dans la page, mémorisée sur le compte, ou — sur le réseau ouvert d'une école —
-  la clé interne de l'école.
+  la clé interne de l'école, si celle-ci a du crédit (ou est RESPIRE), n'a pas atteint ses quotas
+  et si la séance en cours autorise le fournisseur.
 - Navigateur autorisé à utiliser le micro (MediaRecorder : `audio/webm` ou `audio/mp4` sur Safari).
 
 ## Scénario nominal — dictée puis lecture, clé personnelle
@@ -44,10 +45,19 @@ sinon par la synthèse du navigateur (gratuite, rien ne quitte l'appareil).
 - **A1 — Clé mémorisée.** Champ vide + jeton : `readUserKey(email, provider)` (dictée) ou
   `readUserKey(email, 'mistral')` (lecture).
 - **A2 — En classe.** Sans clé personnelle, sur le réseau d'une école dont la salle est ouverte ou
-  dans ses horaires : clé interne du fournisseur. Dictée journalisée (`voxtral-mini-latest (dictée)`
-  ou `transcription`), lecture journalisée (`voxtral-mini-tts (lecture)`), avec IP et établissement,
-  jetons **estimés** à `max(1, round(caractères / 4))`. La dictée refuse un fournisseur écarté ou à
-  drapeau rouge (`403 ERR_PROVIDER_NOT_ALLOWED`) avant tout contrôle de capacité.
+  dans ses horaires : clé interne du fournisseur, **après les mêmes contrôles que `/api/completion`**
+  (`controlerCleEcole`, dans cet ordre) : fournisseur écarté ou à drapeau rouge (`403
+  ERR_PROVIDER_NOT_ALLOWED`), fournisseur non coché pour la séance (`403 ERR_PROVIDER_NOT_IN_SESSION`),
+  porte-monnaie à sec hors RESPIRE (`402 ERR_SCHOOL_NO_CREDIT`), plafond mensuel (`429
+  ERR_QUOTA_ETABLISSEMENT`), quota quotidien par élève (`429 ERR_QUOTA_ELEVE`, pot = `clientId`
+  facultatif du corps, sinon l'IP) — tous **avant** l'appel au fournisseur. Après l'appel, une ligne
+  `usage_log` de même forme que le chat (`journaliserCleEcole`) : IP, établissement, enseignant de
+  la séance, `client_id`, modèle **réellement appelé** (`voxtral-mini-latest`,
+  `gpt-4o-mini-transcribe` ou `whisper-1`, `voxtral-mini-tts-latest`), `tokens_in`/`tokens_out`,
+  prix figés (`tarifDuModele`, avec sa chaîne de repli), `tarif_at`, `tarif_repli` et `montant`
+  **prélevé** du porte-monnaie par `decompter` dans la même transaction (0 pour une école RESPIRE).
+  Jetons : ceux que rend le fournisseur (`usage`), sinon **estimés** à `max(1, round(caractères / 4))`
+  — en sortie pour une dictée, en entrée pour une lecture.
 - **A3 — Lecture par le navigateur.** Fournisseur autre que Mistral, ou toute réponse non 200 de
   `/api/speak` (pas de clé, pas de voix dans la langue, refus) : `speechSynthesis` du navigateur,
   langue `fr-FR`/`en-US`/`it-IT`/`de-DE`, texte débarrassé du Markdown.
@@ -62,6 +72,9 @@ sinon par la synthèse du navigateur (gratuite, rien ne quitte l'appareil).
 | Dictée : fournisseur inconnu | `400 ERR_PROVIDER_UNSUPPORTED` |
 | Dictée : aucune clé (ni tapée, ni mémorisée, ni école ouverte) | `403 ERR_VOICE_KEY` |
 | Dictée : clé d'école pour un fournisseur écarté / drapeau rouge | `403 ERR_PROVIDER_NOT_ALLOWED` |
+| Clé d'école (les deux routes) : fournisseur non coché pour la séance | `403 ERR_PROVIDER_NOT_IN_SESSION` |
+| Clé d'école (les deux routes) : porte-monnaie à sec (hors RESPIRE) | `402 ERR_SCHOOL_NO_CREDIT` |
+| Clé d'école (les deux routes) : plafond mensuel / quota par élève atteint | `429 ERR_QUOTA_ETABLISSEMENT` / `429 ERR_QUOTA_ELEVE` |
 | Dictée : fournisseur sans transcription | `400 ERR_VOICE_UNSUPPORTED` |
 | Dictée : type non admis, audio absent, > 15 Mo, ou vide après décodage | `400 ERR_VOICE_INVALID` |
 | Dictée : fournisseur en erreur | `502 ERR_UPSTREAM` |
@@ -75,13 +88,17 @@ sinon par la synthèse du navigateur (gratuite, rien ne quitte l'appareil).
 - L'audio n'est ni stocké ni journalisé ; une clé personnelle ne laisse **aucune** trace en base.
 - Une clé mémorisée ne repart jamais vers le navigateur (déchiffrée côté serveur au moment d'appeler).
 - La clé de l'école ne se dépense que **depuis son réseau** (`mayUseServerKeys` : IP de l'école et
-  salle ouverte ou horaire) — jamais pour un visiteur hors campus.
+  salle ouverte ou horaire) — jamais pour un visiteur hors campus — et aux mêmes conditions que le
+  chat : crédit, quotas, fournisseurs de la séance. Chaque dictée ou lecture qu'elle paie est
+  décomptée de son porte-monnaie.
 - Un français ne sera jamais lu par une voix anglaise : sans voix de la langue, le serveur répond
   415 et le navigateur prend le relais.
 
 ## Postconditions
 
-- Clé d'école : une ligne `usage_log` (`used_server_key = 1`, IP, établissement, `montant = 0`).
+- Clé d'école : une ligne `usage_log` (`used_server_key = 1`, IP, établissement, jetons ventilés,
+  prix figés, `montant` prélevé) et, si le montant est non nul, un mouvement `consommation` au
+  registre `credit_mouvements` ; le solde de l'école baisse d'autant.
 - Sinon : aucun effet persistant.
 
 ## Tests
@@ -99,22 +116,19 @@ sinon par la synthèse du navigateur (gratuite, rien ne quitte l'appareil).
 | Nominal (dictée) | `dictee.test.ts` : OpenAI multipart, modèle, nom et contenu du fichier, aucun journal |
 | A4 | repli whisper-1 |
 | Nominal / A1 | Mistral Voxtral, extensions par type ; clé mémorisée |
-| A2 (dictée) | salle ouverte Mistral / OpenAI : clé interne et journal avec IP ; drapeaux rouges et écartés refusés ; réseau fermé → `ERR_VOICE_KEY` ; école à sec servie (anomalie) |
+| A2 (dictée) | salle ouverte Mistral : ligne de journal comme le chat (prix figés, montant) ; débit réel du porte-monnaie (jetons `usage`, registre) ; modèle réellement appelé (repli whisper-1) ; drapeaux rouges et écartés refusés ; réseau fermé → `ERR_VOICE_KEY` ; école à sec → `402 ERR_SCHOOL_NO_CREDIT` sans appel ; RESPIRE servie sans prélèvement ; quotas mensuel et par élève ; séance ; clé perso sur réseau d'école à sec |
 | Erreurs (dictée) | sans clé ; fournisseur sans voix ; inconnu ; audio invalide (type, vide, taille, base64) ; amont en erreur ; méthode ; 20 req/min |
 | Nominal (lecture) | `lecture.test.ts` : voix de la langue, MP3, en-têtes, aucun journal ; `en-GB` ; cache du catalogue ; texte borné ; clé mémorisée |
-| A2 (lecture) | salle ouverte : clé interne Mistral, journal avec IP |
+| A2 (lecture) | salle ouverte : ligne de journal comme le chat ; débit réel du porte-monnaie ; école à sec → `402` sans appel ; séance sans Mistral → `403` |
 | A3 / erreurs | pas de voix → 415 sans synthèse ; catalogue injoignable → 415 ; synthèse refusée ou vide → 502 ; sans clé → 403 ; texte vide ; méthode ; 20 req/min |
 
 ## Anomalies constatées
 
-- **Commentaires contredits par le code.** `src/pages/api/transcribe.ts:10-17` annonce une
-  transcription « STRICTEMENT en clé personnelle… Aucune clé serveur n'est jamais utilisée », et
-  `src/chat/VoiceControls.tsx:8` « réservé à la clé PERSONNELLE » ; or `transcribe.ts:75-91` (et
-  `speak.ts:75-78`) dépensent la clé interne de l'école sur son réseau, et `ChatInput.tsx:50` affiche
-  le micro avec la seule clé interne.
-- **Clé de l'école dépensée sans contrôle ni décompte.** Contrairement à `/api/completion`
-  (`ERR_SCHOOL_NO_CREDIT`, quotas mensuel et par élève, fournisseurs de la séance, `decompter`),
-  `transcribe.ts:75-91` et `speak.ts:75-78` ne vérifient ni le crédit, ni les quotas, ni la séance,
-  et les lignes `usage_log` (`transcribe.ts:137`, `speak.ts:106`) ne portent ni tarif ni `montant` :
-  une école à sec continue de payer dictée et lecture chez le fournisseur sans que son porte-monnaie
-  ne soit débité. Test : « porte-monnaie de l'école à sec : la dictée est quand même servie… ».
+- **Commentaires contredits par le code.** **Corrigée** — les commentaires de
+  `src/pages/api/transcribe.ts` et `src/chat/VoiceControls.tsx` décrivent désormais les deux voies
+  (clé personnelle, ou clé de l'école contrôlée et décomptée sur son réseau).
+- **Clé de l'école dépensée sans contrôle ni décompte.** **Corrigée** — `transcribe.ts` et
+  `speak.ts` appliquent les contrôles de `/api/completion` avant l'appel (`controlerCleEcole`,
+  `src/server/cleEcole.ts`) et journalisent une ligne complète avec décompte réel du porte-monnaie
+  (`journaliserCleEcole` → `tarifDuModele` + `decompter`). Tests : « porte-monnaie de l'école à
+  sec : 402… », « débit réel du porte-monnaie… ».

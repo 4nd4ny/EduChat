@@ -22,7 +22,10 @@ export default function Etablissements() {
   const t = useT();
   const seule = useListeSeule();
   const [etabs, setEtabs] = useState<Etab[]>([]);
-  const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
+  // activeProvider n'a pas de champ à l'écran : il est gardé pour être RENVOYÉ
+  // tel quel à la modification (l'API ne l'écrit plus s'il est absent, mais le
+  // renvoyer dit explicitement « inchangé »). Vide = inconnu, non envoyé.
+  const [form, setForm] = useState({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "", activeProvider: "" });
   const [message, setMessage] = useState("");
 
   const relire = useCallback(() => {
@@ -50,10 +53,11 @@ export default function Etablissements() {
         respire: form.respire, tokenQuotaMonthly: Number(form.quota) || 0,
         quotaPerStudentDaily: Number(form.perStudent) || 0,
         billingEmail: form.billingEmail,
+        activeProvider: form.id && form.activeProvider ? form.activeProvider : undefined,
       }),
     });
     if (!response.ok) { setMessage(t("admin.msg.schoolSaveFailed")); return; }
-    setForm({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "" });
+    setForm({ id: 0, name: "", ips: "", respire: false, quota: "", perStudent: "", billingEmail: "", activeProvider: "" });
     relire();
   };
 
@@ -83,7 +87,7 @@ export default function Etablissements() {
                 : t("admin.schools.unlimited"),
             })}</span>
             <span className="flex-grow" />
-            <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String(e.quota_per_student_daily || ""), billingEmail: e.billing_email })}
+            <button onClick={() => setForm({ id: e.id, name: e.name, ips: e.ips, respire: !!e.respire, quota: String(e.token_quota_monthly || ""), perStudent: String(e.quota_per_student_daily || ""), billingEmail: e.billing_email, activeProvider: e.active_provider ?? "" })}
               className="rounded border border-white/20 px-2 py-0.5 text-xs hover:bg-tertiary">{t("admin.btn.edit")}</button>
           </li>
         ))}

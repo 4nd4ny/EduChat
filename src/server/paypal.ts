@@ -27,6 +27,7 @@
 // pire qu'un point de paiement visiblement absent.
 
 import { getDb } from './db';
+import { notifyAdmin } from './mail';
 import { BillingCurrency } from '../utils/env';
 import { bouger, commissionRecharge, soldeDe, titulaireCompte, titulaireEcole,
   detailCommission, type Titulaire } from './porteMonnaie';
@@ -175,6 +176,45 @@ async function relireCapture(captureId: string): Promise<{ montant: number; devi
   };
 }
 
+/**
+ * Le remboursement, redemandé à PayPal. Même règle que pour la capture : c'est
+ * LUI qui dit combien est reparti, et s'il vient de nous (custom_id posé par
+ * `rembourser`) — jamais le corps de la notification.
+ */
+async function relireRemboursement(refundId: string):
+  Promise<{ montant: number; devise: string; statut: string; customId: string }> {
+  const d = await appel(`/v2/payments/refunds/${encodeURIComponent(refundId)}`);
+  return {
+    montant: parseFloat(d?.amount?.value ?? '0'),
+    devise: String(d?.amount?.currency_code ?? ''),
+    statut: String(d?.status ?? ''),
+    customId: String(d?.custom_id ?? ''),
+  };
+}
+
+/**
+ * Repère posé sur chaque remboursement que NOUS demandons (voir `rembourser`).
+ * Il revient dans la ressource relue chez PayPal : c'est ce qui permet de
+ * reconnaître la notification même si elle arrive avant qu'on ait pu écrire
+ * la trace au registre.
+ */
+const REPERE_REMBOURSEMENT = 'educhat:remboursement-demande';
+
+/** Clé du registre qui trace un remboursement demandé par la plateforme. */
+const cleRemboursement = (refundId: string) => `rembours:${refundId}`;
+
+/**
+ * Seule la violation de l'index UNIQUE sur paypal_id signifie « déjà fait ».
+ * Toute autre erreur — titulaire disparu, base verrouillée — est un VRAI
+ * échec : la confondre avec un doublon, c'est acquitter auprès de PayPal un
+ * argent encaissé et crédité nulle part.
+ */
+function estDoublon(erreur: unknown): boolean {
+  const e = erreur as { code?: string; message?: string } | null;
+  return e?.code === 'SQLITE_CONSTRAINT_UNIQUE'
+    || (e?.code === 'SQLITE_CONSTRAINT' && /UNIQUE/i.test(e?.message ?? ''));
+}
+
 // ------------------------------------------------------------ créditer
 
 export type Verdict = { creditee: boolean; raison: string; montant?: number };
@@ -214,24 +254,50 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
 
     // UNE SEULE ÉCRITURE, et c'est la contrainte UNIQUE sur paypal_id qui
     // refuse le doublon. Deux notifications simultanées — cas normal, pas
-    // exceptionnel — n'en font passer qu'une.
+    // exceptionnel — n'en font passer qu'une. Les deux mouvements et le
+    // passage à « creditee » tiennent dans UNE transaction : une recharge
+    // passée sans sa contribution ne pourrait plus être complétée, le
+    // réessai butant ensuite sur le doublon.
     let solde: number;
     try {
-      solde = bouger(titulaire, 'recharge', capture.montant,
-        `PayPal ${captureId}`, 'paypal', captureId);
-      // La contribution se prélève sur le versement — au taux choisi par
-      // l'école, au PLANCHER pour une personne (zéro marge : il ne couvre que
-      // les frais PayPal) — jamais sur les jetons, qui passent à prix coûtant.
-      // Le libellé nomme ce qui a réellement joué, pourcentage ou forfait :
-      // c'est ce relevé-ci que le titulaire relira dans six mois.
-      const retenue = commissionRecharge(titulaire, capture.montant);
-      solde = bouger(titulaire, 'ajustement', -retenue.commission,
-        `${detailCommission(retenue, BillingCurrency)} — ${captureId}`, 'paypal');
-    } catch {
-      return { creditee: false, raison: 'Déjà créditée (idempotence).' };
+      solde = db.transaction(() => {
+        bouger(titulaire, 'recharge', capture.montant,
+          `PayPal ${captureId}`, 'paypal', captureId);
+        // La contribution se prélève sur le versement — au taux choisi par
+        // l'école, au PLANCHER pour une personne (zéro marge : il ne couvre que
+        // les frais PayPal) — jamais sur les jetons, qui passent à prix coûtant.
+        // Le libellé nomme ce qui a réellement joué, pourcentage ou forfait :
+        // c'est ce relevé-ci que le titulaire relira dans six mois.
+        const retenue = commissionRecharge(titulaire, capture.montant);
+        const apres = bouger(titulaire, 'ajustement', -retenue.commission,
+          `${detailCommission(retenue, BillingCurrency)} — ${captureId}`, 'paypal');
+        db.prepare("UPDATE recharges SET etat = 'creditee', capture_id = ?, credite_at = ? WHERE order_id = ?")
+          .run(captureId, Date.now(), orderId);
+        return apres;
+      })();
+    } catch (erreur) {
+      if (estDoublon(erreur)) return { creditee: false, raison: 'Déjà créditée (idempotence).' };
+      // ARGENT ENCAISSÉ, CRÉDITÉ NULLE PART (typiquement : compte effacé entre
+      // la commande et la capture). On ne l'acquitte PAS en silence :
+      //   · l'intention passe à « orpheline », un état qu'on peut rechercher et
+      //     régler à la main (créditer ailleurs, ou rembourser la capture) ;
+      //   · l'administration est prévenue, une seule fois — au passage depuis
+      //     « attente », pas à chacun des réessais de PayPal ;
+      //   · l'erreur remonte : le webhook répond 500 et PayPal RÉESSAIE. Une
+      //     panne passagère (base verrouillée) se résout alors d'elle-même, et
+      //     l'échec reste visible côté PayPal au lieu d'y paraître réussi.
+      console.error('PayPal — paiement reçu mais non crédité :', captureId, orderId, erreur);
+      const bascule = db.prepare(
+        "UPDATE recharges SET etat = 'orpheline', capture_id = ? WHERE order_id = ? AND etat = 'attente'")
+        .run(captureId, orderId);
+      if (bascule.changes > 0) {
+        notifyAdmin('Paiement PayPal reçu mais NON crédité',
+          `La capture ${captureId} (${capture.montant.toFixed(2)} ${BillingCurrency}, commande ${orderId}) `
+          + `n'a pu être créditée : ${(erreur as Error)?.message ?? erreur}.\n`
+          + `L'intention est marquée « orpheline » : à créditer à la main ou à rembourser depuis PayPal.`);
+      }
+      throw erreur;
     }
-    db.prepare("UPDATE recharges SET etat = 'creditee', capture_id = ?, credite_at = ? WHERE order_id = ?")
-      .run(captureId, Date.now(), orderId);
     return { creditee: true, raison: `Solde ${solde.toFixed(2)} ${BillingCurrency}.`, montant: capture.montant };
   }
 
@@ -253,14 +319,63 @@ export async function traiterEvenement(evenement: any): Promise<Verdict> {
       .get(origine) as
       { etablissement_id: number; titulaire_email: string | null; montant: number } | undefined;
     if (!recharge) return { creditee: false, raison: `Aucune recharge connue pour ${origine}.` };
+
+    // Ce qui a DÉJÀ été repris sur cette capture, toutes notifications
+    // confondues : on ne reprend jamais plus que ce qu'elle a apporté.
+    const prefixe = `annul:${origine}`;
+    const dejaRepris = -(db.prepare(`
+      SELECT COALESCE(SUM(montant), 0) AS total FROM credit_mouvements
+      WHERE paypal_id = ? OR substr(paypal_id, 1, ?) = ?
+    `).get(prefixe, prefixe.length + 1, `${prefixe}:`) as { total: number }).total;
+    const restant = Math.max(0, Math.round((recharge.montant - dejaRepris) * 100) / 100);
+
+    let aReprendre = restant;
+    let cle = prefixe;
+    if (type === 'PAYMENT.CAPTURE.REFUNDED') {
+      // Un remboursement est une opération DU MARCHAND : soit nous (via
+      // `rembourser`, qui a DÉJÀ vidé le porte-monnaie), soit quelqu'un depuis
+      // le tableau de bord PayPal. Le premier ne doit pas être débité une
+      // seconde fois ; le second, oui — mais de ce qui est reparti, pas du
+      // montant de la recharge : un remboursement peut être partiel.
+      const refundId = captureId; // la ressource EST le remboursement
+      const dejaTrace = db.prepare('SELECT 1 AS v FROM credit_mouvements WHERE paypal_id = ?')
+        .get(cleRemboursement(refundId));
+      const rb = dejaTrace ? null : await relireRemboursement(refundId);
+      if (dejaTrace || rb?.customId === REPERE_REMBOURSEMENT) {
+        return { creditee: false, raison: `Remboursement ${refundId} demandé par la plateforme : déjà débité.` };
+      }
+      if (rb!.statut === 'CANCELLED' || rb!.statut === 'FAILED') {
+        return { creditee: false, raison: `Remboursement non abouti (${rb!.statut}).` };
+      }
+      if (rb!.devise.toUpperCase() !== BillingCurrency.toUpperCase()) {
+        console.error('PayPal — remboursement dans une autre devise, non repris :', refundId, rb!.devise);
+        return { creditee: false, raison: `Devise ${rb!.devise} ≠ ${BillingCurrency} : rien n'est repris.` };
+      }
+      aReprendre = Math.min(restant, rb!.montant);
+      // Une clé PAR remboursement : plusieurs remboursements partiels d'une
+      // même capture sont autant de reprises distinctes, chacune idempotente.
+      cle = `${prefixe}:${refundId}`;
+    }
+
     let solde: number;
     try {
-      solde = bouger(titulaireDeLIntention(recharge), 'ajustement', -recharge.montant,
-        `PayPal ${type} ${origine}`, 'paypal', `annul:${origine}`);
-    } catch {
-      return { creditee: false, raison: 'Reprise déjà enregistrée.' };
+      solde = bouger(titulaireDeLIntention(recharge), 'ajustement', -aReprendre,
+        `PayPal ${type} ${origine}`, 'paypal', cle);
+    } catch (erreur) {
+      if (estDoublon(erreur)) return { creditee: false, raison: 'Reprise déjà enregistrée.' };
+      // Titulaire disparu, base indisponible : pas un doublon. On le dit, et
+      // PayPal réessaiera (500).
+      console.error('PayPal — reprise impossible :', type, origine, erreur);
+      notifyAdmin('Reprise PayPal NON enregistrée',
+        `${type} sur la capture ${origine} : ${aReprendre.toFixed(2)} ${BillingCurrency} n'ont pu être repris `
+        + `(${(erreur as Error)?.message ?? erreur}).`);
+      throw erreur;
     }
-    db.prepare("UPDATE recharges SET etat = 'reprise' WHERE capture_id = ?").run(origine);
+    // « reprise » quand la capture a tout rendu ; un remboursement partiel
+    // laisse l'intention « creditee », son reste restant remboursable.
+    if (aReprendre >= restant) {
+      db.prepare("UPDATE recharges SET etat = 'reprise' WHERE capture_id = ?").run(origine);
+    }
     return { creditee: false, raison: `Repris. Solde ${solde.toFixed(2)} ${BillingCurrency}.` };
   }
 
@@ -324,15 +439,36 @@ export async function rembourser(titulaire: Titulaire, par: string):
   for (const c of captures) {
     if (reste <= 0) break;
     const part = Math.min(reste, c.montant);
+    let rb: any;
     try {
-      await appel(`/v2/payments/captures/${encodeURIComponent(c.id)}/refund`, {
+      // custom_id : le repère qui fera reconnaître la notification
+      // PAYMENT.CAPTURE.REFUNDED de CE remboursement — le porte-monnaie a déjà
+      // été vidé plus haut, il ne doit pas l'être une seconde fois.
+      rb = await appel(`/v2/payments/captures/${encodeURIComponent(c.id)}/refund`, {
         method: 'POST',
-        body: JSON.stringify({ amount: { value: part.toFixed(2), currency_code: BillingCurrency } }),
+        body: JSON.stringify({
+          amount: { value: part.toFixed(2), currency_code: BillingCurrency },
+          custom_id: REPERE_REMBOURSEMENT,
+        }),
       });
-      reste = Math.round((reste - part) * 100) / 100;
-      faits.push(`${c.id}:${part.toFixed(2)}`);
     } catch (erreur) {
       console.error('PayPal — remboursement partiel impossible :', c.id, erreur);
+      continue;
+    }
+    reste = Math.round((reste - part) * 100) / 100;
+    faits.push(`${c.id}:${part.toFixed(2)}`);
+    // Trace au registre, à montant nul (l'argent est déjà sorti avec le solde),
+    // sous l'identifiant PayPal du remboursement : c'est elle que la
+    // notification retrouvera, et elle dit en clair quelle capture a rendu quoi.
+    if (rb?.id) {
+      try {
+        bouger(titulaire, 'ajustement', 0,
+          `Remboursement PayPal ${rb.id} — ${part.toFixed(2)} rendus sur ${c.id}`, par, cleRemboursement(String(rb.id)));
+      } catch (erreur) {
+        // Le repère custom_id suffit à reconnaître la notification : la trace
+        // manquante se signale, elle ne défait pas un remboursement parti.
+        if (!estDoublon(erreur)) console.error('PayPal — trace de remboursement non écrite :', rb.id, erreur);
+      }
     }
   }
 

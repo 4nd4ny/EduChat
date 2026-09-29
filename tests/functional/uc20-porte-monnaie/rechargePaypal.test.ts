@@ -8,7 +8,7 @@ import { appeler, type ApiHandler } from '../../helpers/api';
 import { poserEnv } from '../../helpers/env';
 import { viderBase, base, creerEtablissement, creerCompte } from '../../helpers/db';
 import {
-  installerFauxPaypal, ENV_PAYPAL, evenementCapture, evenementRemboursement, type FauxPaypal,
+  installerFauxPaypal, ENV_PAYPAL, evenementCapture, evenementRemboursement, rembourserDepuisPaypal, type FauxPaypal,
 } from '../../unit/uc20-porte-monnaie/fauxPaypal';
 
 vi.mock('../../../src/server/mail', () => ({
@@ -139,17 +139,28 @@ describe('Scénarios alternatifs', () => {
     expect(((await base()).prepare('SELECT etat FROM recharges').get() as any).etat).toBe('reprise');
   });
 
-  it('ANOMALIE — un remboursement DEMANDÉ puis notifié par PayPal débite une seconde fois', async () => {
-    // rembourser() vide le solde mais laisse l'intention « creditee » : la
-    // notification PAYMENT.CAPTURE.REFUNDED que PayPal envoie ensuite pour ce
-    // même remboursement reprend encore le montant de la recharge.
+  it('corrigé — un remboursement DEMANDÉ puis notifié par PayPal ne débite pas une seconde fois', async () => {
+    // rembourser() vide le solde ; la notification PAYMENT.CAPTURE.REFUNDED que
+    // PayPal envoie ensuite pour ce même remboursement est reconnue (trace au
+    // registre sous l'id du remboursement, repère custom_id) et acquittée.
     await appeler(meCredits, { method: 'POST', token: jetonPerso, body: { montant: 20 }, ip: ipNeuve() });
     f.captures.set('CAP-X', { value: '20.00', currency_code: 'CHF', status: 'COMPLETED' });
     await notifier(evenementCapture('CAP-X', 'ORDER-1'));
     await appeler(meCredits, { method: 'POST', token: jetonPerso, body: { action: 'rembourser' }, ip: ipNeuve() });
     expect(await soldePerso('perso@x.ch')).toBe(0);
-    await notifier(evenementRemboursement('CAP-X'));
-    expect(await soldePerso('perso@x.ch')).toBe(-20); // comportement actuel : dette fictive de 20 CHF
+    expect((await notifier(evenementRemboursement('CAP-X'))).status).toBe(200);
+    expect(await soldePerso('perso@x.ch')).toBe(0);
+    expect((await notifier(evenementRemboursement('CAP-X'))).status).toBe(200); // rejouée : toujours rien
+    expect(await soldePerso('perso@x.ch')).toBe(0);
+  });
+
+  it('A5 — remboursement partiel fait depuis PayPal : seul le montant remboursé est repris', async () => {
+    await appeler(recharge, { method: 'POST', token: jetonDirA, body: { montant: 100 }, ip: ipNeuve() });
+    f.captures.set('CAP-Q', { value: '100.00', currency_code: 'CHF', status: 'COMPLETED' });
+    await notifier(evenementCapture('CAP-Q', 'ORDER-1'));
+    rembourserDepuisPaypal(f, 'CAP-Q', '25.00');
+    expect((await notifier(evenementRemboursement('CAP-Q'))).status).toBe(200);
+    expect(await soldeEcole(ecoleA)).toBe(70);
   });
 });
 
@@ -171,6 +182,18 @@ describe('Scénarios d’erreur', () => {
     expect((await notifier(null, 'x'.repeat(300 * 1024))).status).toBe(413);
     await appeler(recharge, { method: 'POST', token: jetonDirA, body: { montant: 50 }, ip: ipNeuve() });
     expect((await notifier(evenementCapture('CAP-FANTOME', 'ORDER-1'))).status).toBe(500);
+  });
+
+  it('paiement reçu pour un compte effacé entre-temps : 500 (PayPal réessaiera), intention « orpheline », administration alertée', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { notifyAdmin } = await import('../../../src/server/mail');
+    (notifyAdmin as any).mockClear();
+    await appeler(meCredits, { method: 'POST', token: jetonPerso, body: { montant: 20 }, ip: ipNeuve() });
+    (await base()).prepare('DELETE FROM users WHERE email = ?').run('perso@x.ch');
+    f.captures.set('CAP-O', { value: '20.00', currency_code: 'CHF', status: 'COMPLETED' });
+    expect((await notifier(evenementCapture('CAP-O', 'ORDER-1'))).status).toBe(500);
+    expect(((await base()).prepare('SELECT etat FROM recharges').get() as any).etat).toBe('orpheline');
+    expect(notifyAdmin).toHaveBeenCalledTimes(1);
   });
 
   it('devise différente ou capture non aboutie : compris (200) mais rien n’est crédité', async () => {

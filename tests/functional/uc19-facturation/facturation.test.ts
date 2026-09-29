@@ -138,6 +138,17 @@ describe('Scénarios alternatifs', () => {
     expect(f.mentions.reference).toBe('REF-B');
   });
 
+  it('A5 — relevé brut : un porte-monnaie PERSONNEL (payé) a sa ligne, distincte de la démo publique', async () => {
+    // Anomalie corrigée (UC-19, n° 3) : ces appels, journalisés sans IP ni
+    // établissement mais avec un montant prélevé, étaient libellés « démo ».
+    await journaliser({ ts: JUILLET, etablissementId: null, ip: '', tokensIn: 30, tokensOut: 30, montant: 0.5 });
+    const r = await appeler(billing, { method: 'GET', token: jetonSuper, query: { year: '2026', month: '7' }, ip: ipNeuve() });
+    const perso = r.json.rows.find((x: any) => x.etablissement === '(porte-monnaie personnel — payé)');
+    const demo = r.json.rows.find((x: any) => x.etablissement === '(démo publique — non facturable)');
+    expect(perso).toMatchObject({ requests: 1, tokens: 60, ip: '' });
+    expect(demo).toMatchObject({ requests: 1, tokens: 10 });
+  });
+
   it('A5 — relevé brut GET /api/admin/billing : écoles, IP hors base, démo publique, enseignants', async () => {
     const r = await appeler(billing, { method: 'GET', token: jetonSuper, query: { year: '2026', month: '7' }, ip: ipNeuve() });
     expect(r.status).toBe(200);

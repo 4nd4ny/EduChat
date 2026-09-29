@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getClientIp, isRateLimited, mayUseServerKeys } from '../../server/access';
-import { getDb } from '../../server/db';
-import { resolveEtablissementByIp } from '../../server/etablissements';
+import { controlerCleEcole, estRefus, jetonsVoix, journaliserCleEcole, type AccesCleEcole } from '../../server/cleEcole';
 import { requireAuth } from '../../server/token';
 import { readUserKey } from '../../server/userKeys';
 import { DeveloperKeys } from '../../utils/env';
@@ -13,7 +12,8 @@ import { ERR } from '../../shared/providers';
 // sortir aucun texte de l'appareil. Voxtral donne une voix nettement plus
 // naturelle, mais chaque lecture est un appel facturé — c'est pourquoi le
 // client ne l'utilise que sur Mistral, et pourquoi une lecture payée par une
-// école est journalisée comme le reste.
+// école est contrôlée, journalisée et DÉCOMPTÉE comme un message du chat
+// (src/server/cleEcole.ts).
 
 const MAX_CHARS = 2000;   // au-delà, on ne lit pas : c'est un cours, pas un livre
 
@@ -71,10 +71,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (account) apiKey = readUserKey(account.email, 'mistral') ?? '';
     } catch { apiKey = ''; }
   }
-  let usedServerKey = false;
+  let cleEcole: AccesCleEcole | null = null;
   if (!apiKey && await mayUseServerKeys(clientIp)) {
+    // Mêmes gardes que /api/completion sur la clé de l'école (séance, crédit,
+    // quotas), AVANT d'interroger Mistral — le catalogue des voix compris : une
+    // école à sec ne finance plus aucune lecture. Le navigateur, sur ce refus
+    // comme sur tout autre, retombe sur sa propre synthèse, gratuite.
+    const clientId = /^[a-f0-9-]{8,64}$/i.test(String(req.body?.clientId ?? '')) ? String(req.body.clientId) : '';
+    const acces = controlerCleEcole(clientIp, 'mistral', clientId);
+    if (estRefus(acces)) return res.status(acces.status).json({ error: { code: acces.code } });
     apiKey = String(DeveloperKeys.mistral || '').trim();
-    usedServerKey = !!apiKey;
+    if (apiKey) cleEcole = acces;
   }
   if (!apiKey) return res.status(403).json({ error: { code: ERR.VOICE_KEY } });
 
@@ -99,16 +106,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!base64) return res.status(502).json({ error: { code: 'ERR_TTS_FAILED' } });
     const audio = Buffer.from(base64, 'base64');
 
-    if (usedServerKey) {
-      try {
-        const etab = resolveEtablissementByIp(clientIp);
-        getDb().prepare(`
-          INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
-          VALUES (?, ?, ?, NULL, NULL, 'mistral', 'voxtral-mini-tts (lecture)', ?, 1, '')
-        `).run(Date.now(), clientIp, etab?.id ?? null, Math.max(1, Math.round(text.length / 4)));
-      } catch (error) {
-        console.error('Lecture non journalisée :', error);
-      }
+    // Lecture payée par l'école : même ligne de journal et même décompte que
+    // le chat. Jetons rendus par Mistral s'il les rend, sinon estimés depuis le
+    // texte lu (côté ENTRÉE : c'est le texte qu'on envoie).
+    if (cleEcole) {
+      journaliserCleEcole(clientIp, cleEcole, 'mistral', 'voxtral-mini-tts-latest',
+        jetonsVoix(charge?.usage, text, 'entree'));
     }
 
     res.setHeader('Content-Type', 'audio/mpeg');

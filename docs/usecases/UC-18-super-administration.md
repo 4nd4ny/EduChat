@@ -30,8 +30,11 @@ pouvoirs, **bornée à son école**. Rien ne se supprime.
    (`GET /api/admin/etablissements`, triées par nom sans égard à la casse).
 2. Le super remplit le formulaire et enregistre :
    `POST /api/admin/etablissements { name, ips, respire, tokenQuotaMonthly, quotaPerStudentDaily, billingEmail }`.
-   Les IP sont découpées, nettoyées et rejointes par des virgules ; les quotas négatifs deviennent 0 ;
-   le fournisseur actif n'est retenu que s'il figure dans `SCHOOL_PROVIDER_IDS`.
+   Les IP sont découpées, nettoyées et rejointes par des virgules, chacune doit être une adresse IPv4
+   ou IPv6 et ne doit être revendiquée par **aucune autre** école (comparaison sur la forme canonique,
+   comme l'inscription) ; les quotas négatifs deviennent 0 ; le fournisseur actif n'est retenu que
+   s'il figure dans `SCHOOL_PROVIDER_IDS`. En modification (`id`), seuls le nom et les champs
+   **présents** dans le corps sont écrits ; le formulaire renvoie le fournisseur actif qu'il connaît.
 3. Réponse `201 { ok, id }` ; l'administration reçoit « Nouvel établissement : … ».
 4. Dans la liste des comptes (`GET /api/admin/users`), le super rattache un enseignant :
    `POST /api/admin/users { email, etablissementId }` — `users.etablissement_id` est posé et le lien
@@ -64,6 +67,9 @@ pouvoirs, **bornée à son école**. Rien ne se supprime.
 | Administrateur d'école : créer / modifier une école, supprimer | `403 ERR_FORBIDDEN` |
 | Nom d'école vide | `400 ERR_NAME_INVALID` |
 | Action « catalogue » par le super sans `id` | `400 ERR_ETAB_UNKNOWN` |
+| Modification ou action « catalogue » sur un `id` inexistant | `404 ERR_ETAB_UNKNOWN`, rien n'est écrit |
+| IP mal formée (ni IPv4 ni IPv6, plage CIDR comprise) | `400 ERR_IP_INVALID`, rien n'est écrit |
+| IP déjà revendiquée par une autre école (toutes graphies) | `409 ERR_IP_TAKEN`, rien n'est écrit |
 | `DELETE /api/admin/etablissements` (super) | `403 ERR_DELETE_DISABLED` — la ligne demeure |
 | Autre méthode | `405 ERR_METHOD_NOT_ALLOWED` (`Allow: GET, POST, DELETE` / `GET, POST`) |
 | Adresse vide / compte inconnu | `400 ERR_EMAIL_INVALID` / `404 ERR_USER_UNKNOWN` |
@@ -97,16 +103,22 @@ pouvoirs, **bornée à son école**. Rien ne se supprime.
 
 ## Anomalies constatées
 
-- **Le formulaire du site efface le fournisseur actif.** `src/administration/Etablissements.tsx:48`
+- **Corrigée** — un champ absent n'est plus écrit en modification, et le formulaire renvoie le
+  fournisseur actif qu'il a lu. Constat d'origine :
+  **Le formulaire du site efface le fournisseur actif.** `src/administration/Etablissements.tsx:48`
   n'envoie jamais `activeProvider`, et `src/pages/api/admin/etablissements.ts:66,71` réécrit
   `active_provider = ''` quand le champ est absent. Aucune autre interface ne le pose : chaque
   modification d'une école depuis `/admin` lui retire son fournisseur actif (et donc son tarif
-  d'école, UC-17 A5). Test : « ANOMALIE : l'enregistrement est un formulaire COMPLET… ».
-- **Pas d'unicité des IP côté site.** `src/pages/api/admin/etablissements.ts:56` accepte une IP
+  d'école, UC-17 A5). Test devenu « corrigé : un champ absent n'est plus remis à zéro… ».
+- **Corrigée** — une IP mal formée est refusée (`400 ERR_IP_INVALID`), une IP d'une autre école
+  aussi (`409 ERR_IP_TAKEN`, forme canonique dupliquée de l'inscription). Constat d'origine :
+  **Pas d'unicité des IP côté site.** `src/pages/api/admin/etablissements.ts:56` accepte une IP
   déjà revendiquée par une autre école (l'inscription en libre-service, elle, la refuse) ; la
   résolution `resolveEtablissementByIp` retient alors la première ligne rencontrée. Les IP ne sont
-  pas non plus validées (toute chaîne est acceptée). Test : « ANOMALIE : aucune unicité des IP… ».
-- **Modifier une école inexistante répond « ok ».** `src/pages/api/admin/etablissements.ts:70-73` :
+  pas non plus validées (toute chaîne est acceptée). Test devenu « corrigé : une IP déjà revendiquée… ».
+- **Corrigée** — un `id` inexistant répond `404 ERR_ETAB_UNKNOWN`, en modification comme pour
+  l'action « catalogue ». Constat d'origine :
+  **Modifier une école inexistante répond « ok ».** `src/pages/api/admin/etablissements.ts:70-73` :
   `POST { id: 424242, … }` rend `200 { ok: true }` sans rien écrire. Même chose pour l'action
   « catalogue » du super avec un `id` inconnu (`:42-46`).
 
@@ -124,7 +136,7 @@ pouvoirs, **bornée à son école**. Rien ne se supprime.
 |---|---|---|
 | Nominal | `etablissements.test.ts` | création 201 + IP normalisées + notification ; modification ; liste triée |
 | Règles | `etablissements.test.ts` | fournisseurs non payables ramenés à vide ; bornage des quotas, nom tronqué |
-| Anomalies | `etablissements.test.ts` | fournisseur actif effacé ; IP en double ; id inexistant « ok » |
+| Anomalies corrigées | `etablissements.test.ts` | fournisseur actif conservé, seuls les champs présents écrits ; IP d'une autre école refusée (409, graphies), IP propres conservées, IP mal formée (400) ; id inexistant 404 (modification et catalogue) |
 | A1/A5 | `etablissements.test.ts` | catalogue par id ; super rattaché garde la vue du site |
 | Erreurs | `etablissements.test.ts` | nom vide ; catalogue sans id ; DELETE désactivé ; 405 |
 | Droits | `etablissements.test.ts` | anonymes/enseignants/promptagogues 403 ; admin d'école : sa ligne seule, ni création ni modification ni suppression |

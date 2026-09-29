@@ -114,17 +114,30 @@ describe('bilanParticipation', () => {
     expect(bilanParticipation(2026, 7)).toMatchObject({ demo: 2, respire: 4, jetonsOfferts: 3_000_000 });
   });
 
-  it('ANOMALIE : ignore les prix par modèle figés sur les lignes — sans prix unique, l’offert vaut 0', async () => {
+  it('valorise l’offert aux prix FIGÉS sur chaque ligne, entrée et sortie, sans prix unique', async () => {
+    // Anomalie corrigée (UC-19, n° 2) : le bilan n'appliquait que le prix unique
+    // du fournisseur au total des jetons — sans lui, l'offert valait 0.
     const respire = await creerEtablissement({ respire: true });
     await journaliser({ ts: JUILLET, etablissementId: respire, tokensIn: 1_000_000, tokensOut: 1_000_000, prixEntree: 1, prixSortie: 5 });
-    expect(bilanParticipation(2026, 7).respire).toBe(0); // alors que la ligne dit 6.00
+    expect(bilanParticipation(2026, 7)).toMatchObject({ respire: 6, jetonsOfferts: 2_000_000 });
   });
 
-  it('ANOMALIE : la consommation d’un porte-monnaie PERSONNEL est comptée comme démo offerte', async () => {
+  it('prix figés et prix unique cohabitent : chaque ligne à son prix, l’ancienne au prix unique', async () => {
+    const respire = await creerEtablissement({ respire: true });
+    reglerTarif('anthropic', 10);
+    await journaliser({ ts: JUILLET, etablissementId: respire, tokensIn: 1_000_000, prixEntree: 2, prixSortie: 4 }); // 2.00
+    await journaliser({ ts: JUILLET, etablissementId: respire, tokens: 100_000, tarifAt: 0 });                      // 1.00
+    expect(bilanParticipation(2026, 7).respire).toBe(3);
+  });
+
+  it('la consommation d’un porte-monnaie PERSONNEL (payée) n’est pas comptée comme démo offerte', async () => {
+    // Anomalie corrigée (UC-19, n° 3) : /api/completion journalise un payeur
+    // personnel avec ip '', établissement NULL — et le MONTANT prélevé, qui le
+    // distingue de la démonstration (montant 0).
     reglerTarif('anthropic', 1);
-    // Ce qu'écrit /api/completion pour un payeur personnel : ip '', établissement NULL, montant prélevé.
     await journaliser({ ts: JUILLET, etablissementId: null, ip: '', tokens: 1_000_000, montant: 3 });
-    expect(bilanParticipation(2026, 7).demo).toBe(1);
+    await journaliser({ ts: JUILLET, etablissementId: null, ip: '', tokens: 2_000_000, montant: 0 });
+    expect(bilanParticipation(2026, 7)).toMatchObject({ demo: 2, jetonsOfferts: 2_000_000 });
   });
 });
 

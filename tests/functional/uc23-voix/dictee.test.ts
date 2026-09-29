@@ -100,23 +100,54 @@ describe('Scénario nominal : dictée avec sa clé personnelle', () => {
   });
 });
 
+async function tarifer(provider: string, modele: string, entree = 1, sortie = 3) {
+  (await base()).prepare(`INSERT INTO tarifs_modeles (provider, modele, prix_entree_mtok, prix_sortie_mtok, devise, updated_at)
+    VALUES (?, ?, ?, ?, 'CHF', ?)`).run(provider, modele, entree, sortie, Date.now());
+}
+
+async function solde(id: number) {
+  return ((await base()).prepare('SELECT solde FROM etablissements WHERE id = ?').get(id) as any).solde as number;
+}
+
 describe('Scénario alternatif : dictée en classe, sur la clé de l’école', () => {
-  it('salle ouverte, Mistral : clé interne, dictée journalisée avec IP et estimation de jetons', async () => {
+  it('salle ouverte, Mistral : clé interne, ligne de journal comme le chat (IP, prix figés, montant)', async () => {
     const { id, ip } = await ecoleOuverte();
+    await tarifer('mistral', 'voxtral-mini-latest', 1, 3);
     routeur = () => ({ json: { text: 'x'.repeat(40) } });
     const r = await dicter({ provider: 'mistral' }, { ip });
     expect(r.status).toBe(200);
     expect((espion.mock.calls[0][1]!.headers as any).Authorization).toBe('Bearer cle-serveur-mistral');
     const [ligne] = await journal();
-    expect(ligne).toMatchObject({ ip, etablissement_id: id, provider: 'mistral', model: 'voxtral-mini-latest (dictée)',
-      tokens: 10, used_server_key: 1, prompt_id: null, teacher_email: null });
+    // Sans `usage` rendu par le fournisseur : estimation (40 car. / 4) côté SORTIE.
+    expect(ligne).toMatchObject({ ip, etablissement_id: id, provider: 'mistral', model: 'voxtral-mini-latest',
+      tokens: 10, tokens_in: 0, tokens_out: 10, used_server_key: 1, prompt_id: null, teacher_email: null,
+      client_id: `ip:${ip}`, prix_entree_mtok: 1, prix_sortie_mtok: 3, tarif_repli: '' });
+    expect(ligne.tarif_at).toBeGreaterThan(0);
+    // 10 jetons × 3 / 1 M, arrondi VERS LE HAUT au centime : 0.01.
+    expect(ligne.montant).toBe(0.01);
   });
 
-  it('salle ouverte, OpenAI : journalisée sous le modèle « transcription », au moins 1 jeton', async () => {
+  it('débit réel du porte-monnaie : jetons rendus par le fournisseur, prélevés au registre', async () => {
+    const { id, ip } = await ecoleOuverte(10);
+    await tarifer('openai', 'gpt-4o-mini-transcribe', 2, 10);
+    routeur = () => ({ json: { text: 'Bonjour', usage: { input_tokens: 500_000, output_tokens: 100_000 } } });
+    const r = await dicter({ provider: 'openai' }, { ip });
+    expect(r.status).toBe(200);
+    const [ligne] = await journal();
+    expect(ligne).toMatchObject({ model: 'gpt-4o-mini-transcribe', tokens_in: 500_000, tokens_out: 100_000,
+      tokens: 600_000, montant: 2 });
+    expect(await solde(id)).toBe(8);
+    const mvt = (await base()).prepare('SELECT * FROM credit_mouvements WHERE etablissement_id = ?').all(id) as any[];
+    expect(mvt).toEqual([expect.objectContaining({ genre: 'consommation', montant: -2, solde: 8 })]);
+  });
+
+  it('salle ouverte, OpenAI : le modèle RÉELLEMENT appelé est inscrit (repli whisper-1), au moins 1 jeton', async () => {
     const { ip } = await ecoleOuverte();
-    routeur = () => ({ json: { text: '' } });
+    routeur = (_url, init) => (init!.body as FormData).get('model') === 'gpt-4o-mini-transcribe'
+      ? { status: 404, json: { error: { message: 'indisponible' } } }
+      : { json: { text: '' } };
     await dicter({ provider: 'openai' }, { ip });
-    expect((await journal())[0]).toMatchObject({ provider: 'openai', model: 'transcription', tokens: 1 });
+    expect((await journal())[0]).toMatchObject({ provider: 'openai', model: 'whisper-1', tokens: 1, tokens_out: 1 });
   });
 
   it('fournisseur à drapeau rouge ou écarté sur la clé de l’école : 403 ERR_PROVIDER_NOT_ALLOWED', async () => {
@@ -137,16 +168,67 @@ describe('Scénario alternatif : dictée en classe, sur la clé de l’école', 
     expect(r.json.error.code).toBe('ERR_VOICE_KEY');
   });
 
-  it('porte-monnaie de l’école à sec : la dictée est quand même servie et rien n’est décompté', async () => {
-    // ANOMALIE constatée (voir la doc UC-23) : contrairement à /api/completion
-    // (ERR_SCHOOL_NO_CREDIT), /api/transcribe ne vérifie ni le crédit ni les
-    // quotas de l'école et ne décompte rien. Le test fige le comportement actuel.
+  it('porte-monnaie de l’école à sec : 402 ERR_SCHOOL_NO_CREDIT, rien n’est envoyé ni journalisé', async () => {
+    // Anomalie corrigée (UC-23) : la dictée était servie sur la clé d'une école
+    // à sec, sans rien décompter. Même refus que /api/completion, AVANT l'appel.
     const { id, ip } = await ecoleOuverte(0);
     const r = await dicter({ provider: 'mistral' }, { ip });
+    expect(r.status).toBe(402);
+    expect(r.json.error.code).toBe('ERR_SCHOOL_NO_CREDIT');
+    expect(espion).not.toHaveBeenCalled();
+    expect(await journal()).toHaveLength(0);
+    expect(await solde(id)).toBe(0);
+  });
+
+  it('école RESPIRE à solde nul : servie, journalisée aux prix du jour, rien de prélevé', async () => {
+    const { id, ip } = await ecoleOuverte(0);
+    (await base()).prepare('UPDATE etablissements SET respire = 1 WHERE id = ?').run(id);
+    await tarifer('mistral', 'voxtral-mini-latest', 1, 3);
+    const r = await dicter({ provider: 'mistral' }, { ip });
     expect(r.status).toBe(200);
-    const [ligne] = await journal();
-    expect(ligne.montant).toBe(0);
-    expect(((await base()).prepare('SELECT solde FROM etablissements WHERE id = ?').get(id) as any).solde).toBe(0);
+    expect((await journal())[0]).toMatchObject({ prix_sortie_mtok: 3, montant: 0 });
+    expect(await solde(id)).toBe(0);
+  });
+
+  it('quotas de l’école : plafond mensuel puis quota quotidien par élève → 429', async () => {
+    const { id, ip } = await ecoleOuverte();
+    const db = await base();
+    db.prepare('UPDATE etablissements SET token_quota_monthly = 5 WHERE id = ?').run(id);
+    db.prepare(`INSERT INTO usage_log (ts, ip, etablissement_id, provider, model, tokens, used_server_key, client_id)
+      VALUES (?, ?, ?, 'mistral', 'm', 5, 1, 'autre')`).run(Date.now(), ip, id);
+    let r = await dicter({ provider: 'mistral' }, { ip });
+    expect(r.status).toBe(429);
+    expect(r.json.error.code).toBe('ERR_QUOTA_ETABLISSEMENT');
+
+    db.prepare('UPDATE etablissements SET token_quota_monthly = 0, quota_per_student_daily = 3 WHERE id = ?').run(id);
+    db.prepare(`INSERT INTO usage_log (ts, ip, etablissement_id, provider, model, tokens, used_server_key, client_id)
+      VALUES (?, ?, ?, 'mistral', 'm', 3, 1, ?)`).run(Date.now(), ip, id, `ip:${ip}`);
+    r = await dicter({ provider: 'mistral' }, { ip });
+    expect(r.status).toBe(429);
+    expect(r.json.error.code).toBe('ERR_QUOTA_ELEVE');
+    // Un autre élève (clientId anonyme distinct) garde son propre pot.
+    r = await dicter({ provider: 'mistral', clientId: 'abcdef12-3456' }, { ip });
+    expect(r.status).toBe(200);
+    expect(espion).toHaveBeenCalledTimes(1);
+  });
+
+  it('séance : fournisseur non coché par l’enseignant → 403 ERR_PROVIDER_NOT_IN_SESSION ; coché → attribué', async () => {
+    const { id, ip } = await ecoleOuverte();
+    (await base()).prepare(`INSERT INTO session_settings (etablissement_id, web_search, set_by_email, expires_at, providers)
+      VALUES (?, 1, 'prof@ecole.ch', ?, 'openai')`).run(id, Date.now() + 3_600_000);
+    const refuse = await dicter({ provider: 'mistral' }, { ip });
+    expect(refuse.status).toBe(403);
+    expect(refuse.json.error.code).toBe('ERR_PROVIDER_NOT_IN_SESSION');
+    expect(espion).not.toHaveBeenCalled();
+    expect((await dicter({ provider: 'openai' }, { ip })).status).toBe(200);
+    expect((await journal())[0]).toMatchObject({ teacher_email: 'prof@ecole.ch' });
+  });
+
+  it('clé personnelle sur le réseau d’une école à sec : servie, rien de journalisé ni de prélevé', async () => {
+    const { ip } = await ecoleOuverte(0);
+    const r = await dicter({ provider: 'mistral', apiKey: 'cle-perso' }, { ip });
+    expect(r.status).toBe(200);
+    expect(await journal()).toHaveLength(0);
   });
 });
 

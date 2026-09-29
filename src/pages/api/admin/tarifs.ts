@@ -138,7 +138,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ ok: true, propositions: await sonderTarifs() });
     }
     const provider = String(req.body?.provider ?? '');
-    const prix = Number(req.body?.prixMtok);
+    // Number('') et Number(null) valent 0 : un champ vidé remettait le prix
+    // unique à zéro au lieu d'être refusé. Une valeur absente, nulle ou vide
+    // n'est pas un prix — seule une valeur explicite (nombre ou chaîne
+    // numérique) en est un.
+    const brut = req.body?.prixMtok;
+    const vide = brut === undefined || brut === null || (typeof brut === 'string' && !brut.trim());
+    const prix = vide ? NaN : Number(brut);
     if (!(PROVIDER_IDS as readonly string[]).includes(provider)) {
       return res.status(400).json({ error: { code: 'ERR_PROVIDER_UNKNOWN' } });
     }

@@ -35,7 +35,8 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
    `devise = SECRET_BILLING_CURRENCY` ; `mentions` du mois.
 3. La réponse du site inclut aussi `impayees` (toutes écoles, toutes périodes) et `participation`
    (`bilanParticipation` : contribution collectée au registre du porte-monnaie, face au coût de ce
-   qui a été offert — démonstration publique et écoles RESPIRE).
+   qui a été offert — démonstration publique et écoles RESPIRE, hors porte-monnaie personnel payé —,
+   valorisé aux prix figés sur chaque ligne, au prix unique à défaut).
 4. Le site émet : `POST { action: 'emettre', etablissementId, year, month }` → `emettre` fige
    jetons, consommation, participation, total et devise dans `factures` (`emise_at`).
 5. Le paiement reçu, le site marque la facture : `POST { action: 'payee', etablissementId, periode }`.
@@ -57,13 +58,15 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
   Elles n'entrent dans **aucun calcul** et survivent à une réémission (table `facture_mentions`
   séparée).
 - **A5 — Relevé brut.** `GET /api/admin/billing` : requêtes et jetons par école × IP × fournisseur
-  (libellés « (IP hors base) » et « (démo publique — non facturable) »), plus un bilan par
+  (libellés « (IP hors base) », « (démo publique — non facturable) » et, pour une ligne sans
+  établissement mais payée (`montant > 0`), « (porte-monnaie personnel — payé) »), plus un bilan par
   enseignant ; restreint à son école pour un administrateur d'école (filtre dans le SQL).
 - **A6 — Export CSV.** `format=csv` (séparateur `;`, nom d'école entre guillemets) ;
   `format=csv&by=teacher` pour le bilan par enseignant ; `Content-Disposition` nommé par période.
 - **A7 — Période par défaut.** Sans `year`/`month`, le mois courant UTC.
 - **A8 — Lignes anciennes.** Une ligne sans prix figé (`tarif_at = 0`) est relue au prix unique
-  du fournisseur (table `tarifs`), appliqué à l'entrée comme à la sortie (`ancien: true`).
+  du fournisseur (table `tarifs`), appliqué à l'entrée comme à la sortie (`ancien: true`) ; une
+  ligne qui n'a que son total (`tokens`, sans ventilation) est valorisée à `tokens × prix unique`.
 - **A9 — Rouvrir.** `POST { action: 'impayee' }` remet `payee_at` à `NULL`.
 - **A10 — Document imprimable.** `/facture?periode=AAAA-MM&etablissement=ID` relit la même route
   et n'affiche que ce que le serveur a consenti à envoyer.
@@ -107,17 +110,24 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
 
 ## Anomalies constatées
 
-1. **Lignes anciennes sans ventilation entrée/sortie facturées 0** —
+1. **Lignes anciennes sans ventilation entrée/sortie facturées 0** — **Corrigée** — les jetons
+   des lignes sans ventilation (`nonVentiles`) sont ajoutés au calcul à l'ancienne : jetons × prix
+   unique, comme promis. Constat d'origine :
    `src/server/facturation.ts:347`. La relecture « à l'ancienne » (`tarif_at = 0`) multiplie
    `tokens_in`/`tokens_out`, qui valent 0 sur les lignes antérieures à leur séparation et sur
-   celles qu'écrivent encore `/api/speak`, `/api/transcribe` et la traduction (qui ne renseignent
-   que `tokens`). Le commentaire promet « exactement comme hier » (jetons × prix unique) ; le
-   montant rendu est 0. Test : `facturation.test.ts` « ANOMALIE : une ligne ancienne… ».
-2. **Bilan de la contribution : offert valorisé au seul prix unique** —
+   celles qu'écrit encore la traduction (qui ne renseigne que `tokens` ; `/api/speak` et
+   `/api/transcribe` écrivent désormais des lignes complètes, UC-23). Le commentaire promet
+   « exactement comme hier » (jetons × prix unique) ; le montant rendu était 0. Test :
+   `facturation.test.ts` « une ligne ancienne sans ventilation… ».
+2. **Bilan de la contribution : offert valorisé au seul prix unique** — **Corrigée** — chaque
+   ligne est valorisée à ses prix figés (entrée et sortie) ; le prix unique ne sert plus qu'aux
+   lignes sans prix figé utilisable (anciennes, non ventilées, ou deux prix nuls). Constat d'origine :
    `src/server/facturation.ts:493`. `bilanParticipation` ignore les prix par modèle figés sur les
    lignes (`prix_entree_mtok`/`prix_sortie_mtok`) et applique `tarifs.prix_mtok` au total des
    jetons ; sans prix unique réglé, la démonstration et les écoles RESPIRE « coûtent » 0.
 3. **Consommation d'un porte-monnaie personnel comptée comme démonstration offerte** —
+   **Corrigée** — une ligne sans établissement dont le `montant` est positif (payée) est exclue
+   de l'offert et libellée « (porte-monnaie personnel — payé) » dans le relevé brut. Constat d'origine :
    `src/server/facturation.ts:489` (et libellé `src/pages/api/admin/billing.ts:39`).
    `/api/completion` journalise ces appels avec `ip = ''` et `etablissement_id NULL` : ils tombent
    dans l'origine `demo` du bilan et dans la ligne « (démo publique — non facturable) » du relevé,
@@ -134,8 +144,8 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
 | Fichier | Code testé | Cas couverts |
 |---|---|---|
 | `journal.ts` | (utilitaire) | écriture de lignes `usage_log` comme `/api/completion` |
-| `facturation.test.ts` | `periodeDe`, `tarifs`, `reglerTarif`, `facturesDuMois`, `emettre`, `marquerPayee`, `impayees` | format de période ; prix unique borné ; somme des montants figés ; deux prix → deux lignes ; ligne ancienne au prix unique ; anomalie 1 ; exclusions (clé perso, autres mois/écoles, démo) ; bornes de décembre ; école sans conso ; RESPIRE ; participation nulle et taux borné ; repli ; émission qui fige ; RESPIRE/inconnue → null ; `tarifChange` ; réémission impayée vs payée ; bascule payée/impayée ; tri des impayées |
-| `mentionsEtBilan.test.ts` | `mentionsDe`, `reglerMentions`, `bilanParticipation`, `repliObserves` | repli sur l'adresse du profil ; rognage, auteur, date ; patch partiel ; adresse vidée ; bornes de longueur ; mentions par mois ; aucune incidence sur le montant et survie à la réémission ; contribution relue au registre ; taux nul ; valorisation de l'offert ; anomalies 2 et 3 ; filtres des replis observés |
+| `facturation.test.ts` | `periodeDe`, `tarifs`, `reglerTarif`, `facturesDuMois`, `emettre`, `marquerPayee`, `impayees` | format de période ; prix unique borné ; somme des montants figés ; deux prix → deux lignes ; ligne ancienne au prix unique ; ligne ancienne non ventilée (anomalie 1 corrigée) et groupe mixte ; exclusions (clé perso, autres mois/écoles, démo) ; bornes de décembre ; école sans conso ; RESPIRE ; participation nulle et taux borné ; repli ; émission qui fige ; RESPIRE/inconnue → null ; `tarifChange` ; réémission impayée vs payée ; bascule payée/impayée ; tri des impayées |
+| `mentionsEtBilan.test.ts` | `mentionsDe`, `reglerMentions`, `bilanParticipation`, `repliObserves` | repli sur l'adresse du profil ; rognage, auteur, date ; patch partiel ; adresse vidée ; bornes de longueur ; mentions par mois ; aucune incidence sur le montant et survie à la réémission ; contribution relue au registre ; taux nul ; valorisation de l'offert ; prix figés par ligne et cohabitation avec le prix unique (anomalie 2 corrigée) ; porte-monnaie personnel exclu de la démo (anomalie 3 corrigée) ; filtres des replis observés |
 
 ### Fonctionnels — `tests/functional/uc19-facturation/facturation.test.ts`
 
@@ -147,7 +157,7 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
 | A2 | le site voit toutes les écoles, les impayées et le bilan |
 | A3 | RESPIRE : consommation visible, total nul, émission refusée (409) |
 | A4 | mentions par l'école sans effet sur le montant ; mentions par le site conservées à la réémission |
-| A5 | relevé brut (IP hors base, démo, enseignants) ; restriction à l'école |
+| A5 | relevé brut (IP hors base, démo, enseignants) ; porte-monnaie personnel distinct de la démo ; restriction à l'école |
 | A6 | export CSV par établissement et par enseignant |
 | A7 | période par défaut = mois courant UTC |
 | Erreurs / droits | 403 sans rang ; `ERR_SUPER_ONLY` ; mentions 403/404/400 ; actions 400/404 ; école inexistante 409 ; 405 |

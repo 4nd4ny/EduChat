@@ -168,11 +168,18 @@ export function tarifDuModele(provider: string, modele: string): TarifApplique {
     };
   }
 
-  const unique = db.prepare(
-    'SELECT prix_mtok, prix_entree_mtok, prix_sortie_mtok FROM tarifs WHERE provider = ?')
-    .get(provider) as { prix_mtok: number; prix_entree_mtok: number; prix_sortie_mtok: number } | undefined;
-  const entree = unique?.prix_entree_mtok || unique?.prix_mtok || 0;
-  const sortie = unique?.prix_sortie_mtok || unique?.prix_mtok || 0;
+  // LE SEUL PRIX UNIQUE QUI COMPTE EST CELUI QUE LE SITE VOIT ET RÈGLE :
+  // tarifs.prix_mtok. Les colonnes tarifs.prix_entree_mtok / prix_sortie_mtok
+  // (migration ancienne, db.ts) ne sont plus écrites ni montrées par aucun
+  // écran ; elles étaient pourtant lues AVANT prix_mtok, si bien qu'une valeur
+  // oubliée là rendait sans effet le réglage du site. On les ignore. Aucune
+  // facture n'en dépend : les appels déjà décomptés portent leur prix figé
+  // (usage_log.prix_*_mtok), et les lignes plus anciennes se relisent au seul
+  // prix_mtok (facturation.ts, tarifs()).
+  const unique = db.prepare('SELECT prix_mtok FROM tarifs WHERE provider = ?')
+    .get(provider) as { prix_mtok: number } | undefined;
+  const entree = unique?.prix_mtok || 0;
+  const sortie = entree;
   if (entree || sortie) {
     return { ...base, entree, sortie, repli: `Aucun tarif relevé pour « ${modele} » : prix unique du fournisseur.` };
   }

@@ -136,9 +136,11 @@ describe('Scénarios d’erreur et droits', () => {
     expect((await poster(jetonSuper, { action: 'contribution', pct: 5 })).status).toBe(403);
   });
 
-  it('recharge manuelle d’une école inexistante : la route lève (500 côté Next), rien n’est écrit', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(poster(jetonSuper, { etablissementId: 9999, montant: 50 })).rejects.toThrow(/introuvable/);
+  it('recharge ou ajustement manuel d’une école inexistante : 404 ERR_SCHOOL_UNKNOWN, rien n’est écrit', async () => {
+    for (const genre of ['recharge', 'ajustement']) {
+      const r = await poster(jetonSuper, { etablissementId: 9999, montant: 50, genre });
+      expect([r.status, r.json.error.code]).toEqual([404, 'ERR_SCHOOL_UNKNOWN']);
+    }
     expect((await base()).prepare('SELECT COUNT(*) AS n FROM credit_mouvements').get()).toEqual({ n: 0 });
   });
 

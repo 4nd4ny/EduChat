@@ -36,8 +36,8 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
    1. `GET https://openrouter.ai/api/v1/models` (prix en $ **par jeton**) ;
    2. `GET https://api.frankfurter.app/latest?from=USD&to=<devise>` (taux) ;
    3. pour chaque fournisseur d'école, ses barreaux (`getLadder(provider).slice(0, 3)`) sont
-      rapprochés du catalogue du bon vendeur (`correspond`), convertis (`× 1e6 × taux`, arrondis au
-      centime) et accompagnés d'un mélange indicatif (75 % entrée / 25 % sortie) ;
+      rapprochés du catalogue du bon vendeur (`correspond`), convertis (`× 1e6 × taux`, arrondis à six
+      chiffres significatifs — jamais à zéro pour un prix non nul) et accompagnés d'un mélange indicatif (75 % entrée / 25 % sortie) ;
    4. chaque barreau chiffré est écrit dans `tarifs_modeles` (clé : fournisseur + nom **de l'échelle**,
       `source` : identifiant OpenRouter, `devise`) ;
    5. la proposition (barreau **le plus haut** retenu, les trois barreaux en JSON, devise, date) est
@@ -65,7 +65,8 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
   `Catalogue OpenRouter injoignable : <raison ≤ 200 car.>`, la proposition est réécrite à zéro,
   `tarifs_modeles` n'est pas touchée.
 - **A5 — Barreau introuvable ou sans prix.** Détail explicite (`Aucune correspondance pour « … »`,
-  `« … » ne porte pas de prix.`), aucune ligne écrite : le barreau apparaît dans `manquants` et la
+  `Aucune entrée du vendeur « … » dans le catalogue OpenRouter : « … » n'est pas chiffré (les
+  homonymes d'autres vendeurs sont ignorés).`, `« … » ne porte pas de prix.`), aucune ligne écrite : le barreau apparaît dans `manquants` et la
   consommation retombe sur la chaîne de repli de `tarifDuModele` (barreau le plus cher → prix unique → 0).
 - **A6 — Relance automatique.** `refreshAllModels` (`src/server/models.ts`) lance la sonde en
   arrière-plan quand une liste de modèles a changé.
@@ -81,8 +82,7 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
 | `?portee=ecole` pour un super sans aucune école | `403 ERR_NO_ETABLISSEMENT` |
 | `POST` (prix ou sonde) par une école ou sans jeton | `403 ERR_SUPER_ONLY`, aucun appel sortant |
 | Fournisseur absent ou hors `PROVIDER_IDS` | `400 ERR_PROVIDER_UNKNOWN` |
-| Prix négatif, non numérique, infini ou absent | `400 ERR_PRICE_INVALID` |
-| Prix `''` ou `null` | **accepté comme 0** (voir anomalie 4) |
+| Prix négatif, non numérique, infini, absent, `null`, `''` ou blanc | `400 ERR_PRICE_INVALID` (un `0` ou `"0"` explicite reste accepté) |
 | Catalogue ou taux de change en panne pendant `action: 'sonder'` | `200`, panne dite dans chaque `detail` / `devise: 'USD'` |
 | Méthode autre que `GET`/`POST` | `405 ERR_METHOD_NOT_ALLOWED` + `Allow: GET, POST` |
 
@@ -95,9 +95,15 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
 - La sonde n'écrit **jamais** `tarifs.prix_mtok` (absent du `DO UPDATE`) ; une ligne neuve naît à 0.
 - Un prix n'est appliqué que s'il est **dans la monnaie de facturation** et non nul ; un barreau sans
   prix n'écrit rien plutôt que zéro. Les lignes d'une autre devise ne comblent pas `manquants`.
-- Correspondance : recherche restreinte au vendeur (`anthropic`, `openai`, `mistralai`) ; la cible et
-  ses variantes **horodatées** (≥ 4 chiffres) forment un ensemble où la plus récente gagne ;
-  préfixe approximatif en dernier recours ; un barreau réduit à `latest` ne correspond à rien.
+- Correspondance : recherche **toujours** restreinte au vendeur (`anthropic`, `openai`, `mistralai`,
+  sinon l'identifiant du fournisseur) — jamais d'homonyme d'un autre vendeur, même si le vendeur a
+  disparu du catalogue ; la cible et ses variantes **horodatées** (≥ 4 chiffres) forment un ensemble
+  où la plus récente gagne ; en dernier recours, préfixe **par segments** : le candidat reprend tous
+  les segments de la cible (`latest` et date ôtés) et n'y ajoute que des segments numériques
+  (`mistral-medium-3-5` pour `mistral-medium-latest`, jamais `mistral-saba` ni `gpt-5.5-pro`) ; un
+  barreau réduit à `latest` ne correspond à rien. Sans correspondance sûre, rien n'est écrit.
+- Précision : les prix par million sont gardés à six chiffres significatifs (plus d'arrondi au
+  centime) ; un prix non nul ne devient jamais 0. Les écrans affichent toujours deux décimales.
 - Le barreau retenu pour la proposition est le **plus haut**, pas le plus cher.
 - Seuls les trois fournisseurs d'école (`SCHOOL_PROVIDER_IDS`) sont sondés ; `verifier` est `null` pour les autres.
 - Une proposition mal formée en base (JSON vide ou illisible) est relue comme « aucun barreau », sans erreur.
@@ -111,29 +117,35 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
 
 ## Anomalies constatées
 
-1. **Préfixe approximatif trop court** — `src/server/sondeTarifs.ts:221`. La recherche de dernier
+1. **Corrigée** — le préfixe de dernier recours compare des segments entiers et n'accepte que des
+   segments de version numériques en plus. Constat d'origine : **Préfixe approximatif trop court** — `src/server/sondeTarifs.ts:221`. La recherche de dernier
    recours compare `cible.slice(0, max(8, longueur − 4))` : pour `mistral-small-latest` (cible
    `mistralsmall`), le préfixe `mistrals` est partagé par `mistralai/mistral-saba`. Si Saba est plus
    récent au catalogue, le barreau Small est chiffré — et **facturé** — au prix de Saba.
-   Test : `sondeTarifs.test.ts` « ANOMALIE — la recherche par préfixe… ».
-2. **Prix minuscule arrondi à zéro sans explication** — `src/server/sondeTarifs.ts:313-323` et `:363`.
+   Test : `sondeTarifs.test.ts` « corrigé — la recherche par préfixe respecte les segments… ».
+2. **Corrigée** — arrondi à six chiffres significatifs (jamais 0 pour un prix non nul), détail
+   calculé sur la valeur arrondie. Constat d'origine : **Prix minuscule arrondi à zéro sans explication** — `src/server/sondeTarifs.ts:313-323` et `:363`.
    Le `detail` est calculé sur la valeur non arrondie (vide), les montants sur la valeur arrondie au
    centime (0) : un modèle à moins de 0,005 par million n'écrit aucun tarif et la proposition ne dit pas
    pourquoi (seul `manquants` le signale). L'arrondi au centime du prix **par million** fausse aussi de
-   quelques pour cent les modèles bon marché. Test : « ANOMALIE — un prix inférieur à 0,005… ».
-3. **Garde-fou du vendeur contournable** — `src/server/sondeTarifs.ts:193`. Si le catalogue ne
+   quelques pour cent les modèles bon marché. Test : « corrigé — un prix inférieur à 0,005… ».
+3. **Corrigée** — plus de repli sur le catalogue entier : sans entrée du vendeur, le barreau n'est
+   pas chiffré et le détail le dit. Constat d'origine : **Garde-fou du vendeur contournable** — `src/server/sondeTarifs.ts:193`. Si le catalogue ne
    contient plus aucune entrée du vendeur attendu, la recherche retombe sur le catalogue entier et un
    homonyme d'un autre vendeur (`autre/claude-sonnet-5`, 99 $) est retenu et appliqué. Comportement
    voulu par le commentaire, mais contraire au « garde-fou » qu'il décrit.
-   Test : « sans aucune entrée du vendeur… ».
-4. **Prix vide ou `null` accepté comme 0** — `src/pages/api/admin/tarifs.ts:141,145`.
+   Test : « corrigé — sans aucune entrée du vendeur… ».
+4. **Corrigée** — un prix absent, `null`, vide ou blanc est refusé `400 ERR_PRICE_INVALID`.
+   Constat d'origine : **Prix vide ou `null` accepté comme 0** — `src/pages/api/admin/tarifs.ts:141,145`.
    `Number('')` et `Number(null)` valent 0 : un champ vidé remet le prix unique à zéro au lieu d'être
-   refusé (`ERR_PRICE_INVALID`). Test fonctionnel « ANOMALIE — un prix vide ou null… ».
-5. **Anciens prix entrée/sortie de `tarifs` prioritaires sur le prix unique** —
+   refusé (`ERR_PRICE_INVALID`). Test fonctionnel « corrigé — un prix vide, blanc ou null est refusé… ».
+5. **Corrigée** — `tarifDuModele` ignore ces colonnes mortes et n'applique que `prix_mtok` ; les
+   factures émises n'en dépendent pas (prix figés sur `usage_log`, lignes anciennes relues au seul
+   `prix_mtok`). Constat d'origine : **Anciens prix entrée/sortie de `tarifs` prioritaires sur le prix unique** —
    `src/server/porteMonnaie.ts:174-175`. `tarifDuModele` lit `tarifs.prix_entree_mtok ||
    prix_mtok` : ces colonnes (migration ancienne, `src/server/db.ts:470-471`) ne sont plus écrites ni
    montrées par aucun écran (`tarifs.ts:122` ne sert que `prixMtok`), mais si elles portent une valeur,
-   le prix réglé par le site est sans effet. Test : « ANOMALIE — d'anciens prix entrée/sortie… ».
+   le prix réglé par le site est sans effet. Test : « corrigé — d'anciens prix entrée/sortie… ».
 6. **Observation** — le commentaire de `src/server/models.ts:291-293` dit encore que la sonde
    « PROPOSE — elle n'applique rien », alors qu'elle écrit désormais `tarifs_modeles`, qui facture.
 
@@ -144,9 +156,9 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
 | Fichier | Code testé | Cas couverts |
 |---|---|---|
 | `catalogue.ts` | (utilitaire) | faux catalogue OpenRouter reproduisant les pièges (pointeur `~…-latest`, `gpt-5.5-pro`, variantes Mistral, homonyme) et faux taux Frankfurter, via `doublerFetch` |
-| `sondeTarifs.test.ts` | `sonderTarifs`, `RATIO_ENTREE` | périmètre (3 fournisseurs × 3 barreaux) et URL appelées ; correspondances Anthropic/OpenAI/Mistral ; homonyme écarté ; repli sur le catalogue entier (anomalie 3) ; `latest` seul ; confusion Small/Saba (anomalie 1) ; conversion et arrondi ; mélange 75/25 ; barreau le plus haut retenu ; échelle courte ; arrondi à zéro (anomalie 2) ; écriture `tarifs_modeles` et `propose_*` sans toucher `prix_mtok` ; mise à jour ; entrée sans prix ; barreau introuvable ; taux injoignable ou illisible ; catalogue HTTP 500 / exception tronquée ; panne qui réécrit la proposition mais garde les prix |
+| `sondeTarifs.test.ts` | `sonderTarifs`, `RATIO_ENTREE` | périmètre (3 fournisseurs × 3 barreaux) et URL appelées ; correspondances Anthropic/OpenAI/Mistral ; homonyme écarté ; vendeur absent sans repli sur un homonyme (anomalie 3 corrigée) ; `latest` seul ; Small/Saba distingués (anomalie 1 corrigée) ; préfixe suivi d'un autre produit sans correspondance ; conversion et précision ; mélange 75/25 ; barreau le plus haut retenu ; échelle courte ; prix minuscule conservé (anomalie 2 corrigée) ; écriture `tarifs_modeles` et `propose_*` sans toucher `prix_mtok` ; mise à jour ; entrée sans prix ; barreau introuvable ; taux injoignable ou illisible ; catalogue HTTP 500 / exception tronquée ; panne qui réécrit la proposition mais garde les prix |
 | `deviseUsd.test.ts` | `sonderTarifs`, `tarifDuModele` (avec `SECRET_BILLING_CURRENCY=USD`) | taux 1 sans appel à Frankfurter ; prix écrits et appliqués en USD |
-| `lectureTarifs.test.ts` | `lienVerification`, `tarifs`, `reglerTarif`, `propositions`, `tarifsAppliques`, `tarifDuModele` | lien limité aux fournisseurs d'école ; création/mise à jour/plancher 0 ; indépendance prix unique / proposition ; relecture, lignes jamais sondées, lignes antérieures à la migration, JSON illisible ; manquants (base vide, sonde complète, autre devise, prix nuls, casse, échelle réglée) ; tri ; prix relevé appliqué ; prix unique en dernier recours ; anomalie 5 |
+| `lectureTarifs.test.ts` | `lienVerification`, `tarifs`, `reglerTarif`, `propositions`, `tarifsAppliques`, `tarifDuModele` | lien limité aux fournisseurs d'école ; création/mise à jour/plancher 0 ; indépendance prix unique / proposition ; relecture, lignes jamais sondées, lignes antérieures à la migration, JSON illisible ; manquants (base vide, sonde complète, autre devise, prix nuls, casse, échelle réglée) ; tri ; prix relevé appliqué ; prix unique en dernier recours ; colonnes mortes ignorées (anomalie 5 corrigée) |
 
 ### Fonctionnels — `tests/functional/uc21-tarifs/tarifs.test.ts`
 
@@ -161,6 +173,6 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
 | A1 / A5 | `echelle: null` sans fournisseur, avant sonde, fournisseur non sondé |
 | A2 | super : école choisie par l'en-tête, vue du site sans drapeau ; école d'autrui non désignable |
 | Erreurs | 403 `ERR_FORBIDDEN` / `ERR_SUPER_ONLY` / `ERR_NO_ETABLISSEMENT` ; POST d'école sans appel sortant ni écriture |
-| Erreurs | `ERR_PROVIDER_UNKNOWN`, `ERR_PRICE_INVALID` ; prix vide/`null` accepté (anomalie 4) |
+| Erreurs | `ERR_PROVIDER_UNKNOWN`, `ERR_PRICE_INVALID` ; prix vide/blanc/`null` refusé (anomalie 4 corrigée) ; zéro explicite accepté |
 | A4 | catalogue en panne pendant la sonde : 200, détail, prix appliqués conservés |
 | Erreurs | 405 + `Allow` |
