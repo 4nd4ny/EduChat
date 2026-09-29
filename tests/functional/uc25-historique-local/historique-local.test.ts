@@ -25,16 +25,22 @@ type Depot =
 
 /** Reproduction de ChatSidebar.onDrop (hors React). */
 function deposerFichier(contenu: string): Depot {
+  let jsonData: any;
   try {
-    const jsonData = JSON.parse(contenu);
+    jsonData = JSON.parse(contenu);
+  } catch {
+    return { issue: 'erreur', message: "Fichier illisible : ce n'est pas du JSON valide." };
+  }
+  try {
     if (isProfile(jsonData)) {
       const { conversations } = applyProfile(jsonData);
       return { issue: 'profil', message: `Profil importé : ${conversations} conversation(s) ajoutée(s).` };
     }
     // Côté React : importConversation(jsonData) — hors du périmètre de ce test.
     return { issue: 'conversation', donnees: jsonData };
-  } catch {
-    return { issue: 'erreur', message: "Fichier illisible : ce n'est pas du JSON valide." };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    return { issue: 'erreur', message: message.startsWith('Profil') ? message : `Profil refusé : ${message || 'import impossible.'}` };
   }
 }
 
@@ -181,11 +187,31 @@ describe('Scénarios d’erreur : fichiers corrompus ou hostiles', () => {
     expect(nav.stockage.instantane()).toEqual(avant);
   });
 
-  it('profil sans conversations : rejeté sans écriture — ANOMALIE : même message « pas du JSON valide »', () => {
+  it('profil sans conversations : rejeté sans écriture, avec la raison exacte (pas « pas du JSON valide »)', () => {
     const { nav, avant } = initial();
     const r = deposerFichier(JSON.stringify({ educhatProfile: 1, favorites: ['intrus'] }));
-    expect(r).toEqual({ issue: 'erreur', message: "Fichier illisible : ce n'est pas du JSON valide." });
+    expect(r).toEqual({ issue: 'erreur', message: 'Profil invalide : aucune conversation.' });
+    expect(deposerFichier(JSON.stringify({ educhatProfile: 1, conversations: [] })))
+      .toEqual({ issue: 'erreur', message: 'Profil invalide : aucune conversation.' });
     expect(nav.stockage.instantane()).toEqual(avant);
+  });
+
+  it('profil d’une version inconnue : refus explicite, sans écriture', () => {
+    const { nav, avant } = initial();
+    expect(deposerFichier(JSON.stringify({ educhatProfile: 2, conversations: {} })))
+      .toEqual({ issue: 'erreur', message: 'Profil invalide : version 2 non prise en charge.' });
+    expect(nav.stockage.instantane()).toEqual(avant);
+  });
+
+  it('historique local corrompu : l’export comme l’import restent possibles', async () => {
+    const { a } = preparerNavigateurA();
+    const fichier = await exporter(a);
+    const b = installerNavigateur();
+    b.stockage.setItem('pg-history', '{corrompu');
+    expect(deposerFichier(fichier)).toMatchObject({ message: 'Profil importé : 2 conversation(s) ajoutée(s).' });
+    expect(Object.keys(getHistory()).sort()).toEqual(['conv-a1', 'conv-a2']);
+    const reexport = JSON.parse(await exporter(b));
+    expect(Object.keys(reexport.conversations).sort()).toEqual(['conv-a1', 'conv-a2']);
   });
 
   it('profil hostile : ni pollution de prototype, ni vol de jeton, ni écrasement', () => {
@@ -203,23 +229,26 @@ describe('Scénarios d’erreur : fichiers corrompus ou hostiles', () => {
     expect(nav.stockage.getItem('totalTokens')).toBe('0');
   });
 
-  it('ANOMALIE : le chemin « profil » n’applique pas la validation des messages du chemin « conversation »', () => {
-    initial();
-    // parseImportedMessages (AnthropicProvider.tsx) refuserait ce rôle et ce contenu.
+  it('le chemin « profil » applique la validation des messages du chemin « conversation » : refus sans écriture', () => {
+    const { nav, avant } = initial();
+    // Mêmes règles que parseImportedMessages (AnthropicProvider.tsx).
     const r = deposerFichier(JSON.stringify({
       educhatProfile: 1,
-      conversations: { x: { name: '<img src=x onerror=alert(1)>', messages: [{ role: 'system', content: { html: '<script>' } }] } },
+      conversations: {
+        saine: conv('Saine', 'Bonjour'),
+        x: { name: '<img src=x onerror=alert(1)>', messages: [{ role: 'system', content: { html: '<script>' } }] },
+      },
     }));
-    expect(r).toMatchObject({ message: 'Profil importé : 1 conversation(s) ajoutée(s).' });
-    expect(getHistory().x.messages[0].role).toBe('system');
+    expect(r).toEqual({ issue: 'erreur', message: 'Profil invalide : conversation « x », message 1 : rôle « system » non autorisé.' });
+    expect(nav.stockage.instantane()).toEqual(avant);
   });
 
-  it('volume : la limite de 2 Mo est portée par la zone de dépôt (react-dropzone), pas par applyProfile', () => {
+  it('volume : 2 Mo par la zone de dépôt ; au-delà de 5000 messages, le profil est refusé comme une conversation seule', () => {
     expect(MAX_IMPORT_BYTES).toBe(2 * 1024 * 1024);
     installerNavigateur();
-    // Au-delà de 5000 messages, le chemin « conversation » refuse ; le profil, lui, accepte.
     const messages = Array.from({ length: 6000 }, () => ({ role: 'user', content: 'x' }));
     expect(deposerFichier(JSON.stringify({ educhatProfile: 1, conversations: { gros: { messages } } })))
-      .toMatchObject({ message: 'Profil importé : 1 conversation(s) ajoutée(s).' });
+      .toEqual({ issue: 'erreur', message: 'Profil invalide : conversation « gros » trop longue (plus de 5000 messages).' });
+    expect(getHistory()).toEqual({});
   });
 });

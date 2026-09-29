@@ -6,7 +6,12 @@ const RATINGS_KEY = 'prompt-ratings';
 
 export function getFavorites(): string[] {
   if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+  try {
+    // Un JSON valide mais non tableau ({…}, 42) ferait lever toggleFavorite
+    // (current.includes) : même repli que pour un JSON illisible.
+    const favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+    return Array.isArray(favorites) ? favorites : [];
+  } catch { return []; }
 }
 
 export function toggleFavorite(name: string): string[] {

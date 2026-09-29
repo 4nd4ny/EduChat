@@ -26,10 +26,13 @@ describe('favoris', () => {
     expect(toggleFavorite('a')).toEqual(['a']);
   });
 
-  it('comportement actuel : un JSON valide mais non tableau est rendu tel quel et fait échouer toggleFavorite', () => {
+  it('un JSON valide mais non tableau se replie sur une liste vide ; toggleFavorite fonctionne', () => {
     nav.stockage.setItem('prompt-favorites', '{"a":1}');
-    expect(getFavorites()).toEqual({ a: 1 });
-    expect(() => toggleFavorite('b')).toThrow(TypeError);
+    expect(getFavorites()).toEqual([]);
+    expect(toggleFavorite('b')).toEqual(['b']);
+    expect(JSON.parse(nav.stockage.getItem('prompt-favorites')!)).toEqual(['b']);
+    nav.stockage.setItem('prompt-favorites', '42');
+    expect(getFavorites()).toEqual([]);
   });
 
   it('côté serveur (pas de window) : liste vide', () => {

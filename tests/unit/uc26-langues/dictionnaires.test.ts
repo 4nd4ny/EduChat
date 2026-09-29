@@ -16,7 +16,7 @@ const LANGUES = ['fr', 'en', 'it', 'de'] as const;
 const clesFr = Object.keys(fr).sort();
 
 /** Écarts CONNUS et figés : toute nouvelle clé vide fera échouer le test. */
-const CLES_VIDES_CONNUES = ['admin.tarif.helpSchool'];
+const CLES_VIDES_CONNUES: string[] = [];
 
 /** Ensemble trié des gabarits {nom} d'un texte. */
 const gabarits = (texte: string) => Array.from(new Set(texte.match(/\{[a-zA-Z0-9_]+\}/g) ?? [])).sort();
@@ -57,8 +57,8 @@ describe('valeurs', () => {
       const dict = dictionaries[langue] as Record<string, unknown>;
       for (const cle of clesFr) expect(typeof dict[cle], cle).toBe('string');
       const vides = clesFr.filter(k => !(dict[k] as string).trim());
-      // ANOMALIE documentée : admin.tarif.helpSchool est vide dans les quatre
-      // langues (et n'est employée nulle part dans src/).
+      // admin.tarif.helpSchool, vide dans les quatre langues et inutilisée, a été
+      // supprimée : plus aucune clé vide n'est tolérée.
       expect(vides).toEqual(CLES_VIDES_CONNUES);
     });
   }

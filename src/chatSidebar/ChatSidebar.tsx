@@ -26,7 +26,9 @@ export default function ChatSidebar({}: Props) {
       if (result.mergedConversations > 0) setTimeout(() => window.location.reload(), 800);
     } else {
       setSyncMessage(result.reason === "optout"
-        ? "Option de synchronisation non activée (re-vérifiez votre email en la cochant)."
+        // Le consentement se redonne depuis « Mes données » (PUT /api/me) :
+        // re-vérifier son email ne le coche plus.
+        ? "Sauvegarde des conversations désactivée : réactivez-la depuis « Mes données »."
         : result.reason === "auth" ? "Identifiez-vous d'abord sur /verifier." : "Échec de synchronisation.");
     }
   };
@@ -46,8 +48,14 @@ export default function ChatSidebar({}: Props) {
       reader.onerror = () => setImportError("Impossible de lire le fichier.");
       reader.onload = () => {
         const fileContent = reader.result as string;
+        let jsonData: any;
         try {
-          const jsonData = JSON.parse(fileContent);
+          jsonData = JSON.parse(fileContent);
+        } catch {
+          setImportError("Fichier illisible : ce n'est pas du JSON valide.");
+          return;
+        }
+        try {
           if (isProfile(jsonData)) {
             // Profil complet (conversations + favoris + notes) : fusion puis
             // rechargement pour que toute l'UI reflète l'état importé.
@@ -59,7 +67,10 @@ export default function ChatSidebar({}: Props) {
           }
           importConversation(jsonData);
         } catch (error) {
-          setImportError("Fichier illisible : ce n'est pas du JSON valide.");
+          // JSON valide mais profil refusé : on affiche la raison exacte
+          // (applyProfile lève des messages « Profil invalide : … »).
+          const message = error instanceof Error ? error.message : "";
+          setImportError(message.startsWith("Profil") ? message : `Profil refusé : ${message || "import impossible."}`);
         }
       };
       reader.readAsText(file);

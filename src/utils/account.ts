@@ -62,7 +62,10 @@ export function getAccount(): Account | null {
   if (!token) return null;
   try {
     const payload = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')));
-    if (typeof payload?.email !== 'string' || Date.now() > payload.exp) return null;
+    // Sans `exp` numérique, `Date.now() > undefined` vaut false : la charge
+    // passait pour valide à vie. Le serveur (src/server/token.ts) exige ce champ,
+    // le navigateur s'aligne et tient une telle charge pour invalide.
+    if (typeof payload?.email !== 'string' || typeof payload.exp !== 'number' || Date.now() > payload.exp) return null;
     return payload as Account;
   } catch {
     return null;

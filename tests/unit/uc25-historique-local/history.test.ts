@@ -54,8 +54,12 @@ describe('historique local', () => {
     expect(getConversation('absente')).toBeUndefined();
   });
 
-  it('comportement actuel : un pg-history corrompu fait lever getHistory (aucun repli)', () => {
+  it('un pg-history corrompu (illisible ou non objet) se replie sur un historique vide', () => {
     nav.stockage.setItem('pg-history', '{corrompu');
-    expect(() => getHistory()).toThrow(SyntaxError);
+    expect(getHistory()).toEqual({});
+    for (const valeur of ['null', '42', '"texte"', '[1,2]']) {
+      nav.stockage.setItem('pg-history', valeur);
+      expect(getHistory()).toEqual({});
+    }
   });
 });

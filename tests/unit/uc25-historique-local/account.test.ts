@@ -54,9 +54,11 @@ describe('getAccount', () => {
     expect(getAccount()).toBeNull();
   });
 
-  it('comportement actuel : une charge SANS exp est considérée comme non expirée', () => {
+  it('une charge SANS exp numérique est tenue pour invalide (comme côté serveur)', () => {
     storeToken(jetonForge({ email: 'x@y.ch' }));
-    expect(getAccount()?.email).toBe('x@y.ch');
+    expect(getAccount()).toBeNull();
+    storeToken(jetonForge({ email: 'x@y.ch', exp: String(Date.now() + 60_000) }));
+    expect(getAccount()).toBeNull();
   });
 
   it('aucun jeton : null', () => {

@@ -64,8 +64,16 @@ export const deleteConversationFromHistory = (id: string) => {
 
 // Get conversations from local storage
 export const getHistory: () => History = () => {
-  const history = localStorage.getItem(HISTORY_KEY);
-  return history ? JSON.parse(history) : {};
+  // Repli sur un historique vide si pg-history est corrompu (JSON illisible ou
+  // non objet), comme pour les favoris et les notes : sinon toute la barre
+  // latérale, l'export et l'import du profil échouent. La valeur corrompue n'est
+  // écrasée qu'à la prochaine écriture.
+  try {
+    const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "{}");
+    return history && typeof history === "object" && !Array.isArray(history) ? history : {};
+  } catch {
+    return {};
+  }
 };
 
 // Clear conversations from local storage
