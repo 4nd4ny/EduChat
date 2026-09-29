@@ -320,8 +320,12 @@ describe('Scénario alternatif : liste de modération GET /api/admin/prompts', (
     expect((await appeler(listeAdmin, {})).status).toBe(403);
     expect((await appeler(listeAdmin, { token: simple })).status).toBe(403);
     expect((await appeler(listeAdmin, { method: 'POST', token: sup })).status).toBe(405);
-    // La garde de droits passe AVANT la garde de méthode.
-    expect((await appeler(listeAdmin, { method: 'POST' })).status).toBe(403);
+    // Anomalie corrigée : la méthode se vérifie AVANT les droits — un POST
+    // anonyme ou sans rôle reçoit 405 (et l'en-tête Allow), plus 403.
+    const anonyme = await appeler(listeAdmin, { method: 'POST' });
+    expect(anonyme.status).toBe(405);
+    expect(anonyme.headers.allow).toEqual(['GET']);
+    expect((await appeler(listeAdmin, { method: 'DELETE', token: simple })).status).toBe(405);
   });
 });
 

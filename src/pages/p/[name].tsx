@@ -89,7 +89,10 @@ export default function PromptPage() {
     if (!name) return;
     setFavorites(getFavorites());
     setGivenRating(getGivenRating(name));
-    fetch(`/api/prompts/${encodeURIComponent(name)}?locale=${locale}`)
+    // Le jeton porte l'école active, comme pour le catalogue : sans lui, un
+    // enseignant hors du réseau de son école verrait le tuteur réservé dans la
+    // liste mais sa fiche lui répondrait « tuteur inconnu ».
+    fetch(`/api/prompts/${encodeURIComponent(name)}?locale=${locale}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(data => { setDetail(data.prompt); setVersions(data.versions ?? []); })
       .catch(() => setNotFound(true));
@@ -101,8 +104,10 @@ export default function PromptPage() {
 
   const rate = async (stars: number) => {
     if (!detail || givenRating !== null) return;
+    // Même portée que la fiche : le jeton permet à un enseignant de noter un
+    // tuteur réservé de son école, où qu'il se trouve.
     const response = await fetch(`/api/prompts/${encodeURIComponent(name)}/rate`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ stars }),
     });
     if (response.ok) {

@@ -49,8 +49,9 @@ supprimé** : il est `pending`, `approved` ou `hidden`.
 - **A5 — Tuteur réservé.** Il se commente et se lit depuis le réseau de son école.
 - **A6 — File de l'administration** (`GET /api/admin/comments`) : en attente d'abord (toutes), puis
   l'historique modéré (500 plus récents) avec `moderatedTotal`. Portée : le super voit tout ;
-  l'administrateur d'école ses tuteurs **et** ceux de la plateforme ; l'enseignant ceux de son école
-  seulement. `?portee=ecole` ramène le super à son école active (file vide s'il n'en a pas).
+  l'administrateur d'école et l'enseignant, les tuteurs de leur école **seulement** — exactement ce
+  que la route de modération leur accorde (`tuteurDeLEcole`). `?portee=ecole` ramène le super aux
+  tuteurs de son école active (file vide s'il n'en a pas).
 
 ## Scénarios d'erreur
 
@@ -65,7 +66,7 @@ supprimé** : il est `pending`, `approved` ou `hidden`.
 | Action autre que `approve` / `hide` | `400 ERR_ACTION_UNKNOWN` |
 | Identifiant inconnu, invalide, ou commentaire d'une autre fiche | `404 ERR_COMMENT_UNKNOWN` (rien n'est modifié) |
 | Méthode autre que `GET`/`POST`/`PATCH` sur un tuteur accessible | `405`, `Allow: GET, POST, PATCH` |
-| `/api/admin/comments` sans rang de gestion | `403 ERR_FORBIDDEN` (la garde passe **avant** la méthode) |
+| `/api/admin/comments` sans rang de gestion | `403 ERR_FORBIDDEN` (la garde passe **avant** la méthode, comportement couvert par un test ; la route sœur `/api/admin/prompts` vérifie, elle, la méthode d'abord — voir UC-10) |
 | `/api/admin/comments` autre que `GET`, avec rang | `405`, `Allow: GET` |
 
 ## Règles métier et sécurité
@@ -85,7 +86,12 @@ supprimé** : il est `pending`, `approved` ou `hidden`.
 
 ## Anomalies constatées
 
-- **File de l'administrateur d'école plus large que ses droits.** `src/pages/api/admin/comments.ts:35`
+- **Corrigée** — `src/pages/api/admin/comments.ts:40` borne les deux niveaux d'école (administrateur
+  et enseignant) aux tuteurs de leur école : la file est exactement ce que `tuteurDeLEcole` leur
+  laisse modérer. Les commentaires de la plateforme restent au super-administrateur (`/admin`).
+  Conséquence voulue : un super ramené à son école (`?portee=ecole`) n'y voit plus non plus la
+  plateforme, qui ne relève d'aucune école.
+  Constat d'origine : **file de l'administrateur d'école plus large que ses droits.** `src/pages/api/admin/comments.ts:35`
   sert à un administrateur d'école les commentaires des tuteurs de la **plateforme**
   (`OR p.etablissement_id IS NULL`), mais la route de modération
   (`src/pages/api/prompts/[name]/comments.ts:42`, via `tuteurDeLEcole`, `src/server/admin.ts:175`)
@@ -117,5 +123,5 @@ La visibilité (`estVisible`, `porteeAppelant`) est testée dans UC-01, le limit
 | A4 | modérateur sur brouillon : lecture oui, dépôt 409 |
 | A5 | tuteur réservé commenté et lu depuis le réseau de l'école |
 | Erreurs | 404 tuteur inconnu ; 404 indistinct pour le public ; texte 400 (bornes 3 / 2000) ; 429 au 6e dépôt ; 403 / 400 / 404 en modération ; 405 |
-| A6 | file admin : 403 sans rang ; super (ordre, total) ; admin d'école (siens + plateforme) ; enseignant (siens) ; `?portee=ecole` ; 405 après la garde |
-| Anomalie | admin d'école : commentaire de plateforme listé mais modération refusée |
+| A6 | file admin : 403 sans rang ; super (ordre, total) ; admin d'école (siens seulement) ; enseignant (siens) ; `?portee=ecole` (école active sans la plateforme) ; 405 après la garde |
+| Anomalie corrigée | admin d'école et enseignant : chaque commentaire de la file se modère (200), celui de la plateforme n'y figure pas et reste refusé (403) |

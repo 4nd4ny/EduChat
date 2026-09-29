@@ -20,7 +20,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
   }
 
-  const stars = Number(req.body?.stars);
+  // Seuls un nombre ou une chaîne de chiffres sont acceptés : la fiche envoie
+  // un nombre, la chaîne reste tolérée pour un client qui sérialise un champ
+  // de formulaire. Une conversion Number() aveugle compterait true pour 1
+  // étoile et [5] pour 5 : un corps mal formé doit être refusé, pas compté.
+  const brut: unknown = req.body?.stars;
+  const stars = typeof brut === 'number' ? brut
+    : typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut)
+    : NaN;
   if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
     return res.status(400).json({ error: { code: 'ERR_RATING_INVALID' } });
   }

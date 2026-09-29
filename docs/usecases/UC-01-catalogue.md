@@ -31,7 +31,8 @@ puis leur fiche publique (texte intégral, versions, filiation). Ce que l'appela
    `share_token` ni le corps). Réponse `200 { prompts }`, `Cache-Control: private, no-store`.
 4. Le navigateur remonte en tête les **favoris** (liste locale `prompt-favorites`,
    `src/utils/favorites.ts`), dans l'ordre du tri courant.
-5. Le visiteur ouvre une fiche : `GET /api/prompts/[name]?locale=fr` renvoie
+5. Le visiteur ouvre une fiche : `GET /api/prompts/[name]?locale=fr` (avec l'en-tête
+   `Authorization` s'il existe un jeton, comme le catalogue) renvoie
    `{ prompt: { …carte, body, inspiredBy, variants, translations }, versions }`.
 
 ## Scénarios alternatifs
@@ -84,7 +85,11 @@ puis leur fiche publique (texte intégral, versions, filiation). Ce que l'appela
 
 ## Anomalies constatées
 
-- **La fiche est chargée sans jeton.** `src/pages/p/[name].tsx:92` appelle
+- **Corrigée** — la page de la fiche envoie désormais `authHeaders()` (`src/pages/p/[name].tsx:95`),
+  comme le catalogue, pour la fiche comme pour la note (UC-02) : la fiche d'un tuteur réservé de
+  son école s'ouvre à l'enseignant hors campus. La page React n'a pas de test fonctionnel ; le test
+  A6 vérifie côté route que c'est bien le jeton qui ouvre la fiche (200 avec, 404 sans).
+  Constat d'origine : **la fiche est chargée sans jeton.** `src/pages/p/[name].tsx:92` appelle
   `GET /api/prompts/[name]` sans `authHeaders()`, alors que le catalogue (`src/pages/index.tsx:189`)
   les envoie et que la route calcule sa portée avec le jeton. Conséquence : un enseignant chez lui
   voit dans le catalogue un tuteur réservé de son école (A6), mais sa fiche lui répond « tuteur
@@ -110,7 +115,7 @@ puis leur fiche publique (texte intégral, versions, filiation). Ce que l'appela
 | A3 | carte et recherche traduites ; corps traduit sur la fiche |
 | Nominal | fiche : corps, versions, filiation, états de traduction |
 | A4 / A5 | élève sur réseau d'école fermée / ouverte ; une école voit ses tuteurs |
-| A6 | enseignant chez lui : réservés de son école + publics ; fiche accessible avec jeton |
+| A6 | enseignant chez lui : réservés de son école + publics ; fiche accessible avec jeton, 404 sans (non-régression de l'anomalie corrigée) |
 | A7 | simple membre rattaché par IP |
 | Erreurs | école annoncée d'autrui ignorée |
 | A8 | filiation masquée hors portée, révélée dans l'école propriétaire |

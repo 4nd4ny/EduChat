@@ -18,9 +18,11 @@ import {
 // page les enveloppe donc dans une ZoneAdmin — mais ils n'ont rien à faire
 // dans l'administration du SITE, qui ne connaît pas les élèves.
 //
-// LA PORTÉE N'EST PAS ICI. /api/admin/prompts et /api/admin/comments ne
-// rendent à un administrateur d'école que les tuteurs de SON école active et
-// ceux de la plateforme ; ce composant affiche ce qu'il reçoit. Changer
+// LA PORTÉE N'EST PAS ICI. /api/admin/prompts rend à un administrateur
+// d'école les tuteurs de SON école active et ceux de la plateforme ;
+// /api/admin/comments, lui, ne rend que les commentaires des tuteurs de son
+// école — les seuls que la route de modération le laisse traiter. Ce
+// composant affiche ce qu'il reçoit. Changer
 // d'école dans le sélecteur change l'en-tête, donc la réponse : d'où la
 // dépendance à `ecole` dans les effets de relecture.
 //

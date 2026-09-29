@@ -11,12 +11,16 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // requireGestionTuteurs, et non requireAdmin : un ENSEIGNANT non-administrateur
   // relit et valide les tuteurs de son école (décision du client). Sa portée est
   // plus étroite que celle de l'administrateur — voir le filtre ci-dessous.
-  const accorde = requireGestionTuteurs(req);
-  if (!accorde) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
+  //
+  // La méthode se vérifie AVANT les droits : une méthode que la route ne
+  // connaît pas est un 405 pour tout le monde (un POST anonyme recevait 403,
+  // comme si la route existait en POST pour qui aurait le rang).
   if (req.method !== 'GET') {
     res.setHeader('Allow', ['GET']);
     return res.status(405).json({ error: { code: ERR.METHOD } });
   }
+  const accorde = requireGestionTuteurs(req);
+  if (!accorde) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
   // « BORNE-TOI À L'ÉCOLE SÉLECTIONNÉE » — demandé par /enseignant, jamais par
   // /admin. Le sélecteur d'école y commande donc aussi cette liste, au lieu de
   // servir au super-administrateur les tuteurs de tous les établissements sous
