@@ -28,12 +28,16 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // PORTÉE, comme pour les tuteurs eux-mêmes : chaque ligne porte le NOM du
   // tuteur commenté. Servir la file entière à un administrateur d'école lui
   // dirait les tuteurs des autres, que la propriété d'une école sur les siens
-  // lui refuse par ailleurs. Il modère les siens et ceux de la plateforme ;
-  // l'ENSEIGNANT, lui, s'arrête aux siens — un commentaire déposé sur un
-  // tuteur de la plateforme ne regarde aucune école (décision du client).
-  const filtre = scope.niveau === 'super' ? ''
-    : scope.niveau === 'ecole' ? 'AND (p.etablissement_id = @etab OR p.etablissement_id IS NULL)'
-      : 'AND p.etablissement_id = @etab';
+  // lui refuse par ailleurs.
+  //
+  // Les DEUX niveaux d'école (administrateur comme enseignant) s'arrêtent aux
+  // tuteurs de leur école : un commentaire déposé sur un tuteur de la
+  // plateforme (rattachement NULL) ne regarde aucune école (décision du
+  // client), et la route de modération le leur refuse (tuteurDeLEcole écarte
+  // le NULL). La file est exactement celle de tuteurDeLEcole — l'administrateur
+  // d'école y recevait autrefois aussi la plateforme, soit des boutons qui ne
+  // répondaient que 403. Le super, lui, voit tout sur /admin.
+  const filtre = scope.niveau === 'super' ? '' : 'AND p.etablissement_id = @etab';
   // Le paramètre suit le filtre qui le nomme : les DEUX niveaux d'école
   // écrivent @etab, et une liaison manquante est un 500 à l'exécution.
   const args = scope.niveau === 'super' ? [] : [{ etab: scope.etablissementId }];

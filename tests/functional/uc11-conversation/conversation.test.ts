@@ -512,15 +512,26 @@ describe('Prompt système du tuteur : injecté côté serveur', () => {
     expect(courante.json.promptVersion).toBe(2);
   });
 
-  it('version épinglée INEXISTANTE : texte courant servi, mais la réponse annonce la version demandée', async () => {
-    // ANOMALIE constatée (voir la doc UC-11) : completion.ts renvoie
-    // `promptVersion` tel que demandé par le client dès qu'il est > 0, même
-    // quand cette version n'existe pas et que c'est le texte COURANT qui a
-    // été servi. Le test fige le comportement actuel.
+  it('version épinglée INEXISTANTE : texte courant servi, et c’est la version COURANTE qui est annoncée (anomalie corrigée)', async () => {
+    // La réponse porte la version réellement servie, jamais un numéro
+    // demandé qui n'existe pas : le navigateur se réépingle sur la courante.
     await creerTuteur({ name: 'Fantome', body: 'TEXTE COURANT' });
     const r = await appelBYOK({ promptName: 'Fantome', promptVersion: 7 });
     expect(corpsEnvoye(espion).inputs[0].content).toBe('TEXTE COURANT');
-    expect(r.json.promptVersion).toBe(7);
+    expect(r.json.promptVersion).toBe(1);
+  });
+
+  it('version épinglée INEXISTANTE en flux : l’événement start annonce la version servie', async () => {
+    const jeton = await creerCompte('flux-version@maison.ch');
+    const id = await creerTuteur({ name: 'FantomeFlux', body: 'VERSION 1' });
+    (await base()).prepare("UPDATE prompts SET body = 'VERSION 3', version = 3 WHERE id = ?").run(id);
+    routeur = () => fluxMistral(['ok']);
+    const r = await appeler(completion, {
+      method: 'POST', ip: ipHorsCampus(), token: jeton,
+      body: { provider: 'mistral', apiKey: 'k', promptName: 'FantomeFlux', promptVersion: 2, messages: question, stream: true },
+    });
+    expect(corpsEnvoye(espion).inputs[0].content).toBe('VERSION 3');
+    expect(r.lignes[0]).toMatchObject({ type: 'start', promptName: 'FantomeFlux', promptVersion: 3 });
   });
 
   it('traduction fraîche servie dans la langue du lecteur ; périmée, jamais', async () => {

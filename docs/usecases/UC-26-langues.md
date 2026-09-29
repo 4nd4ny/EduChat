@@ -63,13 +63,13 @@ autre dictionnaire doit en répéter toutes les clés.
 
 ## Anomalies constatées
 
-1. **Clé vide dans les quatre langues** : `admin.tarif.helpSchool` vaut `''`
-   (`src/i18n/dictionaries.ts:889`, `:2050`, `:3209`, `:4368`) et n'est employée nulle part
-   dans `src/`. Écart connu figé dans `dictionnaires.test.ts` (`CLES_VIDES_CONNUES`) : toute
-   nouvelle clé vide fera échouer le test.
-2. **Pas de repli sur une valeur vide** (`src/i18n/useT.ts:10`) : `dict[key] ?? fr[key]` ne
-   remplace pas une chaîne vide par le français. Sans effet aujourd'hui (la seule clé vide l'est
-   aussi en français), mais une traduction laissée vide s'afficherait vide.
+1. **Corrigée** — **Clé vide dans les quatre langues** : `admin.tarif.helpSchool` valait `''`
+   (`src/i18n/dictionaries.ts:889`, `:2050`, `:3209`, `:4368`) et n'était employée nulle part
+   dans `src/`. Elle est supprimée des quatre dictionnaires ; `CLES_VIDES_CONNUES`
+   (`dictionnaires.test.ts`) est désormais vide : toute clé vide fera échouer le test.
+2. **Corrigée** — **Pas de repli sur une valeur vide** (`src/i18n/useT.ts:10`) : `dict[key] ?? fr[key]`
+   ne remplaçait pas une chaîne vide par le français. `translate` utilise désormais `||` : une
+   traduction vide se replie sur le français, puis sur la clé.
 
 Aucune clé manquante ou superflue, ni aucun gabarit divergent n'a été trouvé.
 
@@ -79,8 +79,8 @@ Aucune clé manquante ou superflue, ni aucun gabarit divergent n'a été trouvé
 
 | Fichier | Code testé | Cas couverts |
 |---|---|---|
-| `dictionnaires.test.ts` | `dictionaries`, `fr`, `en`, `it`, `de`, `next.config.js` | locales déclarées = dictionnaires, forme des clés, aucune clé manquante/superflue par langue, valeurs chaînes, clés vides limitées à la liste connue, traductions non recopiées du français (< 5 %), mêmes gabarits par clé, accolades bien formées |
-| `useT.test.ts` | `translate`, `useT`, `currentLocale` | traduction par locale, repli locale inconnue/absente, clé inconnue, clé manquante → français, valeur vide non repliée, remplacement de toutes les occurrences, variables manquantes/superflues/auto-référentes, `router.locale`, lecture de la locale hors composant |
+| `dictionnaires.test.ts` | `dictionaries`, `fr`, `en`, `it`, `de`, `next.config.js` | locales déclarées = dictionnaires, forme des clés, aucune clé manquante/superflue par langue, valeurs chaînes, aucune clé vide, traductions non recopiées du français (< 5 %), mêmes gabarits par clé, accolades bien formées |
+| `useT.test.ts` | `translate`, `useT`, `currentLocale` | traduction par locale, repli locale inconnue/absente, clé inconnue, clé manquante → français, valeur vide → français puis clé, remplacement de toutes les occurrences, variables manquantes/superflues/auto-référentes, `router.locale`, lecture de la locale hors composant |
 
 ### Fonctionnels — `tests/functional/uc26-langues/langues.test.ts`
 

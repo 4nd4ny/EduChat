@@ -61,13 +61,16 @@ describe('Scénario nominal : un visiteur note un tuteur', () => {
     expect(r.json.ratingAvg).toBe(3);
   });
 
-  it('comportement actuel (voir « Anomalies ») : true et [5] passent la validation', async () => {
-    // Number(true) === 1 et Number([5]) === 5 : la validation ne regarde que
-    // le résultat de la conversion, pas le type reçu.
+  it('refuse un corps mal formé que Number() aurait converti (true, [5], « 3.0 », « 0x3 »…), sans rien compter', async () => {
+    // Anomalie corrigée : Number(true) === 1 et Number([5]) === 5 passaient la
+    // validation. Seuls un nombre ou une chaîne de chiffres sont acceptés.
     await creerTuteur({ name: 'Socrate' });
-    expect((await note('Socrate', true)).status).toBe(200);
-    expect((await note('Socrate', [5])).status).toBe(200);
-    expect(await compteurs('Socrate')).toEqual({ somme: 6, nombre: 2 });
+    for (const stars of [true, false, [5], { n: 3 }, '3.0', '0x3', ' 3', '3e0', '', '+3']) {
+      const r = await note('Socrate', stars);
+      expect(r.status).toBe(400);
+      expect(r.json.error.code).toBe('ERR_RATING_INVALID');
+    }
+    expect(await compteurs('Socrate')).toEqual({ somme: 0, nombre: 0 });
   });
 });
 
@@ -84,6 +87,10 @@ describe('Scénarios alternatifs : la portée de l’appelant', () => {
     await creerTuteur({ name: 'Maison', etablissementId: a });
     const jeton = await creerCompte('prof@a.ch', { teacher: true, etablissementId: a });
     expect((await note('Maison', 2, { token: jeton })).status).toBe(200);
+    // Sans jeton, le même tuteur est « inconnu » hors du réseau de l'école :
+    // la fiche doit donc envoyer authHeaders() avec la note (anomalie corrigée).
+    expect((await note('Maison', 2)).status).toBe(404);
+    expect(await compteurs('Maison')).toEqual({ somme: 2, nombre: 1 });
   });
 
   it('un tuteur partagé d’une autre école se note depuis hors école', async () => {

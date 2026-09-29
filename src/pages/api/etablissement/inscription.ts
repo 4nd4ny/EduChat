@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { isIP } from 'net';
 import { getDb } from '../../../server/db';
 import { requireAuth } from '../../../server/token';
-import { getClientIp, isRateLimited } from '../../../server/access';
+import { getClientIp, ipDejaRevendiquee, isRateLimited } from '../../../server/access';
 import { definirAdminEcole } from '../../../server/appartenance';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR } from '../../../shared/providers';
@@ -51,33 +51,10 @@ import { ERR } from '../../../shared/providers';
 const MAX_NOM = 120;
 const MAX_NOM_PERSONNE = 120;
 
-/**
- * LA FORME CANONIQUE D'UNE ADRESSE — POUR DÉDOUBLONNER, ET POUR RIEN D'AUTRE.
- *
- * Elle ne sert PLUS à décider ce qu'on enregistre (voir « ON STOCKE CE QUE
- * RESOLVE COMPARERA » plus bas) : elle sert uniquement à répondre à la
- * question « deux écoles désignent-elles la même machine ? », que la seule
- * comparaison de chaînes ne sait pas trancher.
- *
- *  · IPv4 mappée : « ::ffff:203.0.113.7 » et « 203.0.113.7 » sont la même
- *    adresse, et getClientIp lui-même dépouille le préfixe sur le chemin du
- *    socket — deux graphies pour un seul réseau ;
- *  · IPv6 : une même adresse s'écrit de mille façons (RFC 5952) et Node n'en
- *    présente qu'une, compressée et en minuscules. new URL la produit — c'est
- *    la seule normalisation IPv6 disponible sans dépendance.
- *
- * Sans ce repli, deux écoles revendiqueraient la même machine par le simple
- * choix de la graphie, et la seconde volerait les élèves de la première.
- */
-function canonique(brut: string): string {
-  const sansPrefixe = brut.replace(/^::ffff:/i, '');
-  if (isIP(sansPrefixe) === 4) return sansPrefixe;
-  if (isIP(brut) === 6) {
-    try { return new URL(`http://[${brut}]`).hostname.slice(1, -1); }
-    catch { return brut.toLowerCase(); }
-  }
-  return brut;
-}
+// LA FORME CANONIQUE D'UNE ADRESSE (dédoublonnage entre écoles) vit dans
+// src/server/access.ts (ipCanonique, ipDejaRevendiquee) : /api/ip l'emploie
+// aussi pour prévenir le formulaire, et les deux doivent juger « revendiquée »
+// exactement de la même façon.
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -91,11 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const auth = requireAuth(req);
   if (!auth) return res.status(401).json({ error: { code: 'ERR_AUTH_REQUIRED' } });
 
-  // Débit serré : on n'inscrit pas trois écoles par minute depuis un réseau.
   const ipAppelante = getClientIp(req);
-  if (await isRateLimited(ipAppelante, 3, 'inscription')) {
-    return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
-  }
 
   const name = String(req.body?.name ?? '').trim().slice(0, MAX_NOM);
   if (!name) return res.status(400).json({ error: { code: 'ERR_NAME_INVALID' } });
@@ -106,6 +79,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // d'interlocuteur, et c'est ce nom qui figurera dans l'avis d'inscription.
   const adminName = String(req.body?.adminName ?? '').trim().slice(0, MAX_NOM_PERSONNE);
   if (!adminName) return res.status(400).json({ error: { code: 'ERR_ADMIN_NAME_INVALID' } });
+
+  // Débit serré : on n'inscrit pas trois écoles par minute depuis un réseau.
+  //
+  // COMPTÉ APRÈS LA VALIDATION DU FORMULAIRE, et c'est voulu. Le compteur
+  // passait avant : trois envois au nom vide (un formulaire mal rempli, ou trois
+  // collègues derrière la même adresse d'école) bloquaient une minute
+  // l'inscription légitime de tout le réseau. Or une saisie refusée en 400
+  // n'écrit rien : elle ne coûte qu'une vérification de jeton, déjà exigé plus
+  // haut, et n'offre aucune prise au vandalisme que ce plafond combat — la
+  // création d'écoles en série. Ce qui atteint la transaction, en revanche,
+  // compte toujours, aboutisse-t-il ou non (compte déjà rattaché compris).
+  if (await isRateLimited(ipAppelante, 3, 'inscription')) {
+    return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
+  }
 
   // L'ADRESSE DE RECONNAISSANCE EST CELLE D'OÙ L'ON ÉCRIT — voir l'en-tête.
   // « unknown » (getClientIp n'a rien su lire) n'est pas une adresse : l'école
@@ -167,16 +154,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // son école depuis le réseau d'une autre, c'est-à-dire précisément le
       // parcours « mon établissement n'est pas celui-ci ». Le formulaire
       // l'annonce avant la validation ; l'écran final le redit.
+      //
+      // La règle est celle de /api/ip (ipDejaRevendiquee) : ce que le
+      // formulaire annonce avant la validation est ce que la transaction
+      // appliquera — à une course près, que « ipRetenue » redit à l'écran.
       let ipRetenue = ipConstatee;
       if (ipRetenue) {
-        const prises = new Set<string>();
-        for (const row of db.prepare('SELECT ips FROM etablissements').all() as { ips: string }[]) {
-          for (const brut of row.ips.split(',')) {
-            const valeur = brut.trim();
-            if (valeur) prises.add(canonique(valeur));
-          }
-        }
-        if (prises.has(canonique(ipRetenue))) ipRetenue = '';
+        const lignes = db.prepare('SELECT ips FROM etablissements').all() as { ips: string }[];
+        if (ipDejaRevendiquee(ipRetenue, lignes.map(row => row.ips))) ipRetenue = '';
       }
 
       // Colonnes nommées une à une : voir l'en-tête. Tout ce qui n'est pas là

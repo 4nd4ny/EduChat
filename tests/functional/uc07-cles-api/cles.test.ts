@@ -132,14 +132,28 @@ describe('Scénarios d’erreur', () => {
     expect(m.headers.allow).toEqual(['GET', 'PUT', 'DELETE']);
   });
 
-  it('un jeton dont le compte n’existe pas peut quand même déposer une clé (anomalie)', async () => {
-    // Comportement ACTUEL — voir « Anomalies constatées » : la route ne vérifie
-    // pas que le compte existe ; le consentement ne s'écrit nulle part (aucune
-    // ligne users) mais la clé, elle, est stockée.
+  it('un jeton dont le compte n’existe pas ne peut ni consentir ni déposer une clé (anomalie 1 corrigée)', async () => {
+    // Le compte doit exister ET être vérifié en base : un jeton encore signé
+    // d'un compte supprimé est refusé (401), et rien n'est écrit.
     const fantome = issueToken('Fantôme', 'fantome@ecole.ch');
     const r = await ecrire(fantome, { optin: true, provider: 'openai', apiKey: 'k-fantome' });
-    expect(r.status).toBe(200);
-    expect(r.json).toEqual({ ok: true, optin: false, providers: ['openai'] });
-    expect((await base()).prepare('SELECT COUNT(*) AS n FROM user_keys WHERE email=?').get('fantome@ecole.ch')).toEqual({ n: 1 });
+    expect(r.status).toBe(401);
+    expect(r.json.error.code).toBe('ERR_AUTH_REQUIRED');
+    expect((await ecrire(fantome, { optin: true })).status).toBe(401);
+    expect((await ecrire(fantome, { provider: 'openai', apiKey: 'k-fantome' })).status).toBe(401);
+    expect((await base()).prepare('SELECT COUNT(*) AS n FROM user_keys WHERE email=?').get('fantome@ecole.ch')).toEqual({ n: 0 });
+    // Lire, retirer son accord et effacer restent possibles (et cohérents).
+    expect((await lire(fantome)).json).toMatchObject({ optin: false, providers: [] });
+    expect((await ecrire(fantome, { optin: false })).status).toBe(200);
+  });
+
+  it('un compte présent mais non vérifié ne peut pas déposer de clé', async () => {
+    const jeton = await creerCompte('attente@ecole.ch');
+    const db = await base();
+    db.prepare('UPDATE users SET verified_at = NULL WHERE email=?').run('attente@ecole.ch');
+    const r = await ecrire(jeton, { optin: true, provider: 'openai', apiKey: 'k' });
+    expect(r.status).toBe(401);
+    expect(db.prepare('SELECT keys_optin FROM users WHERE email=?').get('attente@ecole.ch')).toEqual({ keys_optin: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM user_keys WHERE email=?').get('attente@ecole.ch')).toEqual({ n: 0 });
   });
 });

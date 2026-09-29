@@ -97,13 +97,13 @@ async function requestJson(url: string, init: RequestInit) {
  */
 function resolveSystemPrompt(promptName: string, promptVersion: number, shareToken: string, locale: string,
   portee: PorteeCatalogue):
-  { row: PromptRow; system: string } | 'unknown' | null {
+  { row: PromptRow; system: string; version: number } | 'unknown' | null {
   if (shareToken) {
     // Brouillon en cours d'écriture : on sert le texte de l'auteur, jamais une
     // traduction. Il teste ce qu'il vient d'écrire.
     const row = getByShareToken(shareToken);
     if (!row) return 'unknown';
-    return { row, system: row.body };
+    return { row, system: row.body, version: row.version };
   }
   if (!promptName) return null;
   // PORTÉE : le tuteur doit être VISIBLE de l'appelant, pas seulement publié.
@@ -119,13 +119,17 @@ function resolveSystemPrompt(promptName: string, promptVersion: number, shareTok
     // celle d'une autre version reviendrait à changer le tuteur en cours de route.
     const old = getDb().prepare('SELECT body FROM prompt_versions WHERE prompt_id = ? AND version = ?')
       .get(row.id, promptVersion) as { body: string } | undefined;
-    if (old) return { row, system: old.body };
+    if (old) return { row, system: old.body, version: promptVersion };
+    // Version épinglée INTROUVABLE (numéro inventé, historique purgé) : on
+    // sert le texte courant — et on le DIT. La réponse porte la version
+    // réellement servie, pas celle demandée : sinon le navigateur resterait
+    // épinglé sur un numéro fantôme en croyant parler à l'ancien tuteur.
   }
   // C'EST ICI que la traduction sert vraiment. Un tuteur écrit en français
   // fait répondre le modèle en français, quelle que soit la langue du site :
   // traduire l'interface sans traduire le prompt système ne trompait personne.
   const traduit = traductionFraiche(row.id, row.version, locale);
-  return { row, system: traduit?.body ?? row.body };
+  return { row, system: traduit?.body ?? row.body, version: row.version };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -308,6 +312,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (resolved === 'unknown') return res.status(404).json({ error: { code: 'ERR_PROMPT_UNKNOWN' } });
   const system = resolved?.system ?? "";
   const promptRow = resolved?.row ?? null;
+  // Version RÉELLEMENT servie (≠ version demandée si celle-ci n'existe pas) :
+  // c'est elle que la réponse annonce au navigateur.
+  const versionServie = resolved?.version ?? 0;
 
   // Recherche web : décidée par le PROMPTAGOGUE pour un tuteur (champ
   // web_search, désactivé par défaut — économie de tokens) ; activée pour le
@@ -766,7 +773,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const emit = (event: Record<string, unknown>) => { res.write(JSON.stringify(event) + '\n'); };
     emit({
       type: 'start', provider: effProvider, free: false,
-      ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
+      ...(promptRow ? { promptName: promptRow.name, promptVersion: versionServie } : {}),
     });
 
     let emitted = false;
@@ -842,7 +849,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // que l'échelle fait ce qu'elle annonce).
       model: effModel,
       free: usedFreeKey,
-      ...(promptRow ? { promptName: promptRow.name, promptVersion: promptVersion > 0 ? promptVersion : promptRow.version } : {}),
+      ...(promptRow ? { promptName: promptRow.name, promptVersion: versionServie } : {}),
     });
   } catch (error: any) {
     console.error(`Erreur du fournisseur ${effProvider} :`, error?.message);

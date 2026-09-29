@@ -115,8 +115,17 @@ describe('deleteServerProfile', () => {
     expect(espion.mock.calls[0][1]!.body).toBeUndefined();
   });
 
-  it('une coupure réseau remonte à l’appelant (pas de try/catch ici, contrairement aux autres)', async () => {
+  it('une coupure réseau donne false, sans lever (comme les trois autres fonctions)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('hors ligne'); }));
-    await expect(deleteServerProfile()).rejects.toThrow('hors ligne');
+    await expect(deleteServerProfile()).resolves.toBe(false);
+  });
+
+  it('un refus du serveur donne false ; sans jeton, aucun appel', async () => {
+    doublerFetch(() => ({ status: 500, json: {} }));
+    expect(await deleteServerProfile()).toBe(false);
+    nav.stockage.delete('educhat-token');
+    const espion = doublerFetch(() => ({ json: { ok: true } }));
+    expect(await deleteServerProfile()).toBe(false);
+    expect(espion).not.toHaveBeenCalled();
   });
 });

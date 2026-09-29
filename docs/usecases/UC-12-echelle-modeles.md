@@ -68,6 +68,7 @@ du fournisseur ne connaît pas.
 |---|---|
 | `/api/admin/ladder` sans être super-administrateur (anonyme, compte, enseignant, admin d'école) — **toute méthode** | `403 ERR_FORBIDDEN` (la garde passe avant la méthode) |
 | `PUT` avec un fournisseur inconnu | `400 ERR_PROVIDER_UNSUPPORTED` |
+| `PUT` avec `rungs` absent ou qui n'est pas un tableau de chaînes | `400 ERR_RUNGS_INVALID`, réglage en vigueur conservé |
 | `/api/admin/ladder` autre que `GET`/`PUT` (super-admin) | `405 ERR_METHOD_NOT_ALLOWED`, `Allow: GET, PUT` |
 | `/api/ladder` autre que `GET` | `405 ERR_METHOD_NOT_ALLOWED` |
 | `rung` invalide (`0`, `4`, `"2"`…) à la complétion | pas d'erreur : barreau 1 |
@@ -90,10 +91,13 @@ du fournisseur ne connaît pas.
 
 ## Anomalies constatées
 
-- **`PUT` sans tableau `rungs` efface le réglage.** `src/pages/api/admin/ladder.ts:51` lit
+- **Corrigée** — la route exige un tableau de chaînes et répond sinon
+  `400 ERR_RUNGS_INVALID` sans rien écrire ; le retour à la proposition ne se fait plus que sur
+  demande explicite (barreaux vides).
+  *Constat d'origine :* **`PUT` sans tableau `rungs` efface le réglage.** `src/pages/api/admin/ladder.ts:51` lit
   `rungs` absent ou mal typé (chaîne, objet) comme `[]`, que `setLadder` traite comme « retour
   à la proposition ». Une requête malformée efface donc silencieusement l'échelle en vigueur
-  au lieu d'être refusée par un `400`. Test : « PUT sans liste de barreaux ».
+  au lieu d'être refusée par un `400`. Test : « PUT sans liste de barreaux valide ».
 
 ## Tests
 
@@ -113,7 +117,7 @@ du fournisseur ne connaît pas.
 | Nominal (réglage) | `PUT` puis relecture publique et disparition des « inconnus » |
 | A4 | barreau fantôme accepté mais signalé |
 | A3 | trois barreaux vides → proposition |
-| Anomalie | `PUT` sans tableau → réglage effacé |
+| Erreurs (anomalie corrigée) | `PUT` sans tableau de chaînes → `400 ERR_RUNGS_INVALID`, réglage conservé |
 | Erreurs | fournisseur inconnu `400` ; méthode `405` |
 | Droits | anonyme, compte, enseignant, admin d'école → `403` sur toutes méthodes, rien d'écrit |
 | Nominal (régénérer) | barreaux 1→2→3 : modèles de l'échelle, effort croissant (température Mistral) |

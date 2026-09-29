@@ -7,7 +7,9 @@ import { dictionaries, fr, type Locale, type TranslationKey } from './dictionari
 
 export function translate(locale: string | undefined, key: TranslationKey, vars?: Record<string, string | number>): string {
   const dict = dictionaries[(locale as Locale) || 'fr'] ?? fr;
-  let text: string = dict[key] ?? fr[key] ?? key;
+  // `||` et non `??` : une traduction laissée VIDE ('') doit elle aussi se
+  // replier sur le français (puis sur la clé), au lieu de s'afficher vide.
+  let text: string = dict[key] || fr[key] || key;
   if (vars) {
     for (const [name, value] of Object.entries(vars)) {
       // TOUTES les occurrences, pas la première. String.replace avec un motif

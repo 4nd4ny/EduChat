@@ -44,7 +44,7 @@ dire au navigateur quelle adresse le serveur voit.
   lignes `used_server_key = 1`, `ip = ''`, depuis minuit UTC, modèles `:free` comptés zéro,
   au prix `SECRET_FREE_PRICE_PER_MTOK`. Jamais négatif, arrondi au centime. Sans repli : `null`
   et la ligne n'est pas affichée.
-- **A3 — Contrôle de santé.** `GET /api/health` → `{ ok: true, publishedPrompts }` si la base répond.
+- **A3 — Contrôle de santé.** `GET /api/health` → `{ ok: true, publishedPrompts }` si la base répond (tuteurs `published` non archivés, même décompte que le bandeau).
 - **A4 — Adresse vue.** `GET /api/ip` → `{ ip, isIpAllowed, revendiquee }` : l'adresse retenue
   par le contrôle anti-usurpation, si elle est une IP d'amorçage (`SECRET_ALLOWED_IPS`), et si
   elle appartient **déjà** à un établissement — un booléen, jamais le nom de l'école.
@@ -75,11 +75,13 @@ dire au navigateur quelle adresse le serveur voit.
 
 ## Anomalies constatées
 
-- **Deux décomptes différents des « tuteurs publiés ».** `src/pages/api/health.ts:9` compte
+- **Corrigée** — `/api/health` exclut désormais `archived = 1`, comme le bandeau public : les deux
+  chiffres coïncident.
+  *Constat d'origine :* **Deux décomptes différents des « tuteurs publiés ».** `src/pages/api/health.ts:9` compte
   `status = 'published'` **sans** exclure les tuteurs archivés, alors que le bandeau public
   (`src/server/stats.ts:93`) exclut `archived = 1`. Un tuteur archivé est donc « publié » pour la
   supervision et absent de l'accueil. Écart mineur (la sonde ne sert qu'à vérifier que la base
-  répond), mais les deux chiffres divergent. Test : « compte aussi les tuteurs publiés ARCHIVÉS ».
+  répond), mais les deux chiffres divergent. Test : « exclut les tuteurs publiés ARCHIVÉS, comme le bandeau public ».
 
 ## Tests
 
@@ -101,5 +103,5 @@ dire au navigateur quelle adresse le serveur voit.
 | A1 | identifiant invalide → compté par l'adresse |
 | A2 | budget gratuit affiché quand le repli est servi |
 | Erreurs | `405` ; base indisponible → `500 ERR_STATS` |
-| A3 | santé ok ; tuteurs archivés comptés (anomalie) ; méthode libre ; base indisponible → `500` |
+| A3 | santé ok ; tuteurs archivés exclus comme au bandeau (anomalie corrigée) ; méthode libre ; base indisponible → `500` |
 | A4 | adresse non revendiquée ; revendiquée sans nom d'école ; IP d'amorçage ; `X-Real-IP` forgé ignoré derrière un proxy à secret |

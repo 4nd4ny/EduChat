@@ -143,10 +143,16 @@ describe('Scénarios alternatifs', () => {
     const a = await ecole();
     await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}90` }, ip: a.ip });
     const premiere = await acces.getAuthLockExpiry(a.cle);
-    // Salle ouverte : le POST suivant court-circuite (auto-login) et ne change rien.
+    // Corrigé (anomalie 6) : salle ouverte, un POST reste une demande
+    // d'ouverture — mot de passe vérifié, échéance REMPLACÉE par la nouvelle durée.
+    const avant = Date.now();
     const r = await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}5` }, ip: a.ip });
-    expect(r.json.message).toBe('Autologin activé via verrou');
-    expect(await acces.getAuthLockExpiry(a.cle)).toBe(premiere);
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ success: true, message: 'Connexion autorisée' });
+    const seconde = await acces.getAuthLockExpiry(a.cle);
+    expect(seconde).toBeLessThan(premiere);
+    expect(seconde).toBeGreaterThanOrEqual(avant + 5 * 60_000);
+    expect(seconde).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
   });
 
   it('A3 — fermeture anticipée : referme SA salle, pas celle des autres écoles', async () => {
@@ -343,12 +349,55 @@ describe('Anomalies corrigées (voir « Anomalies constatées »)', () => {
   });
 });
 
-describe('Comportements actuels discutables (voir « Anomalies constatées »)', () => {
-
-  it('salle ouverte : toute requête du réseau répond succès, quelle que soit la méthode ou le mot de passe', async () => {
+describe('Anomalie 6 corrigée : salle ouverte, la route ne répond plus « succès » à tout', () => {
+  it('un POST au mot de passe faux : 401, échec compté, salle et échéance intactes', async () => {
     const a = await ecole();
     await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
-    expect((await appeler(auth, { method: 'POST', body: { password: 'faux' }, ip: a.ip })).json.success).toBe(true);
-    expect((await appeler(auth, { method: 'DELETE', ip: a.ip })).status).toBe(200);
+    const echeance = await acces.getAuthLockExpiry(a.cle);
+    const r = await appeler(auth, { method: 'POST', body: { password: 'faux' }, ip: a.ip });
+    expect(r.status).toBe(401);
+    expect(r.json).toEqual({ success: false, message: 'Mot de passe incorrect' });
+    expect(tentatives(a.ip)?.count).toBe(1);
+    expect(await acces.getAuthLockExpiry(a.cle)).toBe(echeance);
+    // Les élèves du réseau continuent d'entrer (GET), la salle reste ouverte.
+    expect((await appeler(auth, { method: 'GET', ip: a.ip })).json).toEqual({ success: true, message: 'Autologin activé via verrou' });
+  });
+
+  it('un POST sans mot de passe : 400, salle intacte', async () => {
+    const a = await ecole();
+    await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
+    expect((await appeler(auth, { method: 'POST', body: {}, ip: a.ip })).status).toBe(400);
+    expect(await acces.checkAuthLock(a.cle)).toBe(true);
+  });
+
+  it('une autre méthode : 405 avec l’en-tête Allow, même salle ouverte', async () => {
+    const a = await ecole();
+    await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
+    const r = await appeler(auth, { method: 'DELETE', ip: a.ip });
+    expect(r.status).toBe(405);
+    expect(r.headers.allow).toEqual(['POST', 'GET']);
+    expect(await acces.checkAuthLock(a.cle)).toBe(true);
+  });
+});
+
+describe('Anomalie 3 corrigée : lecture du suffixe de durée', () => {
+  it('une traînée démesurée de chiffres : 401, un seul échec compté (coût bcrypt borné)', async () => {
+    const a = await ecole();
+    const debut = Date.now();
+    const r = await appeler(auth, { method: 'POST', body: { password: `x${'7'.repeat(2000)}` }, ip: a.ip });
+    expect(r.status).toBe(401);
+    expect(tentatives(a.ip)?.count).toBe(1);
+    // Au plus 8 lectures × 2 hachés : bien loin de 2000 comparaisons.
+    expect(Date.now() - debut).toBeLessThan(2000);
+  });
+
+  it('rétrocompatible : la coupure historique (tous les chiffres finaux) ouvre encore', async () => {
+    const a = await ecole();
+    // 8 chiffres : au-delà des 6 essayés un à un, retrouvé par la coupure historique.
+    const r = await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}00000045` }, ip: a.ip });
+    expect(r.status).toBe(200);
+    const minutes = (await acces.getAuthLockExpiry(a.cle) - Date.now()) / 60_000;
+    expect(minutes).toBeGreaterThan(44);
+    expect(minutes).toBeLessThanOrEqual(45);
   });
 });

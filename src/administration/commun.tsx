@@ -212,7 +212,9 @@ export function BadgeTraductions({ resume }: { resume: ResumeTraductions }) {
       : "opacity-60";
   const detail = resume.etats
     .map(e => `${e.locale.toUpperCase()} : ${e.perimee ? t("admin.tr.stale")
-      : e.state === "ok" ? t("admin.tr.upToDate")
+      // Une traduction « ok » ne porte un détail que si une retraduction
+      // forcée a échoué en la laissant en service : il faut que cela se voie.
+      : e.state === "ok" ? `${t("admin.tr.upToDate")}${e.detail ? ` — ${e.detail}` : ""}`
         : e.state === "pending" ? t("admin.tr.working")
           : e.state === "failed" ? `${t("admin.tr.failed")} — ${e.detail}`
             : t("admin.tr.none")}`)

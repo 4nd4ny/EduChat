@@ -146,6 +146,11 @@ describe('Scénarios alternatifs : la portée de l’appelant', () => {
     // Et sa fiche lui est ouverte, avec le jeton.
     const r = await appeler(fiche, { method: 'GET', query: { name: 'Reserve A' }, token: jeton, ip: ipNeuve() });
     expect(r.status).toBe(200);
+    // C'est bien le jeton qui l'ouvre : sans lui, depuis la même situation,
+    // la fiche est « inconnue ». D'où l'envoi de authHeaders() par la page
+    // src/pages/p/[name].tsx (anomalie corrigée, voir la fiche UC-01).
+    const sans = await appeler(fiche, { method: 'GET', query: { name: 'Reserve A' }, ip: ipNeuve() });
+    expect(sans.status).toBe(404);
   });
 
   it('un simple membre rattaché par l’IP n’emporte pas son école chez lui', async () => {

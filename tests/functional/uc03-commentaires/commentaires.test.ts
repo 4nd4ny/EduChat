@@ -261,10 +261,10 @@ describe('File de modération de l’administration (GET /api/admin/comments)', 
     });
   });
 
-  it('l’administrateur d’école voit ses tuteurs et ceux de la plateforme', async () => {
+  it('l’administrateur d’école ne voit que les tuteurs de son école (pas ceux de la plateforme)', async () => {
     const { a } = await paysage();
     const dir = await creerCompte('dir@a.ch', { etablissementId: a, schoolAdmin: true });
-    expect(tuteursDe(await file({ token: dir }))).toEqual(['Maison A', 'Plateforme']);
+    expect(tuteursDe(await file({ token: dir }))).toEqual(['Maison A']);
   });
 
   it('l’enseignant ne voit que les tuteurs de son école', async () => {
@@ -276,7 +276,10 @@ describe('File de modération de l’administration (GET /api/admin/comments)', 
   it('?portee=ecole ramène le super à son école active ; sans école, une file vide', async () => {
     const { b } = await paysage();
     const supB = await creerCompte('super@educh.at', { etablissementId: b });
-    expect(tuteursDe(await file({ token: supB }, { portee: 'ecole' }))).toEqual(['Maison B', 'Plateforme']);
+    // Ramené à son école, il n'y voit que les tuteurs de celle-ci : la
+    // plateforme reste dans sa file de /admin (sans le drapeau).
+    expect(tuteursDe(await file({ token: supB }, { portee: 'ecole' }))).toEqual(['Maison B']);
+    expect(tuteursDe(await file({ token: supB }))).toEqual(['Maison A', 'Maison B', 'Plateforme']);
     await viderBase();
     const seul = await creerCompte('super@educh.at');
     const r = await file({ token: seul }, { portee: 'ecole' });
@@ -291,13 +294,22 @@ describe('File de modération de l’administration (GET /api/admin/comments)', 
     expect((await appeler(fileAdmin, { method: 'POST', ip: ipNeuve() })).status).toBe(403);
   });
 
-  it('comportement actuel (voir « Anomalies ») : l’administrateur d’école reçoit les commentaires de la plateforme mais ne peut pas les modérer', async () => {
-    // /api/admin/comments sert à l'administrateur d'école la file de ses
-    // tuteurs ET de ceux de la plateforme (etablissement_id IS NULL) ; la route
-    // de modération, elle, écarte la plateforme (tuteurDeLEcole) : 403.
+  it('la file d’un rang d’école est exactement ce qu’il peut modérer (anomalie corrigée : plus de commentaires de la plateforme)', async () => {
+    // Autrefois, /api/admin/comments servait à l'administrateur d'école les
+    // commentaires de la plateforme, que la route de modération lui refuse
+    // (tuteurDeLEcole écarte le NULL) : des boutons qui répondaient 403.
     const { a, ids } = await paysage();
     const dir = await creerCompte('dir@a.ch', { etablissementId: a, schoolAdmin: true });
-    expect(tuteursDe(await file({ token: dir }))).toContain('Plateforme');
+    const prof = await creerCompte('prof@a.ch', { teacher: true, etablissementId: a });
+    for (const jeton of [dir, prof]) {
+      const recus = (await file({ token: jeton })).json.comments as any[];
+      expect(recus.map(c => c.promptName)).not.toContain('Plateforme');
+      // Chaque commentaire reçu se modère bel et bien…
+      for (const c of recus) {
+        expect((await moderer(c.promptName, c.id, 'hide', { token: jeton })).status).toBe(200);
+      }
+    }
+    // … et celui de la plateforme, absent de la file, reste refusé.
     const r = await moderer('Plateforme', ids.Plateforme, 'approve', { token: dir });
     expect(r.status).toBe(403);
     expect((await lire('Plateforme', { token: dir })).json.moderator).toBe(false);

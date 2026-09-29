@@ -42,8 +42,19 @@ describe('translate', () => {
     }
   });
 
-  it('comportement actuel : une valeur VIDE n’est pas remplacée par le français (?? ne voit que null/undefined)', () => {
-    expect(translate('en', 'admin.tarif.helpSchool')).toBe('');
+  it('une valeur VIDE se replie sur le français, puis sur la clé', () => {
+    // Simulation d'une traduction laissée vide.
+    const sauvegardeEn = (en as any)['common.back'];
+    const sauvegardeFr = (fr as any)['common.back'];
+    (en as any)['common.back'] = '';
+    try {
+      expect(translate('en', 'common.back')).toBe('Retour');
+      (fr as any)['common.back'] = '';
+      expect(translate('en', 'common.back')).toBe('common.back');
+    } finally {
+      (en as any)['common.back'] = sauvegardeEn;
+      (fr as any)['common.back'] = sauvegardeFr;
+    }
   });
 
   it('remplace les variables, TOUTES les occurrences', () => {

@@ -35,11 +35,16 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     }
     if (nameBrut !== undefined) {
       const nom = nameBrut || auth.email.split('@')[0];
-      db.prepare('UPDATE users SET name = ? WHERE email = ? AND verified_at IS NOT NULL')
+      const { changes } = db.prepare('UPDATE users SET name = ? WHERE email = ? AND verified_at IS NOT NULL')
         .run(nom, auth.email);
       // Le nom d'auteur est dénormalisé sur les tuteurs : sans cette mise à
-      // jour, le catalogue continuerait d'afficher l'ancien.
-      db.prepare('UPDATE prompts SET author_name = ? WHERE author_email = ?').run(nom, auth.email);
+      // jour, le catalogue continuerait d'afficher l'ancien. Même garde que
+      // ci-dessus : seul un compte VÉRIFIÉ renomme ses tuteurs — un jeton dont
+      // le compte a disparu (ou n'est plus vérifié) ne doit pas pouvoir
+      // réécrire le nom d'auteur affiché au catalogue.
+      if (changes > 0) {
+        db.prepare('UPDATE prompts SET author_name = ? WHERE author_email = ?').run(nom, auth.email);
+      }
     }
     return res.status(200).json({ ok: true });
   }

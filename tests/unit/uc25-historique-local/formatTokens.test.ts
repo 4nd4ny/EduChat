@@ -23,12 +23,17 @@ describe('formatTokens', () => {
     expect(formatTokens(5e27)).toBe('5000 YTok.');
   });
 
-  it('comportement actuel : l’arrondi peut afficher « 1000 K » au lieu de « 1.00 M »', () => {
-    expect(formatTokens(999_999)).toBe('1000 KTok.');
+  it('un arrondi qui atteint 1000 passe à l’unité suivante (« 1.00 M », jamais « 1000 K »)', () => {
+    expect(formatTokens(999_999)).toBe('1.00 MTok.');
+    expect(formatTokens(999_500)).toBe('1.00 MTok.');
+    expect(formatTokens(999_499)).toBe('999 KTok.');
+    expect(formatTokens(999_999_999)).toBe('1.00 GTok.');
+    expect(formatTokens(999.6)).toBe('1.00 KTok.');
   });
 
-  it('comportement actuel : valeurs négatives ou NaN non filtrées', () => {
-    expect(formatTokens(-5000)).toBe('-5000.00 Tok.');
-    expect(formatTokens(NaN)).toBe('NaN Tok.');
+  it('valeurs négatives, NaN ou infinies : affichées comme 0', () => {
+    expect(formatTokens(-5000)).toBe('0.00 Tok.');
+    expect(formatTokens(NaN)).toBe('0.00 Tok.');
+    expect(formatTokens(Infinity)).toBe('0.00 Tok.');
   });
 });

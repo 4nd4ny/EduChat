@@ -101,6 +101,10 @@ describe('coutAuTarif', () => {
     expect(coutAuTarif({ entree: 1, sortie: 5 }, 1000, 1000)).toBe(0.01); // 0.006 → 0.01
     expect(coutAuTarif({ entree: 3, sortie: 3 }, 1_000_000, 0)).toBe(3);   // pas de 3.01 par bruit flottant
   });
+  it('un coût nul vaut 0, jamais −0 (anomalie UC-19 n° 5 corrigée)', () => {
+    expect(Object.is(coutAuTarif({ entree: 1, sortie: 5 }, 0, 0), 0)).toBe(true);
+    expect(Object.is(coutAuTarif({ entree: 0, sortie: 0 }, 1000, 1000), 0)).toBe(true);
+  });
   it('le taux optionnel ne sert qu’aux simulations', () => {
     expect(coutAuTarif({ entree: 10, sortie: 10 }, 1_000_000, 0, 10)).toBe(11);
   });

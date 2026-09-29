@@ -60,6 +60,8 @@ bloc en JSON).
 - **A5 — Porte-monnaie personnel.** Compte vérifié ayant déjà provisionné, hors école ouverte :
   clé interne décomptée sur `users.solde`, journal **sans IP, sans établissement, sans enseignant**.
 - **A6 — Tuteur.** Version épinglée antérieure → texte de cette version (`prompt_versions`) ;
+  version épinglée introuvable → texte courant, et la réponse (`promptVersion`, en flux comme en
+  JSON) annonce la version **réellement servie** ;
   brouillon par `shareToken` → texte de l'auteur, jamais traduit ; chat libre → aucun prompt système,
   recherche web active (le tuteur, lui, décide via `web_search`, désactivée par défaut ; la séance peut la couper).
 - **A7 — Pièces jointes.** Images/PDF (4 au plus, 8 Mo chacune) en clé personnelle uniquement, rattachées
@@ -143,7 +145,7 @@ bloc en JSON).
 | A4 / erreurs | drapeaux rouges et écartés refusés ; école à sec ; RESPIRE ; quota mensuel ; quota par élève ; séance (fournisseurs, recherche web, enseignant) |
 | Périmètre | clé tapée sur réseau d'école (Grok refusé) ; clé mémorisée qui lève les règles ; anonyme hors campus refusé ; OpenRouter : clé libre admise, modèle hors échelle réservé aux comptes ; jeton d'un compte disparu |
 | A5 | crédit personnel décompté, journal sans IP ; crédit épuisé ; drapeau rouge refusé |
-| A6 | prompt non remplaçable par le client ; chat libre ; recherche web du tuteur ; inconnu/brouillon/archivé → 404 ; `shareToken` ; version épinglée ; traduction fraîche/périmée ; tuteur réservé d'une autre école |
+| A6 | prompt non remplaçable par le client ; chat libre ; recherche web du tuteur ; inconnu/brouillon/archivé → 404 ; `shareToken` ; version épinglée ; version épinglée inexistante → version servie annoncée (JSON et flux, anomalie corrigée) ; traduction fraîche/périmée ; tuteur réservé d'une autre école |
 | A7 | image transmise ; refus (sans clé, incompatible, type, base64, nombre, taille) |
 | A8 | duel réservé aux promptagogues |
 | Erreurs | méthodes ; validation ; rôles non admis ; limite de 48 Mo ; 30 req/min |
@@ -151,8 +153,11 @@ bloc en JSON).
 
 ## Anomalies constatées
 
-- **Version épinglée inexistante annoncée comme servie** — `src/pages/api/completion.ts:116-123`
-  retombe sur le texte **courant** quand `promptVersion` ne figure pas dans `prompt_versions`, mais
-  les réponses (`:769` en flux, `:845` en JSON) renvoient `promptVersion` tel que demandé dès qu'il
-  est > 0. Le client épingle alors une version qui n'existe pas. Test :
-  « version épinglée INEXISTANTE… » (comportement actuel figé).
+- **Corrigée** — `resolveSystemPrompt` rend aussi la version réellement servie, et c'est elle que
+  portent l'événement `start` et la réponse JSON : une version épinglée introuvable annonce la
+  version courante. Tests : « version épinglée INEXISTANTE : … c'est la version COURANTE qui est
+  annoncée », « … en flux : l'événement start annonce la version servie ». Constat d'origine :
+  **version épinglée inexistante annoncée comme servie** — `src/pages/api/completion.ts:116-123`
+  retombait sur le texte **courant** quand `promptVersion` ne figurait pas dans `prompt_versions`,
+  mais les réponses (`:769` en flux, `:845` en JSON) renvoyaient `promptVersion` tel que demandé
+  dès qu'il était > 0. Le client épinglait alors une version qui n'existe pas.

@@ -32,7 +32,9 @@ jamais rien écraser et sans jamais transporter d'élément d'identité.
    télécharge `educhat-profil-AAAA-MM-JJ.json`.
 4. Sur le navigateur B, il dépose le fichier dans la barre latérale. `JSON.parse` puis
    `isProfile` (champ numérique `educhatProfile`) aiguillent vers `applyProfile`.
-5. `applyProfile` **fusionne** : conversations absentes ajoutées, favoris unis, notes locales
+5. `applyProfile` vérifie la version (seule `1` est connue) et **valide tout le fichier avant
+   d'écrire quoi que ce soit** (messages contrôlés comme par `parseImportedMessages`), puis
+   **fusionne** : conversations absentes ajoutées, favoris (chaînes) unis, notes locales
    prioritaires, compteur = maximum des deux ; l'événement `totalTokensUpdated` est émis.
 6. Message « Profil importé : N conversation(s) ajoutée(s). », puis rechargement de la page.
 
@@ -54,13 +56,15 @@ jamais rien écraser et sans jamais transporter d'élément d'identité.
 | Cas | Réponse |
 |---|---|
 | Fichier non JSON (tronqué, vide, binaire) | « Fichier illisible : ce n'est pas du JSON valide. » — rien n'est écrit |
-| Profil sans `conversations` (ou non objet) | `applyProfile` lève « Profil invalide : aucune conversation. » **avant toute écriture** ; l'utilisateur voit le même message « Fichier illisible… » (voir anomalies) |
+| Profil sans `conversations` (ou non objet, ou tableau) | `applyProfile` lève « Profil invalide : aucune conversation. » **avant toute écriture** ; ce message exact est affiché |
+| Version de profil inconnue (`educhatProfile` ≠ 1) | « Profil invalide : version N non prise en charge. » — rien n'est écrit |
+| Message hostile dans une conversation (rôle autre que `user`/`assistant`, contenu non textuel, plus de 5000 messages) | Tout le profil est refusé, **rien n'est écrit** : « Profil invalide : conversation « id », message N : rôle « system » non autorisé. » (ou « contenu textuel attendu », « format invalide », « trop longue (plus de 5000 messages) ») |
 | Fichier > 2 Mo ou non `.json` | Refusé par la zone de dépôt (`MAX_IMPORT_BYTES`) : « Fichier trop volumineux (maximum 2 Mo). » / « Fichier refusé… » |
 | Conversation sans tableau `messages` | Ignorée silencieusement, les autres sont importées |
-| Favoris non tableau, notes non objet, `totalTokens` non numérique | Champ ignoré (valeurs locales inchangées) |
+| Favoris non tableau, notes non objet, `totalTokens` non numérique, non fini ou négatif | Champ ignoré (valeurs locales inchangées) ; seuls les favoris de type chaîne sont retenus |
 | Clé `__proto__` dans `conversations` ou `ratings` | Sans effet : aucune pollution de prototype, aucune conversation ajoutée |
 | Champ `educhat-token` / `token` glissé dans le fichier | Ignoré : le jeton local n'est jamais lu ni écrasé |
-| `pg-history` local corrompu | `getHistory` lève : l'export comme l'import échouent (voir anomalies) |
+| `pg-history`, favoris ou notes locaux corrompus | Repli sur des valeurs vides : export et import restent possibles, sans import partiel |
 
 ## Règles métier et sécurité
 
@@ -84,33 +88,43 @@ jamais rien écraser et sans jamais transporter d'élément d'identité.
 
 ## Anomalies constatées
 
-Comportements actuels, testés tels quels (tests marqués « ANOMALIE » ou « comportement actuel ») :
-
-1. **Le chemin « profil » ne valide pas les messages** (`src/utils/profile.ts:50`) : seule la
-   présence d'un tableau `messages` est vérifiée. Rôle `system`, contenu non textuel, plus de
-   5000 messages sont acceptés, alors que le chemin « conversation seule »
-   (`parseImportedMessages`, `src/context/AnthropicProvider.tsx:33`) les refuse. Un fichier
-   hostile peut ainsi faire entrer dans l'historique des données que l'import unitaire rejette.
-2. **Éléments de favoris non contrôlés** (`src/utils/profile.ts:59`) : nombres ou objets sont
-   rangés dans `prompt-favorites`.
-3. **Tableau accepté comme `conversations`** (`src/utils/profile.ts:44`) : les conversations
-   reçoivent les identifiants `"0"`, `"1"`…
-4. **Import partiel possible** (`src/utils/profile.ts:58`) : si `prompt-favorites` local est
-   corrompu, `JSON.parse` lève **après** l'écriture de l'historique ; notes et compteur ne sont
-   pas appliqués.
-5. **`totalTokens: "Infinity"`** (`src/utils/profile.ts:70`) est rangé tel quel, puis relu comme
-   0 par `buildProfile`.
-6. **Message d'erreur trompeur** (`src/chatSidebar/ChatSidebar.tsx:62`) : un profil JSON valide
-   mais rejeté par `applyProfile` affiche « ce n'est pas du JSON valide ».
-7. **Historique corrompu bloquant** (`src/context/History.tsx:68`) : `getHistory` n'a aucun
-   repli, contrairement aux favoris et notes ; l'export du profil devient impossible.
-8. **Divergence avec le planning** (`planning/11-export-import.md`, tâche 6) : le champ de
-   version s'appelle `educhatProfile`, pas `formatVersion` ; `isProfile`
-   (`src/utils/profile.ts:34`) accepte toute version numérique, y compris future.
-9. Mineures : `getFavorites` rend tel quel un JSON non tableau, ce qui fait lever
-   `toggleFavorite` (`src/utils/favorites.ts:14`) ; `getAccount` tient pour non expirée une
-   charge sans `exp` (`src/utils/account.ts:65`) ; `formatTokens(999_999)` affiche
-   « 1000 KTok. » et ne filtre ni négatifs ni `NaN` (`src/utils/formatTokens.ts:16`).
+1. **Corrigée** — **Le chemin « profil » ne validait pas les messages** : `applyProfile`
+   (`src/utils/profile.ts:65`, `validateMessages`) applique désormais les règles de
+   `parseImportedMessages` (`src/context/AnthropicProvider.tsx:33`) : rôle `user`/`assistant`,
+   contenu textuel (ancien format `{ reply }` converti), au plus 5000 messages. Les champs
+   inconnus sont écartés ; l'identifiant, le modèle et les métadonnées de pièces jointes sont
+   conservés (aller-retour exact). Une seule conversation hostile fait refuser tout le profil.
+   La règle est réécrite dans `profile.ts` plutôt qu'importée : `AnthropicProvider` importe
+   `profileSync`, qui importe `profile.ts` (dépendance circulaire, et React/Next inutiles ici).
+2. **Corrigée** — **Éléments de favoris non contrôlés** : seules les chaînes sont retenues,
+   côté fichier comme côté local (`src/utils/profile.ts:134`).
+3. **Corrigée** — **Tableau accepté comme `conversations`** : refusé comme un profil sans
+   conversation (`src/utils/profile.ts:115`).
+4. **Corrigée** — **Import partiel possible** : `applyProfile` valide et lit tout (historique,
+   favoris et notes locaux avec repli sur des valeurs vides s'ils sont corrompus) **avant** la
+   première écriture (`src/utils/profile.ts:110`).
+5. **Corrigée** — **`totalTokens: "Infinity"`** : un compteur non fini ou négatif est ignoré,
+   une valeur décimale est tronquée (`src/utils/profile.ts:150`).
+6. **Corrigée** — **Message d'erreur trompeur** : `ChatSidebar.onDrop`
+   (`src/chatSidebar/ChatSidebar.tsx:73`) distingue le JSON illisible (« ce n'est pas du JSON
+   valide ») du profil rejeté, dont la raison exacte est affichée (« Profil invalide : … »).
+   Les messages voisins de ce gestionnaire sont codés en français en dur : aucune clé i18n.
+7. **Corrigée** — **Historique corrompu bloquant** : `getHistory`
+   (`src/context/History.tsx:66`) se replie sur `{}` si `pg-history` est illisible ou n'est pas
+   un objet ; la valeur corrompue n'est remplacée qu'à la prochaine écriture.
+8. **Laissée en l'état** (nom du champ) — **Divergence avec le planning**
+   (`planning/11-export-import.md`, tâche 6) : le champ de version s'appelle `educhatProfile`,
+   pas `formatVersion`. Le renommer rendrait illisibles les profils déjà exportés et ceux de la
+   synchronisation serveur ; c'est le planning qui devrait s'aligner. En revanche, les versions
+   sont désormais restreintes à celles connues (`SUPPORTED_PROFILE_FORMATS`,
+   `src/utils/profile.ts:48`) : `isProfile` aiguille toujours tout profil numéroté (pour
+   qu'il ne soit pas confié à `importConversation`), et `applyProfile` refuse explicitement une
+   version inconnue.
+9. **Corrigée** — Mineures : `getFavorites` se replie sur `[]` pour un JSON non tableau
+   (`src/utils/favorites.ts:13`), `toggleFavorite` ne lève plus ; `getAccount` tient pour
+   invalide une charge sans `exp` numérique, comme le serveur (`src/utils/account.ts:68`) ;
+   `formatTokens` affiche « 1.00 M » pour 999 999 (passage à l'unité suivante quand l'arrondi
+   atteint 1000) et 0 pour une valeur négative, `NaN` ou infinie (`src/utils/formatTokens.ts:5`).
 
 ## Tests
 
@@ -123,17 +137,17 @@ fournit une doublure minimale de navigateur (`localStorage` en mémoire, `window
 
 | Fichier | Code testé | Cas couverts |
 |---|---|---|
-| `profile.test.ts` | `buildProfile`, `isProfile`, `applyProfile`, `downloadProfile` | contenu et version du profil, exclusion jeton/uuid/école, stockage corrompu, reconnaissance du format, fusion (ajout, priorité locale, favoris, notes, max des tokens, événement), rejet sans écriture, champs invalides, entrées hostiles (`__proto__`, favoris/messages non validés, tableau, `Infinity`, import partiel), téléchargement daté |
-| `history.test.ts` | `storeConversation`, `getConversation`, `updateConversation`, `deleteConversationFromHistory`, `getHistory`, `clearHistory` | rangement avec/sans identifiant, tuteur + version, mise à jour partielle, suppression, historique corrompu |
-| `favorites.test.ts` | `getFavorites`, `toggleFavorite`, `getGivenRating`, `storeGivenRating` | bascule, persistance, corruption, JSON non tableau, notes non numériques, absence de `window` |
+| `profile.test.ts` | `buildProfile`, `isProfile`, `applyProfile`, `downloadProfile` | contenu et version du profil, exclusion jeton/uuid/école, stockage corrompu (historique compris), reconnaissance du format, version inconnue refusée, fusion (ajout, priorité locale, favoris, notes, max des tokens, événement), rejet sans écriture, champs invalides, entrées hostiles (`__proto__`, favoris non chaînes, messages invalides, plus de 5000 messages, normalisation, tableau, `Infinity`/négatifs, stockage local corrompu sans import partiel), téléchargement daté |
+| `history.test.ts` | `storeConversation`, `getConversation`, `updateConversation`, `deleteConversationFromHistory`, `getHistory`, `clearHistory` | rangement avec/sans identifiant, tuteur + version, mise à jour partielle, suppression, historique corrompu → repli sur `{}` |
+| `favorites.test.ts` | `getFavorites`, `toggleFavorite`, `getGivenRating`, `storeGivenRating` | bascule, persistance, corruption, JSON non tableau (repli sur `[]`), notes non numériques, absence de `window` |
 | `clientId.test.ts` | `getClientId` | uuid v4, stabilité, unicité par navigateur, régénération après effacement, absence de `window`, exclusion du profil |
-| `account.test.ts` | `storeToken`, `clearToken`, `getToken`, `getAccount`, `getEcoleActive`, `setEcoleActive`, `authHeaders` | événements, décodage d'un vrai jeton serveur, pas de vérification de signature, expiré/illisible/sans adresse/sans `exp`, validation de l'école, en-têtes |
-| `formatTokens.test.ts` | `formatTokens` | paliers d'unités, chiffres significatifs, plafond Y, arrondi « 1000 K », négatifs/`NaN` |
+| `account.test.ts` | `storeToken`, `clearToken`, `getToken`, `getAccount`, `getEcoleActive`, `setEcoleActive`, `authHeaders` | événements, décodage d'un vrai jeton serveur, pas de vérification de signature, expiré/illisible/sans adresse/sans `exp` (invalide), validation de l'école, en-têtes |
+| `formatTokens.test.ts` | `formatTokens` | paliers d'unités, chiffres significatifs, plafond Y, arrondi à 1000 → unité suivante, négatifs/`NaN`/infini → 0 |
 
 ### Fonctionnels — `tests/functional/uc25-historique-local/historique-local.test.ts`
 
 La logique de dépôt de `ChatSidebar.onDrop` (composant React) est reproduite à l'identique par
-`deposerFichier()` ; tout le reste est le vrai code.
+`deposerFichier()` (JSON illisible et profil refusé distingués) ; tout le reste est le vrai code.
 
 | Scénario | Test |
 |---|---|
@@ -144,6 +158,8 @@ La logique de dépôt de `ChatSidebar.onDrop` (composant React) est reproduite �
 | A2 | même identifiant des deux côtés : version locale conservée |
 | A3 | conversation seule aiguillée hors du chemin « profil » |
 | Erreurs | JSON tronqué / vide / binaire : message, historique intact |
-| Erreurs | profil sans conversations : rejet sans écriture, message trompeur |
+| Erreurs | profil sans conversations (ou tableau) : rejet sans écriture, raison exacte affichée |
+| Erreurs | version de profil inconnue : refus explicite sans écriture |
+| Erreurs | historique local corrompu : import puis export possibles |
 | Erreurs | fichier hostile : `__proto__`, tentative d'écrasement, faux jeton, tokens négatifs |
-| Erreurs | messages non validés par le chemin « profil » ; limite de 2 Mo portée par la zone de dépôt seule |
+| Erreurs | messages validés comme par le chemin « conversation » (refus en bloc, sans écriture) ; 2 Mo par la zone de dépôt, plus de 5000 messages refusés |

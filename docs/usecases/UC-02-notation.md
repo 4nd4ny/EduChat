@@ -24,9 +24,10 @@ catalogue (UC-01).
 
 1. Sur la fiche, le visiteur choisit un nombre d'étoiles ; la page n'envoie rien si une note est
    déjà mémorisée localement pour ce tuteur.
-2. `POST /api/prompts/[name]/rate { stars }`.
+2. `POST /api/prompts/[name]/rate { stars }` (`stars` est un nombre ; l'en-tête `Authorization`
+   accompagne la note s'il existe un jeton).
 3. Le serveur limite le débit (10 notes / minute / IP, périmètre `rate`), valide `stars` (entier de
-   1 à 5 après conversion `Number`), résout la portée de l'appelant et relit le tuteur sous cette
+   1 à 5, reçu comme nombre ou comme chaîne de chiffres ; tout autre type est refusé), résout la portée de l'appelant et relit le tuteur sous cette
    portée.
 4. `rating_sum += stars`, `rating_count += 1` ; réponse `200 { ratingAvg, ratingCount }`, moyenne
    arrondie au dixième.
@@ -45,7 +46,7 @@ catalogue (UC-01).
 
 | Cas | Réponse |
 |---|---|
-| `stars` absent, non numérique, non entier, hors 1–5 | `400 ERR_RATING_INVALID`, rien n'est compté |
+| `stars` absent, non numérique, non entier, hors 1–5, ou d'un autre type (booléen, tableau, objet, chaîne autre que des chiffres : `"3.0"`, `" 3"`, `"0x3"`…) | `400 ERR_RATING_INVALID`, rien n'est compté |
 | Tuteur inconnu, brouillon, en attente, dépublié, archivé, réservé à une autre école | `404 ERR_PROMPT_UNKNOWN` (indistinct : la route n'est pas un oracle d'existence) |
 | Plus de 10 requêtes / minute depuis une IP (valides ou non) | `429 ERR_RATE_LIMIT`, rien n'est compté |
 | Méthode autre que `POST` | `405`, `Allow: POST` |
@@ -65,11 +66,17 @@ catalogue (UC-01).
 
 ## Anomalies constatées
 
-- **Validation laxiste du type.** `src/pages/api/prompts/[name]/rate.ts:23` convertit par
+- **Corrigée** — `src/pages/api/prompts/[name]/rate.ts:27` n'accepte plus qu'un nombre, ou une
+  chaîne de chiffres (`"3"`, tolérée pour un client qui sérialise un champ de formulaire ; la fiche
+  envoie un nombre) ; `true`, `[5]`, `"3.0"`… répondent `400 ERR_RATING_INVALID`.
+  Constat d'origine : **validation laxiste du type.** `src/pages/api/prompts/[name]/rate.ts:23` convertit par
   `Number(req.body?.stars)` : `true` vaut 1 étoile, `[5]` vaut 5, `"3"` vaut 3. Sans gravité (les
   bornes 1–5 tiennent), mais un corps mal formé est compté au lieu d'être refusé. Test :
   « comportement actuel : true et [5] passent la validation ».
-- **Notation sans jeton depuis la fiche.** `src/pages/p/[name].tsx:104` envoie la note sans
+- **Corrigée** — la fiche envoie la note avec `authHeaders()` (`src/pages/p/[name].tsx:110`) :
+  l'enseignant hors campus note le tuteur réservé de son école. Le test A1 vérifie côté route que
+  c'est le jeton qui l'y autorise (200 avec, 404 sans).
+  Constat d'origine : **notation sans jeton depuis la fiche.** `src/pages/p/[name].tsx:104` envoie la note sans
   `authHeaders()` : un enseignant chez lui ne peut pas noter un tuteur réservé de son école (404),
   alors que la route l'accepte avec le jeton (scénario A1). Voir aussi UC-01.
 
@@ -90,7 +97,7 @@ par les tests fonctionnels. La portée et la moyenne (`toCard`) sont testées da
 |---|---|
 | Nominal | note comptée, moyenne renvoyée ; arrondi au dixième, reflété par la fiche |
 | A3 | pas de dédoublonnage par IP |
-| Nominal | chaîne « 3 » acceptée ; `true` / `[5]` acceptés (anomalie) |
-| A1 | tuteur réservé noté depuis le réseau de l'école, ou par un enseignant identifié |
+| Nominal / Erreurs | chaîne « 3 » acceptée ; `true`, `[5]`, objet, `"3.0"`, `"0x3"`… refusés en 400 sans rien compter (anomalie corrigée) |
+| A1 | tuteur réservé noté depuis le réseau de l'école, ou par un enseignant identifié (404 sans jeton) |
 | A2 | tuteur partagé d'une autre école noté depuis hors école |
 | Erreurs | notes invalides → 400 sans effet ; 404 indistinct ; 429 à la 11e requête ; invalides comptées par le limiteur ; 405 |

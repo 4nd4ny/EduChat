@@ -6,7 +6,10 @@ import { getDb } from '../../server/db';
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const db = getDb();
-    const prompts = (db.prepare("SELECT COUNT(*) AS n FROM prompts WHERE status = 'published'").get() as { n: number }).n;
+    // Même décompte que le bandeau public (src/server/stats.ts) : un tuteur
+    // archivé n'est plus proposé, il ne compte donc pas parmi les publiés —
+    // sans quoi la supervision et l'accueil affichent deux chiffres différents.
+    const prompts = (db.prepare("SELECT COUNT(*) AS n FROM prompts WHERE status = 'published' AND archived = 0").get() as { n: number }).n;
     res.status(200).json({ ok: true, publishedPrompts: prompts });
   } catch (error) {
     console.error('Healthcheck en échec :', error);

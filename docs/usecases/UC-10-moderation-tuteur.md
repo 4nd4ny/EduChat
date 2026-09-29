@@ -74,8 +74,8 @@ absolu : **rien n'est jamais supprimé** — `DELETE` est désactivé, `archive`
 | Tuteur inconnu | `404 ERR_PROMPT_UNKNOWN` |
 | Action inconnue | `400 ERR_ACTION_UNKNOWN` |
 | Plus de 20 écritures / min depuis une IP | `429 ERR_RATE_LIMIT` |
-| `GET /api/admin/prompts` sans portée de gestion | `403 ERR_FORBIDDEN` (vérifié **avant** la méthode) |
-| Méthode non autorisée | `405 ERR_METHOD_NOT_ALLOWED` |
+| `GET /api/admin/prompts` sans portée de gestion | `403 ERR_FORBIDDEN` |
+| Méthode non autorisée | `405 ERR_METHOD_NOT_ALLOWED` (sur `/api/admin/prompts`, vérifiée **avant** les droits : `Allow: GET`, même pour un anonyme) |
 
 ## Règles métier et sécurité
 
@@ -101,8 +101,17 @@ absolu : **rien n'est jamais supprimé** — `DELETE` est désactivé, `archive`
   attente rattaché à une école qui n'est pas la sienne : la modération a priori se contourne en
   deux gestes. Le commentaire parle d'une « décision client » ; à confirmer. Test :
   `moderation.test.ts` › « un auteur promptagogue peut soumettre puis approuver son propre tuteur ».
-- Mineur : `GET /api/admin/prompts` vérifie les droits avant la méthode
+- **Corrigée** — `src/pages/api/admin/prompts.ts:18` vérifie la méthode avant les droits : un
+  `POST` anonyme reçoit `405` (`Allow: GET`).
+  Constat d'origine (mineur) : `GET /api/admin/prompts` vérifie les droits avant la méthode
   (`src/pages/api/admin/prompts.ts:14-19`) : un `POST` anonyme reçoit 403 au lieu de 405.
+- **Ouverte** — **La liste de l'administrateur d'école contient des tuteurs qu'il ne peut pas
+  modérer.** `GET /api/admin/prompts` (`src/pages/api/admin/prompts.ts:46`, filtre
+  `etablissement_id = @etab OR etablissement_id IS NULL`) lui sert aussi les tuteurs de la
+  plateforme, alors que `tuteurDeLEcole` (`src/server/admin.ts`) lui refuse toute action dessus
+  (403). C'est l'incohérence déjà corrigée pour la file des commentaires (UC-03) ; elle reste ici
+  en attente d'une décision : retirer ces tuteurs de sa liste, ou lui donner un droit de lecture
+  seule explicite.
 
 ## Tests
 
@@ -124,5 +133,5 @@ absolu : **rien n'est jamais supprimé** — `DELETE` est désactivé, `archive`
 | A3 | archivage : hors liste, URL secrète 404, figé, ligne et versions intactes ; publié refusé ; réservé au super ; `DELETE` désactivé pour tous |
 | A4 | renommage d'un publié (id conservé) ; nom invalide/pris ; non-super refusé |
 | A5 | admin d'école partage puis réserve (visibilité dehors / chez elle) ; enseignant, autre école, auteur refusés ; super partout ; plateforme `ERR_NOT_SCHOOL_OWNED` |
-| A6 | liste : super, admin d'école, enseignant ; `?portee=ecole` ; 403 / 405 |
+| A6 | liste : super, admin d'école, enseignant ; `?portee=ecole` ; 403 ; 405 avant les droits (anonyme, compte sans rôle — anomalie corrigée) |
 | Erreurs | tuteur inconnu, action inconnue, méthode ; `retranslate` réservé au super |

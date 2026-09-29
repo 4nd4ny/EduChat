@@ -8,6 +8,7 @@ import { ecoleEnseignante } from '../../server/appartenance';
 import { DeveloperKeys, MaxUnlockMinutes } from '../../utils/env';
 import { ERR, SCHOOL_PROVIDER_IDS } from '../../shared/providers';
 import { parseFournisseursSeance, seanceRestreinte } from '../../server/seance';
+import { CLAUSE_VISIBLE, parametresPortee, porteeDeLEcole } from '../../server/prompts';
 
 // État de la SESSION de classe, pour la console enseignante (/enseignant).
 //
@@ -72,14 +73,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ? (ecoleId === etab?.id ? etab : getEtablissementById(ecoleId))
     : null;
 
+  // LE TUTEUR DÉPLOYÉ, VU COMME LE VOIENT LES ÉLÈVES. La jointure ne filtrait
+  // que sur `status = 'published'` : un tuteur archivé, ou repris par l'école
+  // qui l'a écrit après le déploiement, restait affiché « déployé » ici alors
+  // que GET /api/session-settings — le canal des élèves — le masquait déjà et
+  // que la classe retombait sur le catalogue (UC-15). Même prédicat
+  // (CLAUSE_VISIBLE), même portée (celle de l'école dont parle la séance) : la
+  // console dit enfin ce que reçoit la classe.
   const settings = ecole
     ? getDb().prepare(`
         SELECT p.name AS promptName, s.web_search AS webSearch, s.providers AS providers,
                s.expires_at AS expiresAt
         FROM session_settings s
-        LEFT JOIN prompts p ON p.id = s.default_prompt_id AND p.status = 'published'
-        WHERE s.etablissement_id = ? AND s.expires_at > ?
-      `).get(ecole.id, Date.now()) as
+        LEFT JOIN prompts p ON p.id = s.default_prompt_id AND ${CLAUSE_VISIBLE}
+        WHERE s.etablissement_id = @etabId AND s.expires_at > @now
+      `).get({
+        etabId: ecole.id, now: Date.now(),
+        ...parametresPortee(porteeDeLEcole(ecole.id)),
+      }) as
       { promptName: string | null; webSearch: number; providers: string; expiresAt: number } | undefined
     : undefined;
 

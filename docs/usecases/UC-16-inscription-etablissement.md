@@ -25,7 +25,8 @@ aux élèves ses tuteurs, sans compte.
 
 ## Scénario nominal
 
-1. Sur `/etablissement`, la page lit `GET /api/ip` → `{ ip, isIpAllowed, revendiquee }` et
+1. Sur `/etablissement`, la page lit `GET /api/ip` → `{ ip, isIpAllowed, revendiquee }`
+   (`revendiquee` : même règle canonique que l'inscription, `ipDejaRevendiquee`) et
    `GET /api/etablissement/accueil` → `ecole: null` : elle affiche le formulaire, et l'adresse
    que verra le serveur (pour information : elle n'est pas transmise).
 2. Le responsable saisit le nom de l'école et le sien ;
@@ -67,7 +68,7 @@ aux élèves ses tuteurs, sans compte.
 | Cas | Réponse |
 |---|---|
 | Sans jeton ou jeton invalide | `401 ERR_AUTH_REQUIRED` |
-| Plus de 3 appels / min depuis une IP (échecs compris — le débit est compté avant la validation) | `429 ERR_RATE_LIMIT` |
+| Plus de 3 appels / min depuis une IP ayant passé la validation du formulaire (201, 409 et 500 compris ; les 400 ne comptent pas) | `429 ERR_RATE_LIMIT` |
 | Nom d'école vide | `400 ERR_NAME_INVALID` |
 | Nom du responsable vide | `400 ERR_ADMIN_NAME_INVALID` |
 | Compte déjà doté d'une école principale | `409 ERR_ALREADY_ATTACHED` |
@@ -110,18 +111,27 @@ aux élèves ses tuteurs, sans compte.
 | Nominal | `inscription.test.ts` — `/api/ip` libre → inscription 201 → colonnes par défaut, compte enseignant-admin, lien admin, notification → `/api/ip` revendiquée → accueil nommé ; école neuve sans droit de dépense |
 | Règles | champs interdits ignorés ; nom borné ; nom du responsable écrit seulement s'il manque |
 | A1 – A5 | adresse revendiquée (école sans adresse, voisine intacte) ; dédoublonnage IPv4 mappée / IPv6 ; adresse libre stockée telle quelle et reconnue ; depuis une autre école ; compte simplement lié |
-| Erreurs | 401 ; 400 nom / responsable ; 409 (et seconde inscription) ; 500 + rollback ; 429 ; 405 |
+| Erreurs | 401 ; 400 nom / responsable ; 409 (et seconde inscription) ; 500 + rollback ; 429 (201 et 409 comptés) ; 405 |
+| Anomalies corrigées | saisies invalides sans effet sur le débit ; `/api/ip` annonce revendiquée une IPv4 mappée ou une graphie IPv6 équivalente d'une adresse prise, et l'inscription l'écarte ; adresse libre annoncée libre et gardée |
 | Accueil | `accueil.test.ts` — élève du réseau (tuteurs de l'école seulement, rien d'autre dans la réponse) ; hors réseau ; enseignant chez lui ; élève rattaché chez lui ; « bref » (atelier, IP seule) ; 405 |
 | `/api/ip` | adresse et revendication ; X-Forwarded-For ignoré ; `isIpAllowed` avec `SECRET_ALLOWED_IPS` |
 
 ## Anomalies constatées
 
-1. **`/api/ip` et l'inscription ne jugent pas « revendiquée » de la même façon** —
+1. **Corrigée** — la forme canonique et le test « revendiquée » vivent désormais dans
+   `src/server/access.ts` (`ipCanonique`, `ipDejaRevendiquee`) et sont appelés par `/api/ip`
+   comme par la transaction d'inscription : ce que le formulaire annonce avant la validation est
+   ce que l'inscription appliquera (à une course près, que `ipRetenue` redit).
+   *Constat initial :* **`/api/ip` et l'inscription ne jugent pas « revendiquée » de la même façon** —
    `src/pages/api/ip.ts:21` compare les chaînes exactement (`resolveEtablissementByIp`), alors que
    l'inscription dédoublonne sur la forme canonique (`src/pages/api/etablissement/inscription.ts:170-180`).
    Pour une graphie différente d'une adresse déjà prise (ex. `::ffff:198.51.100.7`), le formulaire
    annonce une adresse libre puis l'école est créée **sans adresse** (`ipRetenue: ''`) — l'écran
    final le redit, mais l'avertissement préalable promis n'a pas lieu.
-2. **Le débit est compté avant la validation** (`inscription.ts:96`) : trois saisies invalides
+2. **Corrigée** — le débit est compté après la validation des deux champs : le commentaire du
+   code visait « trois écoles par minute », et une saisie refusée en 400 n'écrit rien (jeton
+   exigé, aucune prise pour le vandalisme). Tout ce qui atteint la transaction compte toujours
+   (201, 409, 500).
+   *Constat initial :* **Le débit est compté avant la validation** (`inscription.ts:96`) : trois saisies invalides
    (nom vide) suffisent à bloquer une minute l'inscription légitime depuis le même réseau.
    Comportement probablement voulu (anti-vandalisme) mais visible par l'utilisateur.

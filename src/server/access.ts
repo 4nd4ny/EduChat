@@ -313,6 +313,59 @@ export function isAccessAllowed(): boolean {
   });
 }
 
+/**
+ * LA FORME CANONIQUE D'UNE ADRESSE — POUR DÉDOUBLONNER, ET POUR RIEN D'AUTRE.
+ *
+ * Elle ne sert PAS à décider ce qu'on enregistre ni ce que
+ * resolveEtablissementByIp compare (chaînes exactes, voir inscription.ts) :
+ * elle répond uniquement à la question « deux écritures désignent-elles la
+ * même machine ? », que la seule comparaison de chaînes ne sait pas trancher.
+ *
+ *  · IPv4 mappée : « ::ffff:203.0.113.7 » et « 203.0.113.7 » sont la même
+ *    adresse, et getClientIp lui-même dépouille le préfixe sur le chemin du
+ *    socket — deux graphies pour un seul réseau ;
+ *  · IPv6 : une même adresse s'écrit de mille façons (RFC 5952) et Node n'en
+ *    présente qu'une, compressée et en minuscules. new URL la produit — c'est
+ *    la seule normalisation IPv6 disponible sans dépendance.
+ *
+ * Sans ce repli, deux écoles revendiqueraient la même machine par le simple
+ * choix de la graphie, et la seconde volerait les élèves de la première.
+ */
+export function ipCanonique(brut: string): string {
+  const sansPrefixe = brut.replace(/^::ffff:/i, '');
+  if (isIP(sansPrefixe) === 4) return sansPrefixe;
+  if (isIP(brut) === 6) {
+    try { return new URL(`http://[${brut}]`).hostname.slice(1, -1); }
+    catch { return brut.toLowerCase(); }
+  }
+  return brut;
+}
+
+/**
+ * CETTE ADRESSE EST-ELLE DÉJÀ REVENDIQUÉE par l'une des listes `ips` données
+ * (colonnes etablissements.ips, séparées par des virgules) ? Comparaison sur
+ * la forme canonique, DES DEUX CÔTÉS.
+ *
+ * UNE SEULE RÈGLE POUR LES DEUX QUESTIONS (UC-16). /api/ip l'annonce au
+ * formulaire AVANT la validation ; l'inscription l'applique DANS sa
+ * transaction. Tant que /api/ip comparait les chaînes exactes, une graphie
+ * différente d'une adresse prise (« ::ffff:198.51.100.7 ») s'annonçait libre,
+ * puis l'école naissait sans adresse — l'avertissement promis n'avait pas lieu.
+ * Fonction PURE (les lignes sont fournies) : l'inscription la rejoue sur la
+ * base lue dans sa propre transaction.
+ */
+export function ipDejaRevendiquee(ip: string, listesIps: readonly string[]): boolean {
+  if (!ip || ip === 'unknown') return false;
+  const cible = ipCanonique(ip);
+  for (const liste of listesIps) {
+    for (const brut of String(liste ?? '').split(',')) {
+      const valeur = brut.trim();
+      if (valeur && ipCanonique(valeur) === cible) return true;
+    }
+  }
+  return false;
+}
+
 /** L'IP appelante est-elle une IP d'établissement déclarée ? */
 export function isKnownIp(ip: string): boolean {
   return AllowedIps.includes(ip);
@@ -361,13 +414,27 @@ export async function mayUseServerKeys(ip: string): Promise<boolean> {
   // La salle ouverte par l'enseignant PRIME sur l'horaire — c'est tout l'objet
   // du geste : donner cours en dehors des plages convenues.
   if (await checkAuthLock(portee.cle)) return true;
+  return horairesOuverts(portee);
+}
+
+/**
+ * La salle de cette portée est-elle dans l'une de SES plages horaires ?
+ * Horaires propres de l'école en base s'il y en a, sinon horaires globaux du
+ * serveur ; l'amorçage (adresse déjà reconnue par salleDepuisIp via isKnownIp)
+ * relève des horaires globaux.
+ *
+ * UNE SEULE RÈGLE, DEUX LECTEURS : mayUseServerKeys (la dépense) et /api/auth
+ * (l'entrée sans mot de passe de l'écran /school). Tant que /api/auth refaisait
+ * son propre test — SECRET_ALLOWED_IPS et horaires globaux seulement —, une
+ * école enregistrée en base, dans ses propres horaires, pouvait dépenser mais se
+ * voyait demander le mot de passe à l'écran (UC-14, anomalie 4).
+ */
+export async function horairesOuverts(portee: PorteeSalle): Promise<boolean> {
   const { parseHours, isWithinSchedule } = await import('./etablissements');
   if (portee.etablissement) {
     const own = parseHours(portee.etablissement.hours);
     return own.length > 0 ? isWithinSchedule(own) : isAccessAllowed();
   }
-  // Amorçage : l'adresse est déjà reconnue (salleDepuisIp l'a vérifié via
-  // isKnownIp), restent les horaires globaux du serveur.
   return isAccessAllowed();
 }
 

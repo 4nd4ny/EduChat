@@ -220,6 +220,15 @@ describe('traduireTuteur — échecs', () => {
     expect(etats.every(e => e.state === 'failed' && e.detail.includes('48 Ko'))).toBe(true);
   });
 
+  it('le message de dépassement compte en OCTETS, comme la limite', async () => {
+    // Anomalie mineure corrigée (fiche UC-24) : 30 000 « é » = 29 Ko en
+    // caractères mais 59 Ko en octets UTF-8.
+    const id = await creerTuteur({ name: 'Accentué', body: 'é'.repeat(30_000) });
+    doublerFetch(() => ({ status: 500 }));
+    const etats = await traduireTuteur(id);
+    expect(etats[0].detail).toMatch(/^Corps de 59 Ko/);
+  });
+
   it('un échec conserve la traduction précédente (périmée, donc non servie)', async () => {
     const id = await creerTuteur({ name: 'Socrate' });
     await poserTraduction(id, 'en', { sourceVersion: 1, body: 'Ancienne traduction anglaise, conservée.' });
@@ -231,16 +240,37 @@ describe('traduireTuteur — échecs', () => {
     expect(traductionFraiche(id, 2, 'en')).toBeUndefined();
   });
 
-  // Comportement ACTUEL, signalé dans « Anomalies constatées » : une
-  // retraduction FORCÉE qui échoue fait passer à « failed » une traduction
-  // pourtant à jour — elle n'est plus servie, alors que rien n'a changé.
-  it('une retraduction forcée qui échoue retire du service une traduction à jour', async () => {
+  // Anomalie corrigée (fiche UC-24) : une retraduction FORCÉE qui échouait
+  // faisait passer à « failed » une traduction pourtant à jour.
+  it('une retraduction forcée qui échoue laisse EN SERVICE la traduction à jour', async () => {
+    const id = await creerTuteur({ name: 'Socrate' });
+    await poserTraduction(id, 'en', { sourceVersion: 1, body: 'Traduction anglaise à jour, toujours servie.' });
+    expect(traductionFraiche(id, 1, 'en')).toBeDefined();
+    doublerFetch(() => ({ status: 500, json: { error: { message: 'Overloaded' } } }));
+    const etats = await traduireTuteur(id, true);
+    expect(traductionFraiche(id, 1, 'en')?.body).toBe('Traduction anglaise à jour, toujours servie.');
+    const en = etats.find(e => e.locale === 'en')!;
+    expect(en).toMatchObject({ state: 'ok', perimee: false, sourceVersion: 1 });
+    // L'échec reste lisible pour l'administration.
+    expect(en.detail).toContain('Overloaded');
+    expect(en.detail).toContain('conservée');
+    // Les langues sans traduction, elles, échouent normalement.
+    expect(etats.find(e => e.locale === 'de')?.state).toBe('failed');
+  });
+
+  it('une retraduction forcée ne met pas « pending » une langue à jour pendant l’appel', async () => {
     const id = await creerTuteur({ name: 'Socrate' });
     await poserTraduction(id, 'en', { sourceVersion: 1 });
-    expect(traductionFraiche(id, 1, 'en')).toBeDefined();
-    doublerFetch(() => ({ status: 500 }));
+    let pendantAppel: unknown;
+    doublerFetch(async (_url, init) => {
+      pendantAppel ??= traductionFraiche(id, 1, 'en');
+      return traductionReussie(init);
+    });
     await traduireTuteur(id, true);
-    expect(traductionFraiche(id, 1, 'en')).toBeUndefined();
+    expect(pendantAppel).toBeDefined();
+    // Réussie, elle remplace l'ancienne et efface toute note d'échec.
+    const en = (await traductions(id)).find(t => t.locale === 'en');
+    expect(en).toMatchObject({ state: 'ok', detail: '' });
   });
 
   it('deux traductions simultanées du même tuteur n’appellent le modèle qu’une fois', async () => {

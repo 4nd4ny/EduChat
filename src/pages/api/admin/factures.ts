@@ -81,6 +81,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     if (!etablissementId) return res.status(400).json({ error: { code: 'ERR_SCHOOL_UNKNOWN' } });
 
     if (action === 'emettre') {
+      // L'école doit EXISTER : emettre() rend null aussi bien pour une école
+      // inconnue que pour une école RESPIRE, et un 409 « rien à facturer »
+      // ferait croire que l'identifiant désigne une école qui ne paie rien.
+      if (!getEtablissementById(etablissementId)) return res.status(404).json({ error: { code: 'ERR_SCHOOL_UNKNOWN' } });
       const now = new Date();
       const year = Number(req.body?.year) || now.getUTCFullYear();
       const month = Number(req.body?.month) || now.getUTCMonth() + 1;

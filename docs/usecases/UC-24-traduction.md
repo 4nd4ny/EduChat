@@ -46,7 +46,9 @@ reçoive une leçon en allemand. La traduction est automatique, payée par la pl
   marque `aVerifier`, et l'administration reçoit « Traductions à revérifier : <nom> ».
 - **A2 — Retraduction.** `PATCH { action: 'retranslate', force? }` (super uniquement) attend le
   résultat et rend les états. Sans `force`, ce qui est à jour n'est pas retraduit (idempotence :
-  relancer ne coûte rien) ; avec `force: true`, tout est retraduit.
+  relancer ne coûte rien) ; avec `force: true`, tout est retraduit. Une langue déjà à jour reste
+  servie pendant l'appel (pas de `pending`) et, si sa retraduction échoue, reste `ok` : seul son
+  `detail` note l'échec (« Retraduction forcée échouée, traduction précédente conservée : … »).
 - **A3 — Republication.** `republish` replanifie la traduction (idempotente).
 - **A4 — Tuteur non français.** Un tuteur `en` est traduit vers `fr`, `it`, `de`.
 - **A5 — Appels concurrents.** Une seconde traduction du même tuteur pendant la première rend
@@ -61,7 +63,8 @@ reçoive une leçon en allemand. La traduction est automatique, payée par la pl
 | Réponse tronquée (`stop_reason: max_tokens`) | `failed` « Réponse tronquée… » |
 | Réponse sans marqueurs | `failed` « Réponse du modèle illisible… » |
 | Corps traduit < 40 octets | `failed` « Corps traduit vide ou trop court » |
-| Corps source > 48 Ko | `failed` sans appel au modèle |
+| Corps source > 48 Ko (mesuré en octets UTF-8) | `failed` sans appel au modèle ; le message donne la taille en Ko d'octets |
+| Retraduction forcée d'une langue à jour qui échoue | la traduction reste `ok` et servie ; l'erreur est notée dans `detail` |
 | Exception réseau | `failed` avec le message ; `planifierTraduction` ne la propage jamais |
 | `retranslate` par un non-super | `403 ERR_FORBIDDEN` |
 | Locale inconnue demandée | l'original est servi |
@@ -84,14 +87,21 @@ reçoive une leçon en allemand. La traduction est automatique, payée par la pl
 
 ## Anomalies constatées
 
-- **Une retraduction forcée qui échoue retire du service une traduction à jour.** Avec
+- **Corrigée** — sur une langue déjà à jour, la retraduction forcée n'écrit plus ni `pending` ni
+  `failed` : la traduction valide reste `ok` et servie, l'échec est noté dans son `detail`, et une
+  réussite la remplace normalement.
+  *Constat d'origine :* **Une retraduction forcée qui échoue retire du service une traduction à jour.** Avec
   `force: true`, `traduireTuteur` écrit `pending` puis `failed` même sur une langue déjà à jour
   (`src/server/traduction.ts:153` puis `:164` / `:172`) ; comme `traductionFraiche` exige
   `state = 'ok'`, la traduction valide n'est plus servie alors que le tuteur n'a pas changé
-  (elle reste en base). Test : `traduction.test.ts` (unitaire) › « une retraduction forcée qui
-  échoue retire du service une traduction à jour ».
-- Mineur : le message du dépassement de taille calcule la taille en **caractères**
+  (elle reste en base). Tests : `traduction.test.ts` (unitaire) › « une retraduction forcée qui
+  échoue laisse EN SERVICE la traduction à jour », « … ne met pas « pending » une langue à jour… ».
+  L'infobulle de l'administration (`src/administration/commun.tsx`) affiche aussi ce `detail`
+  sur une traduction « à jour » : l'échec de la retraduction se voit sans quitter la liste.
+- **Corrigée** — le message donne désormais la taille en octets UTF-8 (arrondie au Ko supérieur),
+  comme la limite. *Constat d'origine :* Mineur : le message du dépassement de taille calcule la taille en **caractères**
   (`row.body.length / 1024`, `traduction.ts:157`) alors que la limite est mesurée en **octets**.
+  Test : « le message de dépassement compte en OCTETS, comme la limite ».
 
 ## Tests
 
@@ -99,7 +109,7 @@ reçoive une leçon en allemand. La traduction est automatique, payée par la pl
 
 | Fichier | Code testé | Cas couverts |
 |---|---|---|
-| `traduction.test.ts` | `isLocale`, `traductionFraiche`, `toCard` (titre traduit), `etatsPour`, `resumeTraductions`, `traduireTuteur`, `planifierTraduction` | locales ; fraîche / périmée / pending / failed / vide ; nom canonique conservé ; langues cibles, source inconnue, états et résumé ; requête au fournisseur (URL, clé, modèle, température, marqueurs) ; journalisation sans IP ; idempotence et `force` ; seules les langues périmées retraduites ; tuteur anglais ; tuteur inconnu ; échecs HTTP, tronqué, illisible, trop court, > 48 Ko ; marqueurs « traduits » ; conservation de l'ancienne traduction ; anomalie `force` ; verrou de concurrence ; erreurs absorbées |
+| `traduction.test.ts` | `isLocale`, `traductionFraiche`, `toCard` (titre traduit), `etatsPour`, `resumeTraductions`, `traduireTuteur`, `planifierTraduction` | locales ; fraîche / périmée / pending / failed / vide ; nom canonique conservé ; langues cibles, source inconnue, états et résumé ; requête au fournisseur (URL, clé, modèle, température, marqueurs) ; journalisation sans IP ; idempotence et `force` ; seules les langues périmées retraduites ; tuteur anglais ; tuteur inconnu ; échecs HTTP, tronqué, illisible, trop court, > 48 Ko ; marqueurs « traduits » ; conservation de l'ancienne traduction ; retraduction forcée qui échoue : traduction à jour conservée et servie, pas de `pending` (anomalie corrigée) ; taille du dépassement en octets (anomalie corrigée) ; verrou de concurrence ; erreurs absorbées |
 | `sans-cle.test.ts` | `traduireTuteur`, `MODELE_TRADUCTION` | échec explicite sans clé et sans réseau ; modèle Haiku par défaut |
 | `outils.ts` | — | fausse API Anthropic (utilitaire propre, non exécuté comme test) |
 

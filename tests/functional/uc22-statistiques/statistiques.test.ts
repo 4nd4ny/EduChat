@@ -122,12 +122,12 @@ describe('Santé du service (GET /api/health)', () => {
     expect(r.json).toEqual({ ok: true, publishedPrompts: 1 });
   });
 
-  it('compte aussi les tuteurs publiés ARCHIVÉS, contrairement au bandeau public', async () => {
-    // Comportement actuel — voir « Anomalies constatées » dans la fiche UC-22.
+  it('exclut les tuteurs publiés ARCHIVÉS, comme le bandeau public', async () => {
+    // Anomalie corrigée (fiche UC-22) : la sonde comptait aussi les archivés.
     const m = await charger();
     await m.creerTuteur({ name: 'Publié' });
     await m.creerTuteur({ name: 'Archivé', archived: true });
-    expect((await appeler(m.health, { ip: '198.51.100.1' })).json.publishedPrompts).toBe(2);
+    expect((await appeler(m.health, { ip: '198.51.100.1' })).json.publishedPrompts).toBe(1);
     expect((await appeler(m.stats, { ip: '198.51.100.1' })).json.prompts).toBe(1);
   });
 

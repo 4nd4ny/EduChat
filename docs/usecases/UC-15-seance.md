@@ -57,7 +57,8 @@ l'échéance de la salle. La console montre à tout moment l'état de la salle e
   restriction.
 - **A7 — GET sans objet** : hors école, sans séance ou séance expirée → `{ settings: null }`.
 - **A8 — Tuteur devenu invisible** (archivé, réservé) après le déploiement : le GET rend
-  `promptName: null` (la classe retombe sur le catalogue), la séance demeure.
+  `promptName: null` (la classe retombe sur le catalogue), la séance demeure ; la console
+  (`/api/session-status`) applique le même filtre et affiche elle aussi `promptName: null`.
 - **État** (`/api/session-status`) : `etablissement` = la **salle** (IP) avec `open`
   (`mayUseServerKeys`), `withinSchedule`, `lockExpiresAt`, `salleOuvrable` ; `ecole` = l'école
   de **travail** (titre du compte, à défaut la salle) avec `settings` ; `surPlace` dit si ce sont
@@ -114,11 +115,15 @@ l'échéance de la salle. La console montre à tout moment l'état de la salle e
 | A6 | reconduction, restriction sans survivant, séance expirée non reconduite |
 | A7 / A8 | GET sans objet ; tuteur archivé → `promptName: null` |
 | Droits / erreurs | 403 (rien, autre salle, élève rattaché, école sans titre), 404 tuteur, 429, 405, troncature du nom ; `fournisseurs-cles.test.ts` : amorçage → 400 |
-| État | `etat.test.ts` — réponse complète sur place ; salle fermée ; de chez soi ; visiteur ; horaires propres ; salle d'une autre école ; élève rattaché ; 405 ; amorçage (`fournisseurs-cles.test.ts`) |
+| État | `etat.test.ts` — réponse complète sur place ; salle fermée ; de chez soi ; visiteur ; horaires propres ; salle d'une autre école ; élève rattaché ; 405 ; amorçage (`fournisseurs-cles.test.ts`) ; tuteur archivé ou réservé par une autre école après le déploiement → `promptName: null` sur la console aussi ; tuteur réservé à l'école de la séance toujours nommé (anomalie corrigée) |
 
 ## Anomalies constatées
 
-1. **La console nomme un tuteur que les élèves ne reçoivent plus** —
+1. **Corrigée** — `GET /api/session-status` joint désormais le tuteur déployé avec
+   `CLAUSE_VISIBLE` et la portée de l'école de la séance (`porteeDeLEcole`), exactement comme
+   `GET /api/session-settings` : un tuteur archivé ou réservé par une autre école après le
+   déploiement s'affiche `promptName: null` sur la console comme chez les élèves.
+   *Constat initial :* **La console nomme un tuteur que les élèves ne reçoivent plus** —
    `src/pages/api/session-status.ts:80` joint le tuteur sur `p.status = 'published'` seul,
    alors que `GET /api/session-settings` (`src/pages/api/session-settings.ts:48`) applique
    `CLAUSE_VISIBLE` (archivage, portée). Un tuteur archivé ou repris par son école après le

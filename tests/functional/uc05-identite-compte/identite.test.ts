@@ -168,4 +168,24 @@ describe('Scénarios d’erreur', () => {
     expect(w.status).toBe(200);
     expect((await base()).prepare('SELECT 1 FROM users WHERE email=?').get('fantome@ecole.ch')).toBeUndefined();
   });
+
+  it('un compte absent ou non vérifié ne renomme pas les tuteurs portant son adresse (anomalie 3 corrigée)', async () => {
+    // Tuteurs dont l'auteur n'a plus de compte vérifié : le nom affiché au
+    // catalogue ne doit pas pouvoir être réécrit par un simple jeton.
+    await creerTuteur({ name: 'Orphelin', authorEmail: 'fantome@ecole.ch' });
+    const w = await appeler(me, { method: 'PUT', token: issueToken('Fantôme', 'fantome@ecole.ch'), body: { name: 'Pirate' } });
+    expect(w.status).toBe(200);
+    const db = await base();
+    const avant = (db.prepare('SELECT author_name FROM prompts WHERE name=?').get('Orphelin') as any).author_name;
+    expect(avant).not.toBe('Pirate');
+
+    // Compte présent mais non vérifié : même refus silencieux.
+    await creerCompte('nonverifie@ecole.ch', { name: 'Vrai nom' });
+    db.prepare('UPDATE users SET verified_at = NULL WHERE email=?').run('nonverifie@ecole.ch');
+    await creerTuteur({ name: 'Tuteur-NV', authorEmail: 'nonverifie@ecole.ch' });
+    const nomAvant = (db.prepare('SELECT author_name FROM prompts WHERE name=?').get('Tuteur-NV') as any).author_name;
+    await appeler(me, { method: 'PUT', token: issueToken('X', 'nonverifie@ecole.ch'), body: { name: 'Pirate' } });
+    expect((db.prepare('SELECT author_name FROM prompts WHERE name=?').get('Tuteur-NV') as any).author_name).toBe(nomAvant);
+    expect((db.prepare('SELECT name FROM users WHERE email=?').get('nonverifie@ecole.ch') as any).name).toBe('Vrai nom');
+  });
 });

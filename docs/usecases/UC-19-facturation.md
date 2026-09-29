@@ -82,7 +82,8 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
 | `mentions` sur une école inexistante | `404 ERR_SCHOOL_UNKNOWN` |
 | Période mal formée (`mentions`, `payee`, `impayee`) | `400 ERR_PERIOD_INVALID` |
 | Action du site sans `etablissementId` | `400 ERR_SCHOOL_UNKNOWN` |
-| `emettre` pour une école RESPIRE (ou inexistante) | `409 ERR_NOTHING_TO_INVOICE` |
+| `emettre` pour une école RESPIRE | `409 ERR_NOTHING_TO_INVOICE` |
+| `emettre` pour une école inexistante | `404 ERR_SCHOOL_UNKNOWN` |
 | `payee`/`impayee` sur une facture jamais émise | `404 ERR_INVOICE_UNKNOWN` |
 | Action inconnue | `400 ERR_ACTION_UNKNOWN` |
 | Méthode autre que `GET`/`POST` (`GET` seul pour `/billing`) | `405` avec en-tête `Allow` |
@@ -132,10 +133,14 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
    `/api/completion` journalise ces appels avec `ip = ''` et `etablissement_id NULL` : ils tombent
    dans l'origine `demo` du bilan et dans la ligne « (démo publique — non facturable) » du relevé,
    alors qu'ils ont été payés.
-4. **Mineur — école inexistante à l'émission** — `src/pages/api/admin/factures.ts:89` : répond
+4. **Mineur — école inexistante à l'émission** — **Corrigée** — la route vérifie l'existence de
+   l'école avant `emettre` et répond `404 ERR_SCHOOL_UNKNOWN`. Constat d'origine :
+   `src/pages/api/admin/factures.ts:89` : répond
    `409 ERR_NOTHING_TO_INVOICE` (code prévu pour RESPIRE) au lieu d'un 404.
-5. **Mineur — zéro négatif** — `coutAuTarif` rend `-0` pour un coût nul
-   (`Math.ceil(0 − 1e-9)`, `src/server/porteMonnaie.ts:75`) ; sans effet visible à l'affichage.
+5. **Mineur — zéro négatif** — **Corrigée** — `coutAuTarif` ramène `-0` à `0`. Constat d'origine :
+   `coutAuTarif` rend `-0` pour un coût nul
+   (`Math.ceil(0 − 1e-9)`, `src/server/porteMonnaie.ts:283`) ; sans effet visible à l'affichage.
+   Test : `tests/unit/uc20-porte-monnaie/porteMonnaie.test.ts` « un coût nul vaut 0, jamais −0 ».
 
 ## Tests
 
@@ -160,4 +165,4 @@ facture (le montant est figé dans `factures`), puis la **marque payée**.
 | A5 | relevé brut (IP hors base, démo, enseignants) ; porte-monnaie personnel distinct de la démo ; restriction à l'école |
 | A6 | export CSV par établissement et par enseignant |
 | A7 | période par défaut = mois courant UTC |
-| Erreurs / droits | 403 sans rang ; `ERR_SUPER_ONLY` ; mentions 403/404/400 ; actions 400/404 ; école inexistante 409 ; 405 |
+| Erreurs / droits | 403 sans rang ; `ERR_SUPER_ONLY` ; mentions 403/404/400 ; actions 400/404 ; école inexistante à l'émission 404 (anomalie 4 corrigée) ; 405 |

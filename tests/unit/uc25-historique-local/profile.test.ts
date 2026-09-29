@@ -54,16 +54,17 @@ describe('buildProfile', () => {
     expect(buildProfile()).toMatchObject({ favorites: [], ratings: {}, totalTokens: 0 });
   });
 
-  it('comportement actuel : un historique corrompu fait échouer l’export (getHistory sans try/catch)', () => {
+  it('un historique corrompu n’empêche plus l’export (repli de getHistory sur {})', () => {
     nav.stockage.setItem('pg-history', '{corrompu');
-    expect(() => buildProfile()).toThrow(SyntaxError);
+    nav.stockage.setItem('prompt-favorites', JSON.stringify(['socrate']));
+    expect(buildProfile()).toMatchObject({ conversations: {}, favorites: ['socrate'] });
   });
 });
 
 describe('isProfile', () => {
   it('reconnaît un profil par son champ numérique educhatProfile', () => {
     expect(isProfile(profil())).toBe(true);
-    // Seul le type est contrôlé : une version future est acceptée telle quelle.
+    // Aiguillage seulement : une version future est reconnue comme profil…
     expect(isProfile({ educhatProfile: 999 })).toBe(true);
   });
   it('écarte une conversation isolée et les valeurs dégénérées', () => {
@@ -74,6 +75,17 @@ describe('isProfile', () => {
     expect(isProfile(42)).toBe(false);
     expect(isProfile('educhatProfile')).toBe(false);
     expect(isProfile([])).toBe(false);
+  });
+});
+
+describe('applyProfile — version du format', () => {
+  it('…mais applyProfile la refuse explicitement, sans rien écrire', () => {
+    const avant = nav.stockage.instantane();
+    for (const version of [0, 2, 999, 1.5, -1]) {
+      expect(() => applyProfile(profil({ educhatProfile: version, conversations: { a: conv('A') } as any })))
+        .toThrow(`Profil invalide : version ${version} non prise en charge.`);
+    }
+    expect(nav.stockage.instantane()).toEqual(avant);
   });
 });
 
@@ -148,7 +160,7 @@ describe('applyProfile — fusion', () => {
   });
 });
 
-describe('applyProfile — entrées hostiles (comportement actuel)', () => {
+describe('applyProfile — entrées hostiles', () => {
   it('une clé __proto__ ne pollue pas les prototypes', () => {
     const hostile = JSON.parse(`{"educhatProfile":1,"conversations":{"__proto__":{"messages":[],"pollue":1}},
       "ratings":{"__proto__":{"pollue":1}},"favorites":[]}`);
@@ -159,35 +171,88 @@ describe('applyProfile — entrées hostiles (comportement actuel)', () => {
     expect((Object.prototype as any).pollue).toBeUndefined();
   });
 
-  it('ANOMALIE : les éléments de favoris ne sont pas contrôlés (non-chaînes conservées)', () => {
-    applyProfile(profil({ favorites: [42, { x: 1 }, 'ok'] as any }));
-    expect(JSON.parse(nav.stockage.getItem('prompt-favorites')!)).toEqual([42, { x: 1 }, 'ok']);
+  it('seules les chaînes sont retenues comme favoris', () => {
+    nav.stockage.setItem('prompt-favorites', JSON.stringify(['local', 7]));
+    applyProfile(profil({ favorites: [42, { x: 1 }, 'ok', null] as any }));
+    expect(JSON.parse(nav.stockage.getItem('prompt-favorites')!)).toEqual(['local', 'ok']);
   });
 
-  it('ANOMALIE : le contenu des messages d’une conversation de profil n’est pas validé', () => {
-    applyProfile(profil({ conversations: { h: { messages: [{ role: 'system', content: { script: 1 } }] } } as any }));
+  it('les messages sont validés comme pour une conversation seule : rôle, contenu textuel — profil refusé sans écriture', () => {
+    nav.stockage.setItem('pg-history', JSON.stringify({ local: conv('Locale') }));
+    const avant = nav.stockage.instantane();
+    const cas: [unknown, string][] = [
+      [{ role: 'system', content: 'x' }, 'message 1 : rôle « system » non autorisé.'],
+      [{ role: 'user', content: { script: 1 } }, 'message 1 : contenu textuel attendu.'],
+      ['texte', 'message 1 : format invalide.'],
+      [null, 'message 1 : format invalide.'],
+    ];
+    for (const [message, erreur] of cas) {
+      expect(() => applyProfile(profil({ conversations: { ok: conv('OK'), h: { messages: [message] } } as any })))
+        .toThrow(`Profil invalide : conversation « h », ${erreur}`);
+    }
+    expect(nav.stockage.instantane()).toEqual(avant);
+  });
+
+  it('une conversation hostile est refusée même si une version locale existe (refus en bloc)', () => {
+    nav.stockage.setItem('pg-history', JSON.stringify({ h: conv('Locale') }));
+    expect(() => applyProfile(profil({ conversations: { h: { messages: [{ role: 'system', content: 'x' }] } } as any })))
+      .toThrow('rôle « system » non autorisé');
+  });
+
+  it('au-delà de 5000 messages, la conversation (donc le profil) est refusée', () => {
+    const messages = Array.from({ length: 5001 }, () => ({ role: 'user', content: 'x' }));
+    expect(() => applyProfile(profil({ conversations: { gros: { messages } } as any })))
+      .toThrow('Profil invalide : conversation « gros » trop longue (plus de 5000 messages).');
+    expect(nav.stockage.getItem('pg-history')).toBeNull();
+    const limite = Array.from({ length: 5000 }, () => ({ role: 'user', content: 'x' }));
+    expect(applyProfile(profil({ conversations: { juste: { messages: limite } } as any })).conversations).toBe(1);
+  });
+
+  it('messages normalisés : ancien format { reply } converti, id/modèle/pièces jointes conservés, champs inconnus écartés', () => {
+    applyProfile(profil({ conversations: { n: { name: 'N', messages: [
+      { id: 'm1', role: 'user', content: 'Q', attachments: [{ kind: 'image', name: 'a.png' }, { kind: 1 }], html: '<b>' },
+      { role: 'assistant', content: { reply: 'R', tokenUsage: 3 }, model: 'claude' },
+    ] } } as any }));
     const h = JSON.parse(nav.stockage.getItem('pg-history')!);
-    expect(h.h.messages[0].role).toBe('system');
+    expect(h.n.messages).toEqual([
+      { id: 'm1', role: 'user', content: 'Q', attachments: [{ kind: 'image', name: 'a.png' }] },
+      { role: 'assistant', content: 'R', model: 'claude' },
+    ]);
   });
 
-  it('ANOMALIE : un tableau de conversations est accepté (identifiants "0", "1"…)', () => {
-    const r = applyProfile(profil({ conversations: [conv('A'), conv('B')] as any }));
-    expect(r.conversations).toBe(2);
-    expect(Object.keys(JSON.parse(nav.stockage.getItem('pg-history')!))).toEqual(['0', '1']);
+  it('un tableau n’est pas accepté comme conversations (rejet sans écriture)', () => {
+    const avant = nav.stockage.instantane();
+    expect(() => applyProfile(profil({ conversations: [conv('A'), conv('B')] as any })))
+      .toThrow('Profil invalide : aucune conversation.');
+    expect(nav.stockage.instantane()).toEqual(avant);
   });
 
-  it('ANOMALIE : totalTokens "Infinity" est rangé tel quel, puis relu comme 0', () => {
-    applyProfile(profil({ totalTokens: 'Infinity' as any }));
-    expect(nav.stockage.getItem('totalTokens')).toBe('Infinity');
-    expect(buildProfile().totalTokens).toBe(0);
+  it('totalTokens non fini ou négatif est ignoré (compteur local conservé)', () => {
+    nav.stockage.setItem('totalTokens', '300');
+    for (const valeur of ['Infinity', Infinity, -Infinity, -50, NaN]) {
+      applyProfile(profil({ totalTokens: valeur as any }));
+      expect(nav.stockage.getItem('totalTokens')).toBe('300');
+    }
+    applyProfile(profil({ totalTokens: 1234.7 }));
+    expect(nav.stockage.getItem('totalTokens')).toBe('1234');
+    expect(buildProfile().totalTokens).toBe(1234);
   });
 
-  it('ANOMALIE : des favoris locaux corrompus interrompent la fusion APRÈS l’écriture de l’historique', () => {
+  it('des favoris ou notes locaux corrompus n’interrompent plus la fusion (repli, jamais d’import partiel)', () => {
     nav.stockage.setItem('prompt-favorites', '{corrompu');
-    expect(() => applyProfile(profil({ conversations: { n: conv('Nouvelle') } as any }))).toThrow(SyntaxError);
-    // Import partiel : l'historique est déjà fusionné, le reste non.
+    nav.stockage.setItem('prompt-ratings', '[1,2]');
+    const r = applyProfile(profil({ conversations: { n: conv('Nouvelle') } as any, favorites: ['f'], ratings: { f: 4 }, totalTokens: 10 }));
+    expect(r.conversations).toBe(1);
     expect(Object.keys(JSON.parse(nav.stockage.getItem('pg-history')!))).toEqual(['n']);
-    expect(nav.stockage.getItem('totalTokens')).toBeNull();
+    expect(JSON.parse(nav.stockage.getItem('prompt-favorites')!)).toEqual(['f']);
+    expect(JSON.parse(nav.stockage.getItem('prompt-ratings')!)).toEqual({ f: 4 });
+    expect(nav.stockage.getItem('totalTokens')).toBe('10');
+  });
+
+  it('un historique local corrompu n’empêche pas l’import (repli sur {})', () => {
+    nav.stockage.setItem('pg-history', '{corrompu');
+    expect(applyProfile(profil({ conversations: { n: conv('Nouvelle') } as any })).conversations).toBe(1);
+    expect(Object.keys(JSON.parse(nav.stockage.getItem('pg-history')!))).toEqual(['n']);
   });
 });
 
