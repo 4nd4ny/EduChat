@@ -37,8 +37,8 @@ function tentatives(ip: string): { count: number; lockUntil: number } | undefine
   catch { return undefined; }
 }
 /**
- * La route compte les échecs SANS attendre l'écriture (handleFailedAttempt
- * n'est pas attendu) : on patiente jusqu'à ce que le fichier reflète l'état voulu.
+ * La route attend désormais l'écriture du compteur avant de répondre ; on garde
+ * néanmoins une attente bornée, sans coût quand l'état est déjà inscrit.
  */
 async function attendre(cond: () => boolean, delai = 5000) {
   const fin = Date.now() + delai;
@@ -194,10 +194,27 @@ describe('Scénarios d’erreur', () => {
     const a = await ecole();
     const jeton = await db.creerCompte('prof@ecole.ch', { teacher: true, etablissementId: a.id, schoolAdmin: true });
     const r = await appeler(auth, { method: 'POST', body: {}, token: jeton, ip: a.ip });
-    // Comportement actuel : 500 « Erreur du formulaire de connexion » (voir Anomalies).
-    expect(r.status).toBe(500);
+    // Corrigé (anomalie 5) : erreur du client, 400 — et non plus 500.
+    expect(r.status).toBe(400);
+    expect(r.json).toEqual({ success: false, message: 'Erreur du formulaire de connexion' });
+    expect(await acces.checkAuthLock(a.cle)).toBe(false);
+  });
+
+  it('corps absent ou mot de passe d’un autre type : 400, sans compter d’échec', async () => {
+    const a = await ecole();
+    expect((await appeler(auth, { method: 'POST', ip: a.ip })).status).toBe(400);
+    expect((await appeler(auth, { method: 'POST', body: { password: 12345 }, ip: a.ip })).status).toBe(400);
+    expect(tentatives(a.ip)).toBeUndefined();
+    expect(await acces.checkAuthLock(a.cle)).toBe(false);
+  });
+
+  it('durée nulle explicite : 400, la salle reste fermée, sans compter d’échec', async () => {
+    const a = await ecole();
+    const r = await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}0` }, ip: a.ip });
+    expect(r.status).toBe(400);
     expect(r.json.success).toBe(false);
     expect(await acces.checkAuthLock(a.cle)).toBe(false);
+    expect(tentatives(a.ip)).toBeUndefined();
   });
 
   it('mauvais mot de passe : 401, compté pour l’IP appelante', async () => {
@@ -244,6 +261,18 @@ describe('Scénarios d’erreur', () => {
     await attendre(() => tentatives(a.ip)?.count === 1);
   });
 
+  it('les échecs de fermeture comptent : 5 fermetures fausses verrouillent l’IP pour l’ouverture aussi', async () => {
+    const a = await ecole();
+    for (let i = 1; i <= 4; i++) {
+      expect((await appeler(auth, { method: 'POST', body: { action: 'close', password: 'devine' }, ip: a.ip })).status).toBe(401);
+      expect(tentatives(a.ip)?.count).toBe(i); // inscrit AVANT la réponse (anomalie 7 corrigée)
+    }
+    expect((await appeler(auth, { method: 'POST', body: { action: 'close', password: 'devine' }, ip: a.ip })).status).toBe(401);
+    expect(tentatives(a.ip)!.lockUntil).toBeGreaterThan(Date.now());
+    expect((await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip })).status).toBe(429);
+    expect(await acces.checkAuthLock(a.cle)).toBe(false);
+  });
+
   it('fermeture sans mot de passe : 401 (un élève ne peut pas couper la classe)', async () => {
     const a = await ecole();
     await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
@@ -271,27 +300,50 @@ describe('Scénarios d’erreur', () => {
   });
 });
 
-describe('Comportements actuels discutables (voir « Anomalies constatées »)', () => {
-  it('sans suffixe de durée : « Connexion autorisée » répondu, mais la salle n’est PAS ouverte', async () => {
+describe('Anomalies corrigées (voir « Anomalies constatées »)', () => {
+  it('sans suffixe de durée : la salle est ouverte pour la durée par défaut (60 min, sous le plafond)', async () => {
     const a = await ecole();
+    const avant = Date.now();
     const r = await appeler(auth, { method: 'POST', body: { password: MOT_DE_PASSE }, ip: a.ip });
     expect(r.status).toBe(200);
     expect(r.json).toEqual({ success: true, message: 'Connexion autorisée' });
-    // Durée 0 → échéance = maintenant → salle fermée.
-    expect(await acces.checkAuthLock(a.cle)).toBe(false);
-    expect(await acces.mayUseServerKeys(a.ip)).toBe(false);
+    // « Connexion autorisée » veut enfin dire ouverte : échéance à +60 min.
+    const echeance = await acces.getAuthLockExpiry(a.cle);
+    expect(echeance).toBeGreaterThanOrEqual(avant + 60 * 60_000);
+    expect(echeance).toBeLessThanOrEqual(Date.now() + 60 * 60_000);
+    expect(await acces.mayUseServerKeys(a.ip)).toBe(true);
   });
 
-  it('la fermeture ignore le verrouillage de l’IP : le mot de passe reste testable sans limite', async () => {
+  it('la fermeture respecte le verrouillage de l’IP : 429, même avec le bon mot de passe', async () => {
     const a = await ecole();
-    for (let i = 1; i <= 4; i++) await echouer(a.ip, t => t?.count === i);
-    await echouer(a.ip, t => (t?.lockUntil ?? 0) > 0);
-    // L'ouverture est bloquée (429)…
-    expect((await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip })).status).toBe(429);
-    // …mais la branche « close » répond encore 401 / 200 selon le mot de passe.
+    // Salle ouverte par l'enseignant AVANT les échecs (sinon le court-circuit
+    // « salle ouverte » répondrait aux ouvertures, pas aux fermetures).
+    await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
+    for (let i = 1; i <= 4; i++) {
+      expect((await appeler(auth, { method: 'POST', body: { action: 'close', password: 'faux' }, ip: a.ip })).status).toBe(401);
+    }
     expect((await appeler(auth, { method: 'POST', body: { action: 'close', password: 'faux' }, ip: a.ip })).status).toBe(401);
+    expect(tentatives(a.ip)!.lockUntil).toBeGreaterThan(Date.now());
+    // Plus d'oracle : faux ou juste, la réponse est la même, et rien ne ferme.
+    const faux = await appeler(auth, { method: 'POST', body: { action: 'close', password: 'faux' }, ip: a.ip });
+    const juste = await appeler(auth, { method: 'POST', body: { action: 'close', password: MOT_DE_PASSE }, ip: a.ip });
+    expect(faux.status).toBe(429);
+    expect(juste.status).toBe(429);
+    expect(juste.json).toEqual(faux.json);
+    expect(await acces.checkAuthLock(a.cle)).toBe(true);
+    // Les essais pendant le verrouillage ne le prolongent pas (compteur gelé).
+    expect(tentatives(a.ip)!.count).toBe(0);
+
+    // À l'expiration, la fermeture fonctionne de nouveau.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 16 * 60_000);
+    await appeler(auth, { method: 'POST', body: { password: `${MOT_DE_PASSE}30` }, ip: a.ip });
     expect((await appeler(auth, { method: 'POST', body: { action: 'close', password: MOT_DE_PASSE }, ip: a.ip })).status).toBe(200);
+    expect(await acces.checkAuthLock(a.cle)).toBe(false);
   });
+});
+
+describe('Comportements actuels discutables (voir « Anomalies constatées »)', () => {
 
   it('salle ouverte : toute requête du réseau répond succès, quelle que soit la méthode ou le mot de passe', async () => {
     const a = await ecole();

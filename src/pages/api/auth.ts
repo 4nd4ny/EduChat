@@ -24,6 +24,14 @@ const MAX_ATTEMPTS = 5;
 // Configuration de la durée du verrouillage en cas de nombre de tentatives maximales 
 const LOCK_DURATION_ON_MAX_ATTEMPTS = 15; // minutes
 
+// Durée d'ouverture quand le mot de passe arrive SANS suffixe de minutes —
+// cas de l'écran verrouillé de /school (ProtectedPage.tsx), qui envoie le mot
+// de passe tel que tapé. 60 min est la valeur par défaut de la console
+// /enseignant ; elle reste plafonnée par MaxUnlockMinutes comme toute durée.
+// Auparavant la durée valait 0 : la route répondait « Connexion autorisée »
+// sur une salle restée fermée.
+const DEFAULT_UNLOCK_MINUTES = 60;
+
 // Fonction pour extraire le mot de passe et la durée
 function extractPasswordAndDuration(passwordWithDuration: string): { password: string; duration: number } | null {
   const regex = /^(.+?)(\d+)$/;
@@ -34,7 +42,7 @@ function extractPasswordAndDuration(passwordWithDuration: string): { password: s
     return { password, duration };
   }
   // Si la chaîne ne se termine pas par des chiffres, considérer que la durée est par défaut
-  return { password: passwordWithDuration, duration: 0 };
+  return { password: passwordWithDuration, duration: DEFAULT_UNLOCK_MINUTES };
 }
 
 // Enregistre les tentatives d'authentification.
@@ -202,12 +210,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Le mot de passe de salle reste exigé : sans lui, n'importe quel élève
   // pourrait couper l'accès de toute la classe.
   if (req.method === 'POST' && req.body?.action === 'close') {
+    // Le verrouillage après 5 échecs vaut AUSSI pour la fermeture : elle
+    // compare le même mot de passe, et répond 401 ou 200/403 selon qu'il est
+    // juste. Traitée avant le contrôle général plus bas, elle offrait à une IP
+    // verrouillée un oracle de force brute sans limite.
+    if (await isIpLocked(clientIp)) {
+      await logAttempt(clientIp, false, 'ip', 'verrouillee (fermeture)');
+      res.status(429).json({ success: false, message: "Trop de tentatives échouées. Veuillez réessayer plus tard." });
+      return;
+    }
     const extracted = extractPasswordAndDuration(String(req.body?.password ?? ''));
     const isMatch = !!extracted && SecretPasswords.some(secret =>
       bcrypt.compareSync(extracted.password, secret));
     if (!isMatch) {
-      logAttempt(clientIp, false, 'password', 'fermeture');
-      handleFailedAttempt(clientIp);
+      await logAttempt(clientIp, false, 'password', 'fermeture');
+      // Attendu : le compteur doit être inscrit AVANT la réponse, sans quoi des
+      // essais rapprochés passeraient avant que le verrouillage ne soit écrit.
+      await handleFailedAttempt(clientIp);
       res.status(401).json({ success: false, message: 'Mot de passe incorrect' });
       return;
     }
@@ -215,7 +234,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // entier : sur un fichier désormais partagé, un enseignant refermant son
     // cours aurait coupé la classe de toutes les autres écoles au même instant.
     if (!portee) {
-      logAttempt(clientIp, false, 'password', 'fermeture hors reseau');
+      await logAttempt(clientIp, false, 'password', 'fermeture hors reseau');
       res.status(403).json({ success: false, error: { code: 'ERR_NO_ETABLISSEMENT' } });
       return;
     }
@@ -228,11 +247,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await clearAuthLock(portee.cle);
     } catch (erreur) {
       console.error('Fermeture de salle non enregistrée :', erreur);
-      logAttempt(clientIp, false, 'password', 'fermeture non enregistree');
+      await logAttempt(clientIp, false, 'password', 'fermeture non enregistree');
       res.status(500).json({ success: false, error: { code: 'ERR_LOCK_WRITE' } });
       return;
     }
-    logAttempt(clientIp, true, 'password', 'fermeture');
+    await logAttempt(clientIp, true, 'password', 'fermeture');
     res.status(200).json({ success: true, message: 'Accès fermé' });
     return;
   }
@@ -244,14 +263,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Aucune donnée individuelle n'est retenue : la salle est ouverte, tout
     // élève de CE réseau entre sans compte et sans clé. Le budget mensuel de
     // l'école borne la dépense (quotas, /etablissement).
-    logAttempt(ANONYMOUS, true, 'unlocked'); // Même si c'est une auto-authentification, préciser que c'est via verrou
+    await logAttempt(ANONYMOUS, true, 'unlocked'); // Même si c'est une auto-authentification, préciser que c'est via verrou
     res.status(200).json({ success: true, message: "Autologin activé via verrou" });
     return;
   }
 
   // Vérifier si l'IP est dans la liste des IP autorisées et dans la plage horaire autorisée, sans qu'il soit nécessaire de déverrouiller le site
   if (isKnownIp(clientIp) && isAccessAllowed()) {
-    logAttempt(ANONYMOUS, true, 'ip'); // Ne mémorise pas les IP connues des postes-école utilisés par les élèves
+    await logAttempt(ANONYMOUS, true, 'ip'); // Ne mémorise pas les IP connues des postes-école utilisés par les élèves
     // Le verrou de courtoisie porte la salle de CETTE adresse. `portee` ne peut
     // pas être nul ici : isKnownIp vient d'être vérifié, et salleDepuisIp rend
     // au minimum la portée d'amorçage pour une adresse connue.
@@ -278,14 +297,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Vérifier si l'IP est verrouillée en raison de trop de tentatives échouées
   if (await isIpLocked(clientIp)) {
-    logAttempt(clientIp, false, 'ip', 'verrouillee'); // A prioris c'est l'IP de l'enseignant (moi) qui s'est trompé en tapant le mot de passe
+    await logAttempt(clientIp, false, 'ip', 'verrouillee'); // A prioris c'est l'IP de l'enseignant (moi) qui s'est trompé en tapant le mot de passe
     res.status(429).json({ success: false, message: "Trop de tentatives échouées. Veuillez réessayer plus tard." });
     return;
   }
 
   // Gestion des requêtes POST : mode de déverrouillage par mot de passe
   if (req.method === 'POST') {
-    const { password } = req.body;
+    // Corps absent ou non-objet : on retombe sur « password manquant » (400)
+    // plutôt que de lever à la déstructuration (500).
+    const { password } = (req.body ?? {}) as { password?: unknown };
     const userPassword = password;
 
     if (SecretPasswords === undefined) {
@@ -294,9 +315,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
-    if (userPassword === undefined) {
+    // Champ absent ou d'un autre type qu'une chaîne : erreur du CLIENT (400),
+    // pas du serveur. Non compté comme échec : aucun mot de passe n'a été essayé.
+    if (typeof userPassword !== 'string') {
       console.error('User password n\'est pas défini');
-      res.status(500).json({ success: false, message: 'Erreur du formulaire de connexion' });
+      res.status(400).json({ success: false, message: 'Erreur du formulaire de connexion' });
       return;
     }
 
@@ -330,8 +353,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // d'heure un enseignant qui s'est simplement trompé de réseau. On le
       // journalise, on ne le punit pas.
       if (!portee) {
-        logAttempt(clientIp, false, 'password', 'ouverture hors reseau');
+        await logAttempt(clientIp, false, 'password', 'ouverture hors reseau');
         res.status(403).json({ success: false, error: { code: 'ERR_NO_ETABLISSEMENT' } });
+        return;
+      }
+      // DURÉE NULLE EXPLICITE (« motdepasse0 ») : ouvrir pour 0 minute, c'est
+      // ne rien ouvrir. Mieux vaut le dire (400) que répondre « Connexion
+      // autorisée » sur une salle fermée. Pas un échec : le mot de passe était bon.
+      if (authDuration <= 0) {
+        await logAttempt(clientIp, false, 'password', 'duree nulle');
+        res.status(400).json({ success: false, message: 'Durée d\'ouverture invalide' });
         return;
       }
       // Applique la durée à la salle de CETTE école, et à elle seule.
@@ -344,21 +375,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await setAuthLock(portee.cle, authDuration);
       } catch (erreur) {
         console.error('Ouverture de salle non enregistrée :', erreur);
-        logAttempt(clientIp, false, 'password', 'ouverture non enregistree');
+        await logAttempt(clientIp, false, 'password', 'ouverture non enregistree');
         res.status(500).json({ success: false, error: { code: 'ERR_LOCK_WRITE' } });
         return;
       }
-      logAttempt(clientIp, true, 'password', `duree=${authDuration}min`);
+      await logAttempt(clientIp, true, 'password', `duree=${authDuration}min`);
       console.log(`Ouverture de la salle ${portee.cle} pour ${authDuration} minutes.`);
       res.status(200).json({ success: true, message: "Connexion autorisée" });
     } else {
-      logAttempt(clientIp, false, 'password');
-      handleFailedAttempt(clientIp);
+      await logAttempt(clientIp, false, 'password');
+      await handleFailedAttempt(clientIp);
       res.status(401).json({ success: false, message: "Mot de passe incorrect" });
     }
   } 
   else if (req.method === 'GET') {
-    logAttempt(clientIp, false, 'password', 'GET');
+    await logAttempt(clientIp, false, 'password', 'GET');
     res.status(200).json({ authorized: false }); 
   } else {
     res.setHeader('Allow', ['POST', 'GET']);
