@@ -24,3 +24,8 @@ Dockerfile
 docker-compose.yml
 README.md
 LICENSE
+
+# Jeux de tests et documentation (inutiles à l’image)
+tests/
+docs/
+vitest.config.ts
