@@ -105,6 +105,13 @@ absolu : **rien n'est jamais supprimé** — `DELETE` est désactivé, `archive`
   `POST` anonyme reçoit `405` (`Allow: GET`).
   Constat d'origine (mineur) : `GET /api/admin/prompts` vérifie les droits avant la méthode
   (`src/pages/api/admin/prompts.ts:14-19`) : un `POST` anonyme reçoit 403 au lieu de 405.
+- **Ouverte** — **La liste de l'administrateur d'école contient des tuteurs qu'il ne peut pas
+  modérer.** `GET /api/admin/prompts` (`src/pages/api/admin/prompts.ts:46`, filtre
+  `etablissement_id = @etab OR etablissement_id IS NULL`) lui sert aussi les tuteurs de la
+  plateforme, alors que `tuteurDeLEcole` (`src/server/admin.ts`) lui refuse toute action dessus
+  (403). C'est l'incohérence déjà corrigée pour la file des commentaires (UC-03) ; elle reste ici
+  en attente d'une décision : retirer ces tuteurs de sa liste, ou lui donner un droit de lecture
+  seule explicite.
 
 ## Tests
 
