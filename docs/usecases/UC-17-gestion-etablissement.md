@@ -38,7 +38,8 @@ RESPIRE, le fournisseur actif et l'email de facturation restent la main du site 
    « atelier », puis enregistre.
 4. `PUT /api/etablissement { hours, quotaPerStudentDaily, tokenQuotaMonthly, atelierPromptagogue }` :
    le rang est **revérifié** sur l'école active, chaque créneau est validé, les quotas sont bornés,
-   puis la ligne `etablissements` est mise à jour. Réponse `200 { ok: true }`.
+   puis la ligne `etablissements` est mise à jour — **seuls les champs présents dans le corps** sont
+   écrits (un `PUT` partiel ne touche pas aux autres). Réponse `200 { ok: true }`.
 
 ## Scénarios alternatifs
 
@@ -86,7 +87,9 @@ RESPIRE, le fournisseur actif et l'email de facturation restent la main du site 
   **aucun** accès : `estEnseignantDe` exige `is_teacher` **et** l'école principale.
 - Quotas bornés : quota par élève `[0 ; 10 000 000]`, plafond mensuel `[0 ; 10 000 000 000]`,
   valeur illisible → 0 ; au plus 30 créneaux (les suivants sont ignorés).
-- `atelierPromptagogue` n'est écrit que si le champ est **présent** dans le corps.
+- Chaque réglage (`hours`, `quotaPerStudentDaily`, `tokenQuotaMonthly`, `atelierPromptagogue`)
+  n'est écrit que si le champ est **présent** dans le corps ; un champ présent mais vide
+  (`hours: []`, quota `0`) lève bien la limite. Un corps vide ne modifie rien.
 - Le `PUT` ignore tout autre champ (nom, IP, RESPIRE, fournisseur, facturation).
 - Le relevé par fournisseur énumère les fournisseurs servis par une clé serveur (zéro compris), puis
   ceux consommés mais plus servis (`servi: false`) ; seule la clé serveur y entre.
@@ -101,11 +104,13 @@ RESPIRE, le fournisseur actif et l'email de facturation restent la main du site 
 
 ## Anomalies constatées
 
-- **PUT partiel destructeur** — `src/pages/api/etablissement.ts:135-159`. Le commentaire promet
+- **Corrigée** — un `PUT` n'écrit plus que les champs présents dans le corps (horaires, quotas et
+  atelier suivent tous la règle « présence du champ »). Constat d'origine :
+  **PUT partiel destructeur** — `src/pages/api/etablissement.ts:135-159`. Le commentaire promet
   qu'« un futur appelant partiel ne cassera rien en silence », mais seule la case atelier suit la
   règle « présence du champ ». Un `PUT { atelierPromptagogue: true }` remet `hours` à `[]` et les
   deux quotas à `0` (quota illimité). L'écran actuel envoie toujours tout, donc sans effet visible
-  aujourd'hui ; test : « ANOMALIE : un PUT partiel efface pourtant horaires et quotas… ».
+  aujourd'hui ; test devenu « corrigé : un PUT partiel ne touche plus horaires et quotas… ».
 - **Plafond mensuel : deux commentaires qui se contredisent** — `src/pages/api/etablissement.ts:23-27`
   le dit réglable par l'école (et le code l'écrit), alors que `src/pages/api/admin/etablissements.ts:7-10`
   et `:49-50` réservent « les quotas » au site. Le super-administrateur et l'école écrivent donc
@@ -130,7 +135,7 @@ RESPIRE, le fournisseur actif et l'email de facturation restent la main du site 
 | A2 | admin de deux écoles : l'en-tête choisit ; école non liée ignorée ; membre simple de B → 403 |
 | Droits | sans jeton ; sans école ; case enseignant + lien d'IP ; IP de l'école sans jeton |
 | Erreurs | créneaux invalides ; bornage des quotas ; 30 créneaux max ; 429 après 10 PUT/min ; 405 |
-| Règle atelier | présence du champ ; **anomalie** PUT partiel |
+| Règle « présence du champ » | atelier ; PUT partiel sans effet sur horaires et quotas (corrigé) ; champ présent vide qui lève la limite ; corps vide sans effet |
 | A3 | catalogue de SON école quel que soit l'id ; enseignant refusé ; lecture de sa seule ligne, grand formulaire refusé |
 | A4 | contribution bornée ; illisible 400 ; école d'autrui et enseignant 403 |
 | A5 | tarif de l'école : fournisseur actif, `echelle: null` ; vue site refusée |

@@ -69,12 +69,16 @@ describe('correspondance barreau → modèle du catalogue', () => {
     expect(a.barreaux.every(b => b.modele.startsWith('anthropic/'))).toBe(true);
   });
 
-  it('sans aucune entrée du vendeur, la recherche retombe sur le catalogue entier (homonyme compris)', async () => {
-    // Comportement voulu par le code (« un quatrième fournisseur d'école ne doit
-    // pas rendre la sonde muette ») — voir la section « Anomalies constatées ».
+  it('corrigé — sans aucune entrée du vendeur, l’homonyme d’un autre vendeur n’est jamais retenu ni écrit', async () => {
+    // La recherche retombait sur le catalogue entier : « autre/claude-sonnet-5 »
+    // (99 $) était retenu et appliqué. Désormais : rien d'écrit, et le détail le dit.
     doublerSources({ catalogue: [modele('autre/claude-sonnet-5', 99, 99, 1)] });
     const a = de(await sonderTarifs(), 'anthropic');
-    expect(a.barreaux[1]).toMatchObject({ modele: 'autre/claude-sonnet-5', entreeMtok: 79.2, sortieMtok: 79.2, detail: '' });
+    expect(a.barreaux[1]).toMatchObject({
+      modele: '', entreeMtok: 0, sortieMtok: 0,
+      detail: 'Aucune entrée du vendeur « anthropic » dans le catalogue OpenRouter : « claude-sonnet-5 » n\'est pas chiffré (les homonymes d\'autres vendeurs sont ignorés).',
+    });
+    expect((await lignesModeles()).filter(l => l.provider === 'anthropic')).toEqual([]);
   });
 
   it('un barreau réglé sur « latest » tout court ne correspond à rien (jamais un modèle tiré au hasard)', async () => {
@@ -88,17 +92,34 @@ describe('correspondance barreau → modèle du catalogue', () => {
     });
   });
 
-  it('ANOMALIE — la recherche par préfixe (8 caractères) confond « mistral-small » et « mistral-saba »', async () => {
-    // cible « mistralsmall » → préfixe « mistrals », que « mistralsaba » partage :
-    // le plus récent l'emporte, et le barreau Small est chiffré au prix de Saba.
+  it('corrigé — la recherche par préfixe respecte les segments : « mistral-small » ne capte plus « mistral-saba »', async () => {
+    // L'ancienne recherche comparait 8 caractères (« mistrals ») : Saba, plus
+    // récent, chiffrait le barreau Small.
     doublerSources({ catalogue: [...CATALOGUE, modele('mistralai/mistral-saba', 0.2, 0.6, 500)] });
     const m = de(await sonderTarifs(), 'mistral');
-    expect(m.barreaux[0]).toMatchObject({ barreau: 'mistral-small-latest', modele: 'mistralai/mistral-saba' });
+    expect(m.barreaux[0]).toMatchObject({ barreau: 'mistral-small-latest', modele: 'mistralai/mistral-small-3.2' });
+  });
+
+  it('non-régression — un préfixe suivi d’un autre produit (« -pro », « -saba ») n’est pas une version : aucune correspondance', async () => {
+    doublerSources({ catalogue: [
+      modele('mistralai/mistral-saba', 0.2, 0.6, 500),
+      modele('mistralai/mistral-small-creative', 1, 1, 600),
+      modele('mistralai/mistral-medium-3-5', 1.5, 7.5, 300),
+      modele('mistralai/mistral-large-2512', 0.5, 1.5, 400),
+    ] });
+    const m = de(await sonderTarifs(), 'mistral');
+    expect(m.barreaux[0]).toMatchObject({
+      modele: '', entreeMtok: 0,
+      detail: 'Aucune correspondance pour « mistral-small-latest » dans le catalogue OpenRouter.',
+    });
+    // Le barreau introuvable n'écrit rien : le repli du porte-monnaie prend la main.
+    expect((await lignesModeles()).map(l => l.modele)).not.toContain('mistral-small-latest');
+    expect(m.barreaux[1].modele).toBe('mistralai/mistral-medium-3-5');
   });
 });
 
 describe('conversion et arrondis', () => {
-  it('convertit les $/jeton en prix par million dans la devise de facturation, au centime', async () => {
+  it('convertit les $/jeton en prix par million dans la devise de facturation', async () => {
     doublerSources({ taux: 0.8 });
     const a = de(await sonderTarifs(), 'anthropic');
     expect(a.devise).toBe('CHF');
@@ -129,14 +150,19 @@ describe('conversion et arrondis', () => {
     expect(a.modele).toBe('anthropic/claude-sonnet-5');
   });
 
-  it('ANOMALIE — un prix inférieur à 0,005 par million s’arrondit à zéro sans aucun détail', async () => {
-    // Le détail est calculé sur la valeur NON arrondie (donc vide), les montants
-    // sur la valeur arrondie (donc 0) : aucune ligne tarifs_modeles, et rien
-    // dans la proposition ne dit pourquoi.
+  it('corrigé — un prix inférieur à 0,005 par million garde sa valeur et s’écrit (plus d’arrondi à zéro)', async () => {
+    // L'arrondi au centime le ramenait à 0 : aucune ligne tarifs_modeles, et
+    // rien dans la proposition ne disait pourquoi.
     doublerSources({ catalogue: [modele('openai/gpt-5.4-mini', 0.004, 0.004, 1)], taux: 1 });
     const o = de(await sonderTarifs(), 'openai');
-    expect(o.barreaux[0]).toMatchObject({ modele: 'openai/gpt-5.4-mini', entreeMtok: 0, sortieMtok: 0, detail: '' });
-    expect((await lignesModeles()).some(l => l.modele === 'gpt-5.4-mini')).toBe(false);
+    expect(o.barreaux[0]).toMatchObject({ modele: 'openai/gpt-5.4-mini', entreeMtok: 0.004, sortieMtok: 0.004, detail: '' });
+    expect((await lignesModeles()).find(l => l.modele === 'gpt-5.4-mini')).toMatchObject({ e: 0.004, s: 0.004 });
+  });
+
+  it('non-régression — la précision n’est plus le centime : 0,012 reste 0,012, sans bruit de flottant', async () => {
+    doublerSources({ catalogue: [modele('openai/gpt-5.4-mini', 0.012, 0.15, 1)], taux: 0.8 });
+    const o = de(await sonderTarifs(), 'openai');
+    expect(o.barreaux[0]).toMatchObject({ entreeMtok: 0.0096, sortieMtok: 0.12 });
   });
 });
 

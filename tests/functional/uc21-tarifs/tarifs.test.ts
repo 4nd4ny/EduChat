@@ -213,9 +213,20 @@ describe('Scénarios d’erreur et droits', () => {
     }
   });
 
-  it('ANOMALIE — un prix vide ou null est accepté comme 0 (Number("") = Number(null) = 0)', async () => {
+  it('corrigé — un prix vide, blanc ou null est refusé (ERR_PRICE_INVALID) et ne remet pas le prix à zéro', async () => {
+    // Number("") = Number(null) = 0 : le champ vidé était accepté comme un prix nul.
     await ecrire(jetonSuper, { provider: 'anthropic', prixMtok: 5 });
-    for (const prixMtok of ['', null]) {
+    for (const prixMtok of ['', '   ', null]) {
+      const r = await ecrire(jetonSuper, { provider: 'anthropic', prixMtok });
+      expect(r.status).toBe(400);
+      expect(r.json.error.code).toBe('ERR_PRICE_INVALID');
+    }
+    expect(((await base()).prepare('SELECT prix_mtok FROM tarifs WHERE provider = ?').get('anthropic') as any).prix_mtok).toBe(5);
+  });
+
+  it('non-régression — un zéro EXPLICITE (0 ou "0") reste un prix accepté', async () => {
+    await ecrire(jetonSuper, { provider: 'anthropic', prixMtok: 5 });
+    for (const prixMtok of [0, '0']) {
       const r = await ecrire(jetonSuper, { provider: 'anthropic', prixMtok });
       expect(r.status).toBe(200);
     }

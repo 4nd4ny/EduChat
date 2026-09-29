@@ -130,15 +130,32 @@ export type Proposition = {
 
 type ModeleOpenRouter = { id: string; created?: number; pricing?: { prompt?: string; completion?: string } };
 
-const centimes = (x: number) => Math.round(x * 100) / 100;
+/**
+ * L'ARRONDI D'UN PRIX PAR MILLION : six chiffres significatifs, PAS le centime.
+ *
+ * L'arrondi au centime a longtemps servi ici, et il avait deux défauts mesurés :
+ * un modèle facturé moins de 0,005 par million tombait à 0 — donc n'écrivait
+ * aucun tarif, sans que la proposition dise pourquoi, le détail étant calculé
+ * AVANT l'arrondi — et un modèle bon marché (0,012 → 0,01) était faussé de
+ * quelques pour cent sur chaque appel. Six chiffres significatifs gomment le
+ * bruit du flottant (0,15 × 0,8 = 0,12, pas 0,12000000000000001) sans jamais
+ * rendre nul un prix qui ne l'est pas. L'affichage arrondit comme il veut ; la
+ * donnée qui fabrique les factures, elle, garde sa précision.
+ */
+const arrondiPrix = (x: number) => (x ? Number(x.toPrecision(6)) : 0);
 
 /**
  * Le nom du vendeur chez OpenRouter, quand il diffère de notre identifiant.
  * Il ne sert qu'à RESTREINDRE la recherche au catalogue du bon éditeur : sans
  * ce garde-fou, deux modèles de vendeurs différents portant un nom voisin
- * peuvent se disputer un barreau. Absent ou introuvable, on retombe sur le
- * catalogue entier — un quatrième fournisseur d'école ne doit pas rendre la
- * sonde muette du seul fait qu'il manque une ligne ici.
+ * peuvent se disputer un barreau. Absent d'ici, on cherche sous notre propre
+ * identifiant de fournisseur.
+ *
+ * LE GARDE-FOU NE SE CONTOURNE PLUS. La recherche retombait autrefois sur le
+ * catalogue ENTIER quand le vendeur n'y avait plus aucune entrée : un
+ * « autre/claude-sonnet-5 » à 99 $ était alors retenu, écrit et FACTURÉ. Un
+ * barreau sans prix sûr n'écrit rien, et le repli du porte-monnaie — qui, lui,
+ * laisse une trace — vaut toujours mieux que le prix d'un inconnu.
  */
 const VENDEUR_OPENROUTER: Partial<Record<ProviderId, string>> = {
   anthropic: 'anthropic', openai: 'openai', mistral: 'mistralai',
@@ -178,19 +195,29 @@ const VENDEUR_OPENROUTER: Partial<Record<ProviderId, string>> = {
  *     « ~anthropic/claude-haiku-latest », un pointeur flottant, là où le nom
  *     daté désigne une version précise dont le prix est vérifiable.
  *
- * La branche approximative reste EN DERNIER RECOURS, inchangée : c'est elle
- * qui sert aujourd'hui « mistral-medium-latest », dont les variantes
- * (« -3 », « -3.1 », « -3-5 ») portent un numéro de version à deux chiffres et
- * non un horodatage. Qui débogue un barreau Mistral renommé demain doit savoir
- * que c'est là, et non au-dessus, que la correspondance se joue.
+ * La branche par préfixe reste EN DERNIER RECOURS : c'est elle qui sert
+ * aujourd'hui « mistral-medium-latest », dont les variantes (« -3 », « -3.1 »,
+ * « -3-5 ») portent un numéro de version à deux chiffres et non un horodatage.
+ * Qui débogue un barreau Mistral renommé demain doit savoir que c'est là, et
+ * non au-dessus, que la correspondance se joue.
+ *
+ * ELLE COMPARE DES SEGMENTS, PLUS DES CARACTÈRES. Elle comparait les huit
+ * premiers caractères de la forme réduite : « mistral-small-latest » donnait
+ * « mistrals », que « mistral-saba » partage — le barreau Small était chiffré,
+ * et facturé, au prix de Saba dès que Saba était plus récent au catalogue.
+ * Désormais un candidat doit reprendre TOUS les segments de la cible
+ * (« mistral », « small ») et n'y ajouter que des segments NUMÉRIQUES — un
+ * numéro de version (« 3 », « 2 » de « 3.2 »). « -saba », « -pro », « -mini »
+ * désignent un autre produit, jamais une version du même : pas de
+ * correspondance plutôt qu'une correspondance fausse.
  */
 function correspond(nôtre: string, provider: ProviderId, catalogue: ModeleOpenRouter[]): ModeleOpenRouter | undefined {
   const reduire = (s: string) => s.toLowerCase().split('/').pop()!.replace(/[^a-z0-9]/g, '');
+  const segments = (s: string) => s.toLowerCase().split('/').pop()!.split(/[^a-z0-9]+/).filter(Boolean);
   // Le « ~ » de « ~anthropic/… » marque chez OpenRouter une entrée dérivée :
   // l'ôter suffit à reconnaître le vendeur.
   const vendeur = (s: string) => s.toLowerCase().replace(/^~/, '').split('/')[0];
-  const chez = catalogue.filter(m => vendeur(m.id) === (VENDEUR_OPENROUTER[provider] ?? provider));
-  const cat = chez.length ? chez : catalogue;
+  const cat = catalogue.filter(m => vendeur(m.id) === vendeurOpenRouter(provider));
 
   // « mistral-medium-latest » est un ALIAS : Mistral le résout vers une
   // version datée, qu'OpenRouter nomme « mistralai/mistral-medium-3-5 ». Le
@@ -218,9 +245,24 @@ function correspond(nôtre: string, provider: ProviderId, catalogue: ModeleOpenR
   // « mistral-medium-3-5 », c'est-à-dire l'ancien prix sur l'actuel. Un alias
   // « latest » désigne la version courante ; la date de création du catalogue
   // est ce qui s'en approche le mieux.
-  const approx = cat.filter(m => reduire(m.id).startsWith(cible.slice(0, Math.max(8, cible.length - 4))));
+  //
+  // La cible, en segments, subit la même réduction que plus haut : date finale
+  // et alias « latest » ôtés.
+  const segCible = segments(nôtre);
+  if (/^\d{8}$/.test(segCible[segCible.length - 1] ?? '')) segCible.pop();
+  if (segCible[segCible.length - 1] === 'latest') segCible.pop();
+  if (!segCible.length) return undefined;
+  const approx = cat.filter(m => {
+    const s = segments(m.id);
+    return s.length > segCible.length
+      && segCible.every((x, i) => s[i] === x)
+      && s.slice(segCible.length).every(x => /^\d+$/.test(x));
+  });
   return approx.length ? plusRecent(approx) : undefined;
 }
+
+/** Le vendeur sous lequel chercher un fournisseur dans le catalogue. */
+const vendeurOpenRouter = (provider: ProviderId) => VENDEUR_OPENROUTER[provider] ?? provider;
 
 /**
  * OÙ RECOUPER LE PRIX, en un clic — la page du catalogue public, filtrée sur
@@ -310,18 +352,26 @@ export async function sonderTarifs(): Promise<Proposition[]> {
 
     const barreaux: BarreauTarif[] = echelle.map((barreau, i) => {
       const trouve = panne || !barreau ? undefined : correspond(barreau, provider, catalogue);
-      const entree = (trouve?.pricing?.prompt ? parseFloat(trouve.pricing.prompt) * 1e6 : 0) * k;
-      const sortie = (trouve?.pricing?.completion ? parseFloat(trouve.pricing.completion) * 1e6 : 0) * k;
+      // Arrondis AVANT de rédiger le détail : c'est la valeur arrondie qui
+      // s'écrit, c'est donc elle que le détail doit décrire.
+      const entree = arrondiPrix((trouve?.pricing?.prompt ? parseFloat(trouve.pricing.prompt) * 1e6 : 0) * k);
+      const sortie = arrondiPrix((trouve?.pricing?.completion ? parseFloat(trouve.pricing.completion) * 1e6 : 0) * k);
       // « Non trouvé » doit SE VOIR. Un zéro muet arrêterait la facturation d'un
-      // fournisseur sans que personne s'en aperçoive.
+      // fournisseur sans que personne s'en aperçoive. Un vendeur absent du
+      // catalogue se dit à part : c'est le seul cas où il ne sert à rien de
+      // chercher une coquille dans le nom du barreau.
+      const vendeurPresent = catalogue.some(m =>
+        m.id.toLowerCase().replace(/^~/, '').split('/')[0] === vendeurOpenRouter(provider));
       const detail = panne ? `Catalogue OpenRouter injoignable : ${panne}`
         : !barreau ? 'Aucun barreau réglé pour ce fournisseur.'
-          : !trouve ? `Aucune correspondance pour « ${barreau} » dans le catalogue OpenRouter.`
-            : entree || sortie ? '' : `« ${trouve.id} » ne porte pas de prix.`;
+          : !trouve && !vendeurPresent
+            ? `Aucune entrée du vendeur « ${vendeurOpenRouter(provider)} » dans le catalogue OpenRouter : « ${barreau} » n'est pas chiffré (les homonymes d'autres vendeurs sont ignorés).`
+            : !trouve ? `Aucune correspondance pour « ${barreau} » dans le catalogue OpenRouter.`
+              : entree || sortie ? '' : `« ${trouve.id} » ne porte pas de prix.`;
       return {
         rang: i + 1, barreau, modele: trouve?.id ?? '',
-        entreeMtok: centimes(entree), sortieMtok: centimes(sortie),
-        melangeMtok: centimes(entree * RATIO_ENTREE + sortie * (1 - RATIO_ENTREE)),
+        entreeMtok: entree, sortieMtok: sortie,
+        melangeMtok: arrondiPrix(entree * RATIO_ENTREE + sortie * (1 - RATIO_ENTREE)),
         detail,
       };
     });
@@ -357,7 +407,9 @@ export async function sonderTarifs(): Promise<Proposition[]> {
     //     francs, et bien mieux qu'une table vidée.
     //   · le barreau a un prix. Un barreau sans correspondance au catalogue
     //     n'écrit pas de ligne — c'est ce qui déclenche le repli explicite du
-    //     porte-monnaie plutôt qu'une facturation à zéro.
+    //     porte-monnaie plutôt qu'une facturation à zéro. Un prix minuscule,
+    //     lui, n'est plus confondu avec « pas de prix » : l'arrondi garde six
+    //     chiffres significatifs et ne rend jamais nul un prix qui ne l'est pas.
     if (taux) {
       for (const b of barreaux) {
         if (!b.barreau || (!b.entreeMtok && !b.sortieMtok)) continue;

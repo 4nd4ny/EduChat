@@ -221,10 +221,10 @@ describe('Règle : l’atelier ne bouge que si le corps en parle', () => {
     expect((await ligneEtab(a)).atelier_promptagogue).toBe(0);
   });
 
-  it('ANOMALIE : un PUT partiel efface pourtant horaires et quotas absents du corps', async () => {
-    // Comportement actuel (voir « Anomalies constatées » dans la fiche UC-17) :
-    // seuls l'atelier bénéficie de la règle « présence du champ » ; horaires et
-    // quotas absents sont lus comme [] et 0 et écrasent les valeurs en place.
+  it('corrigé : un PUT partiel ne touche plus horaires et quotas absents du corps', async () => {
+    // Avant correction (voir la fiche UC-17), seuls l'atelier bénéficiait de la
+    // règle « présence du champ » : horaires et quotas absents étaient lus comme
+    // [] et 0 et rendaient l'école illimitée.
     await appeler(etablissement, {
       method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(),
       body: { hours: HORAIRES, quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000 },
@@ -232,8 +232,34 @@ describe('Règle : l’atelier ne bouge que si le corps en parle', () => {
     await appeler(etablissement, { method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(), body: { atelierPromptagogue: true } });
     const e = await ligneEtab(a);
     expect(e.atelier_promptagogue).toBe(1);
+    expect(JSON.parse(e.hours)).toEqual(HORAIRES);
+    expect([e.quota_per_student_daily, e.token_quota_monthly]).toEqual([20000, 3000000]);
+  });
+
+  it('non-régression : chaque champ présent s’écrit seul, et une valeur vide EXPLICITE lève bien la limite', async () => {
+    await appeler(etablissement, {
+      method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(),
+      body: { hours: HORAIRES, quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000 },
+    });
+    await appeler(etablissement, { method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(), body: { tokenQuotaMonthly: 0 } });
+    let e = await ligneEtab(a);
+    expect([e.quota_per_student_daily, e.token_quota_monthly]).toEqual([20000, 0]);
+    expect(JSON.parse(e.hours)).toEqual(HORAIRES);
+    await appeler(etablissement, { method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(), body: { hours: [] } });
+    e = await ligneEtab(a);
     expect(JSON.parse(e.hours)).toEqual([]);
-    expect([e.quota_per_student_daily, e.token_quota_monthly]).toEqual([0, 0]);
+    expect(e.quota_per_student_daily).toBe(20000);
+  });
+
+  it('non-régression : un corps vide ne modifie rien', async () => {
+    await appeler(etablissement, {
+      method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(),
+      body: { hours: HORAIRES, quotaPerStudentDaily: 20000, tokenQuotaMonthly: 3000000, atelierPromptagogue: true },
+    });
+    const avant = await ligneEtab(a);
+    const r = await appeler(etablissement, { method: 'PUT', token: dir, headers: ecole(a), ip: ipNeuve(), body: {} });
+    expect(r.status).toBe(200);
+    expect(await ligneEtab(a)).toEqual(avant);
   });
 });
 

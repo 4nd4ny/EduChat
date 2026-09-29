@@ -131,6 +131,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(429).json({ error: { code: ERR.RATE_LIMIT } });
   }
 
+  // UN CHAMP NE SE MODIFIE QUE SI LE CORPS EN PARLE — la PRÉSENCE du champ
+  // décide, pas sa valeur. C'était la règle de l'atelier seul : horaires et
+  // quotas absents étaient lus comme [] et 0, si bien qu'un PUT qui
+  // n'enregistrait que l'atelier rendait l'école ouverte à toute heure et sans
+  // quota, sans erreur ni trace. Elle vaut désormais pour les quatre réglages.
+  const corps = req.body !== null && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
+  const present = (champ: string) => champ in corps;
+
   // Validation stricte des créneaux : jour 0-6, HH:MM, début < fin.
   const rawHours = Array.isArray(req.body?.hours) ? req.body.hours.slice(0, MAX_SLOTS) : [];
   const hours: HourSlot[] = [];
@@ -147,20 +155,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const quotaPerStudentDaily = Math.max(0, Math.min(10_000_000, Number(req.body?.quotaPerStudentDaily) || 0));
   const tokenQuotaMonthly = Math.max(0, Math.min(10_000_000_000, Number(req.body?.tokenQuotaMonthly) || 0));
-  // L'ATELIER NE SE MODIFIE QUE SI LE CORPS EN PARLE — la PRÉSENCE du champ
-  // décide, pas sa valeur. Un booléen absent lu comme « false » ferait
+  // L'ATELIER, comme les autres : un booléen absent lu comme « false » ferait
   // refermer, sans erreur ni trace, un réglage qu'un administrateur a
-  // délibérément ouvert : il suffirait d'un appelant qui n'enregistre que les
-  // horaires. Aujourd'hui l'écran envoie toujours les trois réglages ensemble ;
-  // cette écriture conditionnelle est ce qui fait qu'un futur appelant partiel
-  // ne cassera rien en silence.
+  // délibérément ouvert. Aujourd'hui l'écran envoie toujours les réglages
+  // ensemble ; ces écritures conditionnelles sont ce qui fait qu'un appelant
+  // partiel ne cassera rien en silence. Un champ PRÉSENT garde, lui, sa
+  // lecture d'avant (« hours: [] » ou un quota à 0 lèvent bien la limite).
   const db = getDb();
-  db.prepare('UPDATE etablissements SET hours = ?, quota_per_student_daily = ?, token_quota_monthly = ? WHERE id = ?')
-    .run(JSON.stringify(hours), quotaPerStudentDaily, tokenQuotaMonthly, etab.id);
-  if (req.body !== null && typeof req.body === 'object' && 'atelierPromptagogue' in req.body) {
-    db.prepare('UPDATE etablissements SET atelier_promptagogue = ? WHERE id = ?')
-      .run(req.body.atelierPromptagogue ? 1 : 0, etab.id);
-  }
+  // Une seule transaction : un enregistrement est tout ou rien.
+  db.transaction(() => {
+    if (present('hours')) {
+      db.prepare('UPDATE etablissements SET hours = ? WHERE id = ?').run(JSON.stringify(hours), etab.id);
+    }
+    if (present('quotaPerStudentDaily')) {
+      db.prepare('UPDATE etablissements SET quota_per_student_daily = ? WHERE id = ?').run(quotaPerStudentDaily, etab.id);
+    }
+    if (present('tokenQuotaMonthly')) {
+      db.prepare('UPDATE etablissements SET token_quota_monthly = ? WHERE id = ?').run(tokenQuotaMonthly, etab.id);
+    }
+    if (present('atelierPromptagogue')) {
+      db.prepare('UPDATE etablissements SET atelier_promptagogue = ? WHERE id = ?')
+        .run(corps.atelierPromptagogue ? 1 : 0, etab.id);
+    }
+  })();
 
   res.status(200).json({ ok: true });
 }
