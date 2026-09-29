@@ -152,16 +152,27 @@ export async function traduireTuteur(promptId: number, forcer = false): Promise<
       ).get(promptId, cible, row.version);
       if (dejaFaite && !forcer) continue;
 
+      // RETRADUCTION FORCÉE D'UNE LANGUE À JOUR : la traduction en place est
+      // valide et reste servie tant qu'une meilleure ne l'a pas remplacée. Ni
+      // « pending » ni « failed » ne doivent donc l'écraser — traductionFraiche
+      // exige state = 'ok', et un échec passager du fournisseur retirerait du
+      // service un tuteur qui n'a pas changé. L'échec se note dans `detail`.
+      const echec = (detail: string) => dejaFaite
+        ? noterEchecSansRetrait(promptId, cible, `Retraduction forcée échouée, traduction précédente conservée : ${detail}`.slice(0, 300))
+        : ecrire(promptId, cible, row.version, 'failed', { detail: detail.slice(0, 300) });
+
       if (trop) {
-        ecrire(promptId, cible, row.version, 'failed', {
-          detail: `Corps de ${(row.body.length / 1024).toFixed(0)} Ko : au-delà de la limite de traduction automatique (${MAX_OCTETS_TRADUISIBLES / 1024} Ko).`,
-        });
+        // La limite est en OCTETS : le message aussi (un corps accentué pèse
+        // plus d'octets que de caractères).
+        const octets = Buffer.byteLength(row.body, 'utf8');
+        echec(`Corps de ${Math.ceil(octets / 1024)} Ko : au-delà de la limite de traduction automatique (${MAX_OCTETS_TRADUISIBLES / 1024} Ko).`);
         continue;
       }
 
       // « pending » d'abord : si le processus meurt en plein appel, l'état
-      // reste lisible dans l'administration au lieu de disparaître.
-      ecrire(promptId, cible, row.version, 'pending', { detail: '' });
+      // reste lisible dans l'administration au lieu de disparaître. Sauf sur
+      // une langue à jour, qui reste servie pendant l'appel (voir plus haut).
+      if (!dejaFaite) ecrire(promptId, cible, row.version, 'pending', { detail: '' });
       try {
         const { champs, tokens } = await traduireUn(row, source, cible);
         ecrire(promptId, cible, row.version, 'ok', {
@@ -169,9 +180,7 @@ export async function traduireTuteur(promptId: number, forcer = false): Promise<
         });
         journaliser(promptId, tokens);
       } catch (erreur) {
-        ecrire(promptId, cible, row.version, 'failed', {
-          detail: String(erreur instanceof Error ? erreur.message : erreur).slice(0, 300),
-        });
+        echec(String(erreur instanceof Error ? erreur.message : erreur));
       }
     }
     const frais = db.prepare('SELECT * FROM prompts WHERE id = ?').get(promptId) as PromptRow;
@@ -179,6 +188,16 @@ export async function traduireTuteur(promptId: number, forcer = false): Promise<
   } finally {
     enCours.delete(promptId);
   }
+}
+
+/**
+ * Échec d'une retraduction forcée sur une langue À JOUR : seul le détail
+ * change. L'état reste « ok » et le texte, la version et la date restent ceux
+ * de la traduction servie.
+ */
+function noterEchecSansRetrait(promptId: number, locale: Locale, detail: string): void {
+  getDb().prepare('UPDATE prompt_translations SET detail = ? WHERE prompt_id = ? AND locale = ?')
+    .run(detail, promptId, locale);
 }
 
 function ecrire(

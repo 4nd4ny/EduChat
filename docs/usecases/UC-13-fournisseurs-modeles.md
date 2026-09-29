@@ -57,6 +57,10 @@ une seule fois (`perimetreFournisseurs`) et appliquée à l'identique par la lis
   une minute (purgatoire), pour ne pas marteler l'éditeur à chaque frappe.
 - **A4 — Cache périmé.** L'ancienne liste est rendue aussitôt ; la nouvelle est construite en
   arrière-plan. Une seule interrogation en vol par fournisseur.
+- **A4 bis — Panne à l'échéance.** Si la reconstruction ne rend qu'un repli de moins bonne
+  source (native > OpenRouter > défaut), l'ancienne liste reste en place avec sa date d'origine
+  et un nouvel essai a lieu au bout d'une heure (pas avant). Une liste qu'on n'arrive plus à
+  confirmer depuis sept jours cède au repli. Vaut aussi pour la reconstruction de l'administration.
 - **A5 — Séance restreinte.** L'enseignant a coché une liste : les autres sortent de `served`.
 - **A6 — Repli gratuit.** `SECRET_FREE_PROVIDER` + clé serveur : c'est toute la liste d'un
   anonyme hors campus. Un fournisseur **écarté** (ex. faute de frappe `gemini`) n'est jamais servi.
@@ -71,7 +75,7 @@ une seule fois (`perimetreFournisseurs`) et appliquée à l'identique par la lis
 | `/api/providers` autre que `GET` | `405 ERR_METHOD_NOT_ALLOWED` |
 | `/api/models` : fournisseur absent ou inconnu | `400 ERR_PROVIDER_UNSUPPORTED` |
 | `/api/models` autre que `GET`/`POST` | `405`, `Allow: GET, POST` |
-| Fournisseur injoignable, clé refusée | pas d'erreur : liste de repli (OpenRouter ou défaut) |
+| Fournisseur injoignable, clé refusée | pas d'erreur : ancienne liste si elle est meilleure et a moins de sept jours, sinon liste de repli (OpenRouter ou défaut) |
 | `/api/admin/models` sans être super-administrateur (toute méthode) | `403 ERR_FORBIDDEN` |
 | `/api/admin/models` autre que `GET`/`POST` (super-admin) | `405` |
 
@@ -92,12 +96,17 @@ une seule fois (`perimetreFournisseurs`) et appliquée à l'identique par la lis
 
 ## Anomalies constatées
 
-- **Une panne à l'échéance efface la bonne liste.** L'en-tête de `src/server/models.ts:23`
+- **Corrigée** — `refresh()` n'écrit plus une reconstruction de source moins bonne que la liste
+  en cache : l'ancienne reste servie (date d'origine conservée), avec réessai dans l'heure et au
+  plus sept jours de garde, au-delà desquels la règle « identifiants vraiment acceptés » reprend
+  le dessus.
+  *Constat d'origine :* **Une panne à l'échéance efface la bonne liste.** L'en-tête de `src/server/models.ts:23`
   promet qu'« une panne du catalogue laisse l'ancienne liste en place ». Mais `build()` ne lève
   jamais : quand l'appel natif échoue, il rend une entrée `defaut` (le seul modèle par défaut),
   que `refresh()` écrit sans condition dans le cache (`src/server/models.ts:217`). Après 24 h,
   une indisponibilité passagère du fournisseur remplace donc une liste native complète par un
-  seul modèle, pour 24 h. Test : « PANNE du fournisseur à l'échéance » (`models.test.ts`).
+  seul modèle, pour 24 h. Tests : « PANNE du fournisseur à l'échéance… », « PANNE : … sept jours… »,
+  « PANNE pendant la reconstruction… » (`models.test.ts`).
 
 ## Tests
 
@@ -108,7 +117,7 @@ une seule fois (`perimetreFournisseurs`) et appliquée à l'identique par la lis
 | `providers.test.ts` | `providerDefaults`, `SCHOOL_PROVIDER_IDS`, `DUEL_PUBLIC_PROVIDER_IDS`, `isProviderId`, `isReasoningLevel`, `providerAcceptsAttachment`, `ERR` | onze fournisseurs, drapeaux `ecarte`/`wrng` (Gemini, OpenRouter, chinois), mention RGPD, liste scolaire, gardes de type, pièces jointes, codes d'erreur |
 | `accesFournisseurs.test.ts` | `perimetreFournisseurs`, `aUnMoyenPropre`, `fournisseurLibre` | les quatre cases de la matrice, moyen propre ignoré pour un anonyme, compte non vérifié / effacé, IP illisible = campus, clé lisible/indéchiffrable, crédit > 0 / nul / négatif, repli gratuit (absent, sans clé, inconnu, écarté, servi), IP d'amorçage |
 | `fournisseurs.test.ts` | `fournisseursServis`, `estServiParLEcole` | aucune clé, croisement règle × clé non blanche, fournisseur disparu |
-| `models.test.ts` | `getModels`, `catalogueStatus`, `refreshAllModels` | défaut sans réseau, déduction OpenRouter, OpenRouter natif, en-têtes par dialecte (Bearer, x-api-key, x-goog), filtrage non conversationnel, clé visiteur non conservée, cache 24 h, périmé non bloquant, relecture disque, disque illisible, vol unique, **panne qui écrase (anomalie)**, amélioration par clé, purgatoire 1 min, état et reconstruction avec sonde de tarifs |
+| `models.test.ts` | `getModels`, `catalogueStatus`, `refreshAllModels` | défaut sans réseau, déduction OpenRouter, OpenRouter natif, en-têtes par dialecte (Bearer, x-api-key, x-goog), filtrage non conversationnel, clé visiteur non conservée, cache 24 h, périmé non bloquant, relecture disque, disque illisible, vol unique, panne : ancienne liste gardée, réessai après 1 h, garde de 7 jours, reconstruction admin (anomalie corrigée), amélioration par clé, purgatoire 1 min, état et reconstruction avec sonde de tarifs |
 
 ### Fonctionnels — `tests/functional/uc13-fournisseurs-modeles/fournisseurs.test.ts`
 

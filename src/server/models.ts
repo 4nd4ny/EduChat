@@ -20,7 +20,8 @@
 //
 // Le résultat est mis en cache dans un simple fichier JSON du volume de
 // données, rafraîchi au plus une fois par jour et JAMAIS de façon bloquante :
-// une panne du catalogue laisse l'ancienne liste en place.
+// une panne du catalogue laisse l'ancienne liste en place (réessai dans
+// l'heure, au plus sept jours — voir refresh).
 
 import fs from 'fs';
 import path from 'path';
@@ -46,6 +47,21 @@ const inflight = new Map<ProviderId, Promise<Entry>>();
 /** Dernier essai natif infructueux, pour ne pas marteler l'éditeur. */
 const echecs = new Map<ProviderId, number>();
 const RETRY_MS = 60_000;
+/**
+ * Reconstruction ratée à l'échéance (voir refresh) : l'ancienne liste reste
+ * en place, et on réessaie au bout d'une heure plutôt que de marteler le
+ * fournisseur à chaque requête — ou d'attendre un jour entier.
+ */
+const pannes = new Map<ProviderId, number>();
+const RETRY_PANNE_MS = 60 * 60 * 1000;
+/**
+ * Au-delà, une liste qu'on n'arrive plus à confirmer n'est plus « l'ancienne
+ * liste » mais une liste douteuse (modèles retirés depuis, clé retirée du
+ * serveur…) : la RÈGLE ABSOLUE reprend le dessus et le repli s'applique.
+ */
+const GARDE_MAX_MS = 7 * TTL_MS;
+/** Qualité d'une source : une reconstruction ne doit jamais DÉGRADER la liste. */
+const RANG: Record<Source, number> = { defaut: 0, openrouter: 1, native: 2 };
 
 /**
  * Endpoint natif de listage. `key: false` = catalogue public.
@@ -208,6 +224,20 @@ function refresh(provider: ProviderId, key: string): Promise<Entry> {
   const promesse = build(provider, key)
     .then(entry => {
       const cache = readCache();
+      const ancienne = cache.entries[provider];
+      // UNE PANNE LAISSE L'ANCIENNE LISTE EN PLACE. build() ne lève jamais :
+      // quand la source échoue, il rend un repli moins bon (déduction
+      // d'OpenRouter, voire le seul modèle par défaut). L'écrire tel quel
+      // remplacerait une liste native complète par un seul modèle pour
+      // 24 h, à cause d'une indisponibilité passagère. On garde donc
+      // l'ancienne — avec sa date d'origine, pour que l'administration voie
+      // qu'elle n'a pas été confirmée — et on réessaie dans l'heure.
+      if (ancienne && RANG[entry.source] < RANG[ancienne.source]
+        && Date.now() - ancienne.at < GARDE_MAX_MS) {
+        pannes.set(provider, Date.now());
+        return ancienne;
+      }
+      pannes.delete(provider);
       // Comparaison sur les IDENTIFIANTS TRIÉS, pas sur le compte : une liste
       // qui garde sa longueur pendant qu'un modèle en remplace un autre est
       // bel et bien une liste qui a changé — et c'est justement le moment où
@@ -219,7 +249,8 @@ function refresh(provider: ProviderId, key: string): Promise<Entry> {
       if (avant && avant !== apres) listeChangee = true;
       return entry;
     })
-    .catch(() => ({ at: Date.now(), source: 'defaut' as Source, models: finalise(provider, []) }))
+    .catch(() => readCache().entries[provider]
+      ?? { at: Date.now(), source: 'defaut' as Source, models: finalise(provider, []) })
     .finally(() => { inflight.delete(provider); });
   inflight.set(provider, promesse);
   return promesse;
@@ -251,7 +282,10 @@ export async function getModels(provider: ProviderId, key = ''): Promise<{ model
     if (cle && frais.source !== 'native') echecs.set(provider, Date.now());
     return { models: frais.models, updatedAt: frais.at, source: frais.source };
   }
-  if (perime) void refresh(provider, cle);
+  // Après une reconstruction ratée, l'entrée garde sa date d'origine et reste
+  // donc « périmée » : on espace les réessais au lieu de relancer à chaque requête.
+  const enPanne = Date.now() - (pannes.get(provider) ?? 0) < RETRY_PANNE_MS;
+  if (perime && !enPanne) void refresh(provider, cle);
 
   return { models: entry.models, updatedAt: entry.at, source: entry.source };
 }
@@ -282,6 +316,7 @@ export function catalogueStatus(): Array<{ provider: ProviderId; source: Source 
 export async function refreshAllModels(): Promise<Array<{ provider: ProviderId; source: Source; count: number }>> {
   openrouterIds = null;   // le catalogue public aussi doit être relu
   echecs.clear();
+  pannes.clear();
   listeChangee = false;
   const resultat = await Promise.all(PROVIDER_IDS.map(async provider => {
     const entry = await refresh(provider, String(CatalogueKeys[provider] || '').trim());
@@ -289,9 +324,11 @@ export async function refreshAllModels(): Promise<Array<{ provider: ProviderId; 
   }));
 
   // UNE LISTE QUI CHANGE, C'EST UN PRIX QUI A PU CHANGER. La sonde relit alors
-  // le catalogue public et PROPOSE — elle n'applique rien : voir
-  // src/server/sondeTarifs.ts. En arrière-plan, car un rafraîchissement de
-  // modèles ne doit pas attendre un tiers.
+  // le catalogue public des prix et ÉCRIT les prix relevés par barreau dans
+  // tarifs_modeles — ce sont eux qui facturent — ainsi qu'une proposition de
+  // prix unique (colonnes propose_* de tarifs, sans toucher prix_mtok) : voir
+  // src/server/sondeTarifs.ts. En arrière-plan, car un rafraîchissement
+  // de modèles ne doit pas attendre un tiers.
   if (listeChangee) {
     const { sonderTarifs } = await import('./sondeTarifs');
     void sonderTarifs().catch(erreur => console.error('Sonde de tarifs :', erreur));

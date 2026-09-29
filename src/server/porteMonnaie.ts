@@ -280,7 +280,9 @@ export function coutAuTarif(
   // pct vaut 0 pour tout ce qui est facturé : PASSAGE À PRIX COÛTANT. Le
   // paramètre survit pour les simulations et les relevés qui veulent montrer
   // ce qu'un taux donnerait — jamais pour décompter.
-  return versLeHaut(brut * (1 + pct / 100));
+  // `|| 0` : pour un coût nul, Math.ceil(0 − 1e-9) donne −0 ; on rend un vrai
+  // zéro, pour qu'aucun −0 ne s'affiche (« -0.00 ») ni ne se fige en base.
+  return versLeHaut(brut * (1 + pct / 100)) || 0;
 }
 
 /**

@@ -165,22 +165,70 @@ describe('cache d’un jour, jamais bloquant', () => {
     expect(m.espion).toHaveBeenCalledTimes(1);
   });
 
-  it('PANNE du fournisseur à l’échéance : la bonne liste est REMPLACÉE par le seul défaut', async () => {
-    // Comportement actuel, contraire à l'en-tête du module (« une panne du
-    // catalogue laisse l'ancienne liste en place ») — voir « Anomalies
-    // constatées » dans la fiche UC-13.
+  it('PANNE du fournisseur à l’échéance : l’ancienne liste reste EN PLACE, réessai dans l’heure', async () => {
+    // Anomalie corrigée (fiche UC-13) : le repli « défaut » rendu par build()
+    // remplaçait la liste native complète pendant 24 h.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+    let panne = false;
+    let ids = ['mistral-large-latest'];
+    const m = await charger(() => panne ? { status: 503 } : catalogueOpenrouter(ids),
+      { SECRET_MISTRAL_API_KEY: 'k' });
+    expect((await m.getModels('mistral')).models).toEqual(['mistral-large-latest', 'mistral-medium-latest']);
+    expect(m.espion).toHaveBeenCalledTimes(1);
+    panne = true;
+    vi.setSystemTime(T0 + 25 * HEURE);
+    await m.getModels('mistral');
+    await attendre();
+    expect(m.espion).toHaveBeenCalledTimes(2);
+    const apres = await m.getModels('mistral');
+    // La bonne liste, avec sa date d'origine (elle n'a pas été confirmée).
+    expect(apres).toMatchObject({ source: 'native', models: ['mistral-large-latest', 'mistral-medium-latest'], updatedAt: T0 });
+    expect(lireCache().entries.mistral).toMatchObject({ source: 'native', at: T0 });
+
+    // Pas de nouvel essai avant l'heure…
+    vi.setSystemTime(T0 + 25 * HEURE + 30 * 60_000);
+    await m.getModels('mistral');
+    await attendre();
+    expect(m.espion).toHaveBeenCalledTimes(2);
+
+    // … puis le fournisseur revient : la liste est relue et redatée.
+    panne = false;
+    ids = ['mistral-large-latest', 'mistral-small-latest'];
+    vi.setSystemTime(T0 + 26 * HEURE + 1);
+    await m.getModels('mistral');
+    await attendre();
+    expect(m.espion).toHaveBeenCalledTimes(3);
+    expect(await m.getModels('mistral')).toMatchObject({
+      source: 'native', updatedAt: T0 + 26 * HEURE + 1,
+      models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+    });
+  });
+
+  it('PANNE : une liste qu’on n’arrive plus à confirmer depuis sept jours cède au repli', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(T0);
     let panne = false;
     const m = await charger(() => panne ? { status: 503 } : catalogueOpenrouter(['mistral-large-latest']),
       { SECRET_MISTRAL_API_KEY: 'k' });
-    expect((await m.getModels('mistral')).models).toEqual(['mistral-large-latest', 'mistral-medium-latest']);
+    await m.getModels('mistral');
     panne = true;
-    vi.setSystemTime(T0 + 25 * HEURE);
+    vi.setSystemTime(T0 + 7 * 24 * HEURE + 1);
     await m.getModels('mistral');
     await attendre();
-    const apres = await m.getModels('mistral');
-    expect(apres).toMatchObject({ source: 'defaut', models: ['mistral-medium-latest'] });
+    expect(await m.getModels('mistral')).toMatchObject({ source: 'defaut', models: ['mistral-medium-latest'] });
+  });
+
+  it('PANNE pendant la reconstruction de l’administration : l’ancienne liste reste aussi', async () => {
+    let panne = false;
+    const m = await charger(() => panne ? { status: 503 } : catalogueOpenrouter(['mistral-large-latest']),
+      { SECRET_MISTRAL_API_KEY: 'k' });
+    await m.getModels('mistral');
+    panne = true;
+    const r = await m.refreshAllModels();
+    expect(r.find(l => l.provider === 'mistral')).toEqual({ provider: 'mistral', source: 'native', count: 2 });
+    await attendre();
+    expect(sonde.appels).toBe(0);
   });
 });
 

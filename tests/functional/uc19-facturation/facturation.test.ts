@@ -240,9 +240,10 @@ describe('Scénarios d’erreur et droits', () => {
     expect([action.status, action.json.error.code]).toEqual([400, 'ERR_ACTION_UNKNOWN']);
   });
 
-  it('émettre pour une école inexistante répond 409 ERR_NOTHING_TO_INVOICE (comme RESPIRE)', async () => {
+  it('émettre pour une école inexistante répond 404 ERR_SCHOOL_UNKNOWN (plus le 409 de RESPIRE)', async () => {
+    // Anomalie corrigée (UC-19, n° 4).
     const r = await agir(jetonSuper, { action: 'emettre', etablissementId: 9999, year: 2026, month: 7 });
-    expect([r.status, r.json.error.code]).toEqual([409, 'ERR_NOTHING_TO_INVOICE']);
+    expect([r.status, r.json.error.code]).toEqual([404, 'ERR_SCHOOL_UNKNOWN']);
   });
 
   it('méthodes non autorisées : 405 (après la garde d’administration)', async () => {

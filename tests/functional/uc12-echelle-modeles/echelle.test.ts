@@ -119,14 +119,20 @@ describe('Réglage de l’échelle par le super-administrateur (/api/admin/ladde
     });
   });
 
-  it('PUT sans liste de barreaux : le réglage est EFFACÉ (retour à la proposition)', async () => {
-    // Comportement actuel : `rungs` absent ou non-tableau est lu comme [] —
-    // voir « Anomalies constatées » dans la fiche UC-12.
+  it('PUT sans liste de barreaux valide → 400 ERR_RUNGS_INVALID, réglage CONSERVÉ', async () => {
+    // Anomalie corrigée (fiche UC-12) : `rungs` absent ou non-tableau était lu
+    // comme [] et effaçait l'échelle en vigueur.
     const token = await superAdmin();
     await appeler(echelleAdmin, { method: 'PUT', token, ip: ipNeuve(), body: { provider: 'mistral', rungs: ['a'] } });
-    const r = await appeler(echelleAdmin, { method: 'PUT', token, ip: ipNeuve(), body: { provider: 'mistral', rungs: 'a,b' } });
-    expect(r.status).toBe(200);
-    expect(r.json.ladders.find((l: any) => l.provider === 'mistral').custom).toBe(false);
+    for (const rungs of ['a,b', undefined, { 0: 'a' }, [1, 2], ['a', null]]) {
+      const r = await appeler(echelleAdmin, { method: 'PUT', token, ip: ipNeuve(), body: { provider: 'mistral', rungs } });
+      expect(r.status).toBe(400);
+      expect(r.json.error.code).toBe('ERR_RUNGS_INVALID');
+    }
+    const g = await appeler(echelleAdmin, { method: 'GET', token, ip: ipNeuve() });
+    const mistral = g.json.ladders.find((l: any) => l.provider === 'mistral');
+    expect(mistral.custom).toBe(true);
+    expect(mistral.rungs[0]).toBe('a');
   });
 
   it('PUT : fournisseur inconnu → 400 ERR_PROVIDER_UNSUPPORTED', async () => {

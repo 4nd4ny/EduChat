@@ -12,7 +12,7 @@ import { ERR, isProviderId } from '../../../shared/providers';
 //        épinglé aujourd'hui peut disparaître dans six mois, et le chat
 //        casserait en silence.
 //  PUT → { provider, rungs: string[] }. Trois barreaux vides = retour à la
-//        proposition du code.
+//        proposition du code ; `rungs` absent ou mal typé → 400.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // LE SUPER-ADMINISTRATEUR, ET LUI SEUL — lecture comprise.
   //
@@ -48,7 +48,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'PUT') {
     const provider = req.body?.provider;
     if (!isProviderId(provider)) return res.status(400).json({ error: { code: ERR.PROVIDER } });
-    const rungs = Array.isArray(req.body?.rungs) ? req.body.rungs : [];
+    // `rungs` doit être un TABLEAU DE CHAÎNES. Autrefois, un champ absent ou
+    // mal typé était lu comme [] — c'est-à-dire « retour à la proposition » :
+    // une requête malformée effaçait donc en silence l'échelle en vigueur pour
+    // toutes les écoles. Le retour à la proposition reste possible, mais
+    // seulement demandé explicitement (barreaux vides).
+    const rungs = req.body?.rungs;
+    if (!Array.isArray(rungs) || !rungs.every((r: unknown) => typeof r === 'string')) {
+      return res.status(400).json({ error: { code: 'ERR_RUNGS_INVALID' } });
+    }
     setLadder(provider, rungs);
     return res.status(200).json({ ok: true, ladders: getLadders() });
   }

@@ -146,7 +146,9 @@ la main, qui ne sert plus que de dernier recours. Une école lit, en lecture seu
    prix_mtok` : ces colonnes (migration ancienne, `src/server/db.ts:470-471`) ne sont plus écrites ni
    montrées par aucun écran (`tarifs.ts:122` ne sert que `prixMtok`), mais si elles portent une valeur,
    le prix réglé par le site est sans effet. Test : « corrigé — d'anciens prix entrée/sortie… ».
-6. **Observation** — le commentaire de `src/server/models.ts:291-293` dit encore que la sonde
+6. **Corrigée** — le commentaire de `refreshAllModels` dit désormais que la sonde écrit les prix
+   relevés dans `tarifs_modeles` (qui facturent) et une proposition de prix unique.
+   *Constat d'origine :* **Observation** — le commentaire de `src/server/models.ts:291-293` dit encore que la sonde
    « PROPOSE — elle n'applique rien », alors qu'elle écrit désormais `tarifs_modeles`, qui facture.
 
 ## Tests
