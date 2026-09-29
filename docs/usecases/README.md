@@ -98,6 +98,10 @@ npx vitest run tests/functional/uc11-conversation   # un seul cas
 | [UC-21](UC-21-tarifs.md) | Régler les tarifs de la clé interne | Super-admin, système (sonde) |
 | [UC-22](UC-22-statistiques.md) | Consulter la fréquentation publique et la santé du service | Visiteur, supervision |
 
+## Anomalies
+
+Les comportements qui semblent être des défauts sont recensés dans [ANOMALIES.md](ANOMALIES.md).
+
 ## Gabarit d'une fiche
 
 Chaque fiche suit la même structure : tableau d'en-tête (acteurs, déclencheur, pages, API, code
