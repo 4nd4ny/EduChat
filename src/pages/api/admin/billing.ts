@@ -35,7 +35,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       -- aussi, mais sans IP ni établissement : c'est la démo du site, payée
       -- par le gestionnaire. La confondre avec une école inconnue gonflerait
       -- la facture d'un client qui n'existe pas.
-      CASE WHEN u.etablissement_id IS NULL AND u.ip = ''
+      -- Le PORTE-MONNAIE PERSONNEL est journalisé de la même façon (ni IP ni
+      -- établissement : la consommation d'une personne n'est la donnée d'aucune
+      -- école), mais il est PAYÉ — sa colonne montant porte le prélèvement. L'appeler
+      -- « démo non facturable » disait faux ; il a sa propre ligne.
+      CASE WHEN u.etablissement_id IS NULL AND u.ip = '' AND u.montant > 0
+           THEN '(porte-monnaie personnel — payé)'
+           WHEN u.etablissement_id IS NULL AND u.ip = ''
            THEN '(démo publique — non facturable)'
            ELSE COALESCE(e.name, '(IP hors base)') END AS etablissement,
       COALESCE(e.respire, 0)                  AS respire,
@@ -48,7 +54,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     LEFT JOIN etablissements e ON e.id = u.etablissement_id
     WHERE u.ts >= ? AND u.ts < ? AND u.used_server_key = 1
       AND (? IS NULL OR u.etablissement_id = ?)
-    GROUP BY u.etablissement_id, u.ip, u.provider
+    GROUP BY u.etablissement_id, u.ip, u.provider, etablissement
     ORDER BY etablissement, u.ip, u.provider
   `).all(start, end, portee, portee) as Array<{
     etablissement: string; respire: number; etablissementId: number | null;

@@ -69,19 +69,27 @@ describe('facturesDuMois — consommation du mois', () => {
     expect(f.total).toBe(3);
   });
 
-  it('ANOMALIE : une ligne ancienne sans ventilation entrée/sortie (tokens seul) est facturée 0', async () => {
-    // Les lignes antérieures à la séparation entrée/sortie (et celles de
-    // /api/speak, /api/transcribe) n'ont que `tokens` : tokens_in = tokens_out = 0.
-    // La relecture « à l'ancienne » multiplie tokens_in/tokens_out, donc rend 0
-    // alors que « comme hier » (tokens × prix unique) rendrait 2.00.
+  it('une ligne ancienne sans ventilation entrée/sortie (tokens seul) est relue à jetons × prix unique', async () => {
+    // Anomalie corrigée (UC-19, n° 1) : les lignes antérieures à la séparation
+    // entrée/sortie (et celles de la traduction) n'ont que `tokens`
+    // (tokens_in = tokens_out = 0) ; elles étaient valorisées à 0. « Comme
+    // hier » : 1 M de jetons × 2.00 = 2.00.
     const id = await creerEtablissement();
     reglerTarif('anthropic', 2);
     await journaliser({ ts: JUILLET, etablissementId: id, tokens: 1_000_000, tarifAt: 0 });
     const [f] = facturesDuMois(2026, 7, id);
-    expect(f.lignes[0].tokens).toBe(1_000_000);
-    // (coutAuTarif rend -0 : Math.ceil(0 − 1e-9) ; sans effet visible.)
-    expect(f.lignes[0].montant).toBeCloseTo(0, 10);
-    expect(f.total).toBeCloseTo(0, 10);
+    expect(f.lignes[0]).toMatchObject({ tokens: 1_000_000, tokensIn: 0, tokensOut: 0, ancien: true, montant: 2 });
+    expect(f.total).toBe(2);
+  });
+
+  it('lignes anciennes mêlées, ventilées ou non, dans un même groupe : tout est compté une fois', async () => {
+    const id = await creerEtablissement();
+    reglerTarif('anthropic', 1);
+    await journaliser({ ts: JUILLET, etablissementId: id, tokens: 1_000_000, tarifAt: 0 });
+    await journaliser({ ts: JUILLET, etablissementId: id, tokensIn: 500_000, tokensOut: 500_000, tarifAt: 0 });
+    const [f] = facturesDuMois(2026, 7, id);
+    expect(f.lignes).toHaveLength(1);
+    expect(f.lignes[0]).toMatchObject({ tokens: 2_000_000, appels: 2, montant: 2 });
   });
 
   it('ignore la clé personnelle, les autres mois, les autres écoles et la démonstration', async () => {

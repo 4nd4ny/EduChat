@@ -84,16 +84,65 @@ describe('Scénario nominal : lecture Voxtral avec sa clé Mistral', () => {
 });
 
 describe('Scénario alternatif : lecture en classe sur la clé de l’école', () => {
-  it('salle ouverte : clé interne Mistral, lecture journalisée avec IP', async () => {
+  async function ecoleOuverte(solde = 10) {
     const ip = ipEcole();
-    const id = await creerEtablissement({ ips: ip, solde: 10 });
+    const id = await creerEtablissement({ ips: ip, solde });
     const { setAuthLock, porteeEtablissement } = await import('../../../src/server/access');
     await setAuthLock(porteeEtablissement(id), 30);
+    return { id, ip };
+  }
+  const solde = async (id: number) =>
+    ((await base()).prepare('SELECT solde FROM etablissements WHERE id = ?').get(id) as any).solde as number;
+  const tarifer = async (entree: number, sortie: number) => (await base()).prepare(`INSERT INTO tarifs_modeles
+    (provider, modele, prix_entree_mtok, prix_sortie_mtok, devise, updated_at)
+    VALUES ('mistral', 'voxtral-mini-tts-latest', ?, ?, 'CHF', ?)`).run(entree, sortie, Date.now());
+
+  it('salle ouverte : clé interne Mistral, ligne de journal comme le chat (IP, prix figés, montant)', async () => {
+    const { id, ip } = await ecoleOuverte();
+    await tarifer(3, 1);
     const r = await lire({ text: 'x'.repeat(41) }, { ip });
     expect(r.status).toBe(200);
     expect((appelsSynthese()[0][1]!.headers as any).Authorization).toBe('Bearer cle-serveur-mistral');
-    expect((await journal())[0]).toMatchObject({ ip, etablissement_id: id, provider: 'mistral',
-      model: 'voxtral-mini-tts (lecture)', tokens: 10, used_server_key: 1 });
+    const [ligne] = await journal();
+    // Estimation (41 car. / 4 ≈ 10) côté ENTRÉE : c'est le texte lu.
+    expect(ligne).toMatchObject({ ip, etablissement_id: id, provider: 'mistral',
+      model: 'voxtral-mini-tts-latest', tokens: 10, tokens_in: 10, tokens_out: 0, used_server_key: 1,
+      prix_entree_mtok: 3, prix_sortie_mtok: 1, montant: 0.01 });
+    expect(ligne.tarif_at).toBeGreaterThan(0);
+  });
+
+  it('débit réel du porte-monnaie de l’école après une lecture', async () => {
+    const { id, ip } = await ecoleOuverte(10);
+    await tarifer(4, 0);
+    routeur = url => url.endsWith('/audio/voices') ? { json: VOIX }
+      : { json: { audio_data: MP3, usage: { prompt_tokens: 1_000_000, completion_tokens: 0 } } };
+    const r = await lire({ text: 'Bonjour' }, { ip });
+    expect(r.status).toBe(200);
+    expect((await journal())[0]).toMatchObject({ tokens_in: 1_000_000, montant: 4 });
+    expect(await solde(id)).toBe(6);
+    expect((await base()).prepare('SELECT genre, montant FROM credit_mouvements WHERE etablissement_id = ?').all(id))
+      .toEqual([{ genre: 'consommation', montant: -4 }]);
+  });
+
+  it('porte-monnaie de l’école à sec : 402 ERR_SCHOOL_NO_CREDIT, Mistral n’est pas appelé', async () => {
+    // Anomalie corrigée (UC-23) : la lecture était servie et payée sans contrôle.
+    const { id, ip } = await ecoleOuverte(0);
+    const r = await lire({ text: 'Bonjour' }, { ip });
+    expect(r.status).toBe(402);
+    expect(r.json.error.code).toBe('ERR_SCHOOL_NO_CREDIT');
+    expect(espion).not.toHaveBeenCalled();
+    expect(await journal()).toHaveLength(0);
+    expect(await solde(id)).toBe(0);
+  });
+
+  it('séance qui n’a pas coché Mistral : 403 ERR_PROVIDER_NOT_IN_SESSION', async () => {
+    const { id, ip } = await ecoleOuverte();
+    (await base()).prepare(`INSERT INTO session_settings (etablissement_id, web_search, set_by_email, expires_at, providers)
+      VALUES (?, 1, 'prof@ecole.ch', ?, 'anthropic')`).run(id, Date.now() + 3_600_000);
+    const r = await lire({ text: 'Bonjour' }, { ip });
+    expect(r.status).toBe(403);
+    expect(r.json.error.code).toBe('ERR_PROVIDER_NOT_IN_SESSION');
+    expect(espion).not.toHaveBeenCalled();
   });
 });
 

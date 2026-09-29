@@ -1,19 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getClientIp, isRateLimited, mayUseServerKeys } from '../../server/access';
-import { getDb } from '../../server/db';
-import { resolveEtablissementByIp } from '../../server/etablissements';
+import { controlerCleEcole, estRefus, jetonsVoix, journaliserCleEcole, type AccesCleEcole } from '../../server/cleEcole';
 import { DeveloperKeys } from '../../utils/env';
 import { requireAuth } from '../../server/token';
 import { readUserKey } from '../../server/userKeys';
 import { ERR, isProviderId, providerDefaults } from '../../shared/providers';
 
-// Transcription vocale — STRICTEMENT en clé personnelle (BYOK).
+// Transcription vocale — clé personnelle, ou clé de l'école sur son réseau.
 //
 // Le navigateur enregistre l'audio (MediaRecorder) et l'envoie ici en base64 ;
-// on le relaie à l'API de transcription du fournisseur choisi avec la clé de
-// l'utilisateur. Aucune clé serveur n'est jamais utilisée : le vocal est un
-// confort premium, pas un poste de dépense de la plateforme. L'audio n'est ni
-// stocké ni journalisé.
+// on le relaie à l'API de transcription du fournisseur choisi. La clé est
+// celle de l'utilisateur (saisie ou mémorisée) ; à défaut, sur le réseau
+// ouvert d'une école, la clé INTERNE — et alors avec les mêmes contrôles et le
+// même décompte que le chat (src/server/cleEcole.ts). L'audio n'est jamais
+// stocké ; seule la consommation payée par une école est journalisée.
 //
 // Fournisseurs : OpenAI (gpt-4o-mini-transcribe, repli whisper-1) et Mistral
 // (voxtral-mini-latest) — les seuls du catalogue avec une API de transcription.
@@ -40,7 +40,9 @@ async function transcribeUpstream(url: string, apiKey: string, model: string, bl
     const detail = data?.error?.message ?? data?.message ?? `HTTP ${response.status}`;
     throw new Error(detail);
   }
-  return String(data?.text ?? '');
+  // `usage` est rendu par les deux fournisseurs quand ils le peuvent : c'est
+  // lui, et non une estimation, qui sert au décompte d'une école.
+  return { text: String(data?.text ?? ''), usage: data?.usage, model };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -64,7 +66,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Clé saisie dans la page, ou clé mémorisée du compte (même règle que la
   // complétion) : dans les deux cas c'est la clé personnelle de l'utilisateur.
   let apiKey = String(body.apiKey || '').trim();
-  let usedServerKey = false;
+  // Accès à la clé de l'école, si c'est elle qui paie : ce qu'il faut pour
+  // journaliser et décompter après l'appel. null = clé personnelle.
+  let cleEcole: AccesCleEcole | null = null;
   if (!apiKey) {
     const account = requireAuth(req);
     if (account) apiKey = readUserKey(account.email, provider) ?? '';
@@ -73,21 +77,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Sans cela, « l'élève parle à son téléphone » resterait réservé à qui
   // apporte sa propre clé — c'est-à-dire à personne, en classe.
   if (!apiKey && await mayUseServerKeys(clientIp)) {
-    // MÊME REFUS, MOT POUR MOT, QUE DANS /api/completion : la clé interne d'une
-    // école ne finance ni un drapeau rouge, ni un fournisseur ÉCARTÉ d'un
-    // public scolaire. L'audit a trouvé ici la seule route où `ecarte`
-    // manquait. Rien ne fuyait AUJOURD'HUI — la garde `voice` deux lignes plus
-    // bas refusait de toute façon Gemini et les fournisseurs chinois, aucun
-    // d'eux n'ayant de transcription câblée — mais l'engagement pris devant une
-    // direction tenait alors par la table des capacités, pas par une règle.
-    // Le jour où l'on ajouterait `voice: true` à Gemini (l'API existe), la
-    // clé d'un collège l'aurait payé, et personne n'aurait relu ce fichier.
-    // Une invariance de conformité ne se déduit pas d'un catalogue.
-    if (providerDefaults[provider].wrng || providerDefaults[provider].ecarte) {
-      return res.status(403).json({ error: { code: 'ERR_PROVIDER_NOT_ALLOWED' } });
-    }
+    // MÊMES GARDES, DANS LE MÊME ORDRE, QUE /api/completion — et par les mêmes
+    // fonctions (controlerCleEcole) : fournisseur écarté ou à drapeau rouge,
+    // fournisseurs de la séance, porte-monnaie de l'école, plafond mensuel et
+    // quota par élève. La dictée dépensait jusqu'ici la clé d'une école à sec
+    // sans rien vérifier ni décompter : un micro n'est pas une porte dérobée
+    // vers le budget d'un collège. Le refus tombe AVANT l'appel au
+    // fournisseur, sinon l'école paierait l'appel qu'on lui refuse.
+    const clientId = /^[a-f0-9-]{8,64}$/i.test(String(body.clientId ?? '')) ? String(body.clientId) : '';
+    const acces = controlerCleEcole(clientIp, provider, clientId);
+    if (estRefus(acces)) return res.status(acces.status).json({ error: { code: acces.code } });
     apiKey = String(DeveloperKeys[provider] || '').trim();
-    usedServerKey = !!apiKey;
+    if (apiKey) cleEcole = acces;
   }
   if (!apiKey) return res.status(403).json({ error: { code: ERR.VOICE_KEY } });
   if (!providerDefaults[provider].voice) return res.status(400).json({ error: { code: ERR.VOICE_UNSUPPORTED } });
@@ -115,33 +116,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const filename = `audio.${extension}`;
 
   try {
-    let text: string;
+    let resultat: { text: string; usage: any; model: string };
     if (provider === 'openai') {
       try {
-        text = await transcribeUpstream('https://api.openai.com/v1/audio/transcriptions', apiKey, 'gpt-4o-mini-transcribe', blob, filename);
+        resultat = await transcribeUpstream('https://api.openai.com/v1/audio/transcriptions', apiKey, 'gpt-4o-mini-transcribe', blob, filename);
       } catch {
         // Modèle indisponible sur certains comptes : whisper-1 en repli.
-        text = await transcribeUpstream('https://api.openai.com/v1/audio/transcriptions', apiKey, 'whisper-1', blob, filename);
+        resultat = await transcribeUpstream('https://api.openai.com/v1/audio/transcriptions', apiKey, 'whisper-1', blob, filename);
       }
     } else {
-      text = await transcribeUpstream('https://api.mistral.ai/v1/audio/transcriptions', apiKey, 'voxtral-mini-latest', blob, filename);
+      resultat = await transcribeUpstream('https://api.mistral.ai/v1/audio/transcriptions', apiKey, 'voxtral-mini-latest', blob, filename);
     }
-    // Journaliser la dictée payée par l'école : elle appartient à la facture
-    // au même titre qu'un message. Les jetons n'existent pas pour de l'audio —
-    // on inscrit une estimation à partir du texte obtenu, clairement identifiée
-    // par le nom du modèle de transcription.
-    if (usedServerKey) {
-      try {
-        const etab = resolveEtablissementByIp(clientIp);
-        getDb().prepare(`
-          INSERT INTO usage_log (ts, ip, etablissement_id, teacher_email, prompt_id, provider, model, tokens, used_server_key, client_id)
-          VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, 1, '')
-        `).run(Date.now(), clientIp, etab?.id ?? null, provider,
-               provider === 'mistral' ? 'voxtral-mini-latest (dictée)' : 'transcription',
-               Math.max(1, Math.round(text.length / 4)));
-      } catch (error) {
-        console.error('Dictée non journalisée :', error);
-      }
+    const { text } = resultat;
+    // Dictée payée par l'école : elle appartient à la facture au même titre
+    // qu'un message, et se DÉCOMPTE comme lui — même ligne de journal (jetons
+    // ventilés, prix figés, montant), même prélèvement, même transaction. Le
+    // modèle inscrit est celui qui a réellement répondu (repli whisper-1
+    // compris) : c'est lui qui porte le prix. Jetons rendus par le
+    // fournisseur, sinon estimés depuis le texte obtenu (jetonsVoix).
+    if (cleEcole) {
+      journaliserCleEcole(clientIp, cleEcole, provider, resultat.model,
+        jetonsVoix(resultat.usage, text, 'sortie'));
     }
     return res.status(200).json({ text });
   } catch (error: any) {

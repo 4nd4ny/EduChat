@@ -5,16 +5,21 @@ import { useAnthropic } from "../context/AnthropicProvider";
 import { authHeaders } from "../utils/account";
 import { useT } from "../i18n/useT";
 
-// Chat vocal — pensé pour smartphone, réservé à la clé PERSONNELLE et aux
-// fournisseurs dotés d'une API de transcription (OpenAI, Mistral).
+// Chat vocal — pensé pour smartphone, pour les fournisseurs dotés d'une API de
+// transcription (OpenAI, Mistral). La clé est celle de l'utilisateur (saisie ou
+// mémorisée) ou, sur le réseau ouvert d'une école, la clé INTERNE — que le
+// serveur contrôle et décompte alors comme un message du chat (crédit, quotas,
+// séance : src/server/cleEcole.ts).
 //
-//  - Micro : enregistre (MediaRecorder), transcrit via /api/transcribe (clé
-//    de l'utilisateur), puis ENVOIE directement si le mode vocal est actif,
-//    sinon dépose le texte dans la zone de saisie (dictée).
-//  - Haut-parleur : mode vocal — les réponses du tuteur sont lues à voix
-//    haute par la synthèse du NAVIGATEUR (gratuit, rien ne quitte l'appareil).
+//  - Micro : enregistre (MediaRecorder), transcrit via /api/transcribe, puis
+//    ENVOIE directement si le mode vocal est actif, sinon dépose le texte dans
+//    la zone de saisie (dictée).
+//  - Haut-parleur : mode vocal — les réponses du tuteur sont lues par Voxtral
+//    (/api/speak) sur Mistral, sinon — ou sur tout refus — par la synthèse du
+//    NAVIGATEUR (gratuite, rien ne quitte l'appareil).
 //
-// Le parent ne rend ce composant que si (clé perso + fournisseur compatible).
+// Le parent ne rend ce composant que si (clé utilisable ou clé interne) et
+// fournisseur compatible.
 
 const SPEECH_LANG: Record<string, string> = { fr: "fr-FR", en: "en-US", it: "it-IT", de: "de-DE" };
 
