@@ -56,6 +56,10 @@ SECRET_SMTP_PASS=
 SECRET_SMTP_BCC=
 SECRET_SMTP_FROM=EduChat <noreply@educh.at>
 
+# Mot de passe d'inscription : exige de toute NOUVELLE adresse avant l'envoi
+# d'un code (les comptes existants se reconnectent sans lui). Vide = ouvert.
+SECRET_SIGNUP_PASSWORD=
+
 # CONTROLE DE COHERENCE anti-usurpation d'IP (recommande en production).
 # L'IP identifie l'etablissement (acces, quotas, facture) : pour ne pas la
 # laisser forger, EduChat n'honore l'en-tete X-Real-IP que si le reverse proxy
