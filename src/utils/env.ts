@@ -28,6 +28,13 @@ export const SmtpConfig = {
   bcc: process.env.SECRET_SMTP_BCC || '',
 };
 
+// MOT DE PASSE D'INSCRIPTION (fermeture temporaire des nouveaux comptes).
+// Posé, il est exigé de toute adresse qui n'a PAS encore de compte avant
+// qu'un code ne parte : un robot qui remplit /verifier avec des adresses
+// trouvées ailleurs ne fait plus envoyer de courriel à des inconnus. Les
+// comptes existants se reconnectent sans lui. Vide : inscription ouverte.
+export const SignupPassword: string = (process.env.SECRET_SIGNUP_PASSWORD || '').trim();
+
 // Clé de signature des jetons de compte (HMAC-SHA256). En dev sans .env, une
 // clé de repli PRÉVISIBLE est utilisée : ne jamais s'en servir en production.
 export const TokenKey: string = process.env.SECRET_TOKEN_KEY || 'dev-only-insecure-key';

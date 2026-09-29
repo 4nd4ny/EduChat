@@ -2,9 +2,10 @@
 // reçu par email ». Enchaîne les vraies routes /api/verify/request puis
 // /api/verify/confirm ; seul l'envoi du courriel est doublé pour capturer le
 // code et le lien.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { appeler } from '../../helpers/api';
 import { viderBase, base, creerEtablissement, creerCompte } from '../../helpers/db';
+import { poserEnv } from '../../helpers/env';
 
 const envois: Array<{ email: string; code: string; lien: string }> = [];
 const notifications: string[] = [];
@@ -160,5 +161,41 @@ describe('Règles métier sur un compte existant', () => {
     const envoi2 = await demanderCode('g@ecole.ch');
     const r2 = await appeler(confirmer, { method: 'POST', body: { email: 'g@ecole.ch', code: envoi2.code }, ip: '198.51.100.7' });
     expect(r2.json.ecole.nouvelle).toBe(false);
+  });
+});
+
+describe('Inscription fermée par mot de passe (SECRET_SIGNUP_PASSWORD)', () => {
+  afterAll(() => { poserEnv({ SECRET_SIGNUP_PASSWORD: undefined }); });
+  const route = async () => {
+    poserEnv({ SECRET_SIGNUP_PASSWORD: 'RESPIRE' });
+    return (await import('../../../src/pages/api/verify/request')).default;
+  };
+
+  it('une nouvelle adresse sans mot de passe ou avec un faux : 403, aucun courriel', async () => {
+    const demanderFerme = await route();
+    for (const body of [{ email: 'robot@exemple.com' }, { email: 'robot@exemple.com', signupPassword: 'faux' }]) {
+      const r = await appeler(demanderFerme, { method: 'POST', body, ip: ipNeuve() });
+      expect(r.status).toBe(403);
+      expect(r.json.error.code).toBe('ERR_SIGNUP_PASSWORD');
+    }
+    expect(envois).toHaveLength(0);
+    expect((await base()).prepare('SELECT COUNT(*) n FROM email_codes').get()).toEqual({ n: 0 });
+  });
+
+  it('le bon mot de passe, casse et espaces indifférents, laisse partir le code', async () => {
+    const demanderFerme = await route();
+    const r = await appeler(demanderFerme, {
+      method: 'POST', body: { email: 'nouvelle@ecole.ch', signupPassword: '  respire ' }, ip: ipNeuve(),
+    });
+    expect(r.status).toBe(200);
+    expect(envois.map(e => e.email)).toEqual(['nouvelle@ecole.ch']);
+  });
+
+  it('un compte existant se reconnecte sans mot de passe', async () => {
+    const demanderFerme = await route();
+    await creerCompte('ancien@ecole.ch');
+    const r = await appeler(demanderFerme, { method: 'POST', body: { email: 'ancien@ecole.ch' }, ip: ipNeuve() });
+    expect(r.status).toBe(200);
+    expect(envois.map(e => e.email)).toEqual(['ancien@ecole.ch']);
   });
 });

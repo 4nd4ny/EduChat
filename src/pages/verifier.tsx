@@ -12,8 +12,15 @@ import { useT } from "../i18n/useT";
 // LE LIEN DU COURRIEL OUVRE LE COMPTE, IL NE ROUVRE PAS LE FORMULAIRE. Il
 // arrive ici avec, en FRAGMENT, une charge signée qui porte l'adresse, le code
 // et les choix faits à la demande (src/server/token.ts) : la page la poste
-// telle quelle et la session s'ouvre. Le fragment, lui, n'atteint jamais le
-// serveur — ni ses journaux, ni l'en-tête Referer.
+// quand la personne clique « Confirmer », et la session s'ouvre. Le fragment,
+// lui, n'atteint jamais le serveur — ni ses journaux, ni l'en-tête Referer.
+//
+// POURQUOI UN CLIC, ET NON PLUS UNE OUVERTURE AUTOMATIQUE : les filtres de
+// sécurité des messageries d'entreprise ouvrent les liens des courriels pour
+// les analyser, JavaScript compris. Un lien qui se confirmait tout seul
+// créait donc des comptes sans qu'aucun humain ne l'ait voulu (constaté fin
+// septembre 2026 : neuf comptes d'entreprise « vérifiés » par leur filtre).
+// Ces robots ouvrent les pages ; ils ne cliquent pas les boutons.
 //
 // Les liens de l'ANCIENNE forme (#123-456, encore en vol dans des boîtes aux
 // lettres au moment du déploiement) restent reconnus : ils pré-remplissent le
@@ -42,6 +49,15 @@ export default function VerifierPage() {
   // montrer ni le formulaire (on ne redemande rien) ni le succès (rien n'est
   // encore acquis), mais l'attente elle-même.
   const [lienEnCours, setLienEnCours] = useState(false);
+  // Lien du courriel lu, en ATTENTE du clic « Confirmer » (voir l'en-tête).
+  // L'adresse est relue de la charge pour être montrée : la personne confirme
+  // en connaissance de cause, et un lien reçu par erreur se reconnaît.
+  const [lienEnAttente, setLienEnAttente] = useState<{ lien: string; email: string } | null>(null);
+  // Inscription fermée par mot de passe (SECRET_SIGNUP_PASSWORD) : le champ
+  // n'apparaît qu'après que le serveur l'a exigé, donc jamais pour qui a déjà
+  // un compte et vient seulement se reconnecter.
+  const [signupPassword, setSignupPassword] = useState("");
+  const [besoinMotDePasse, setBesoinMotDePasse] = useState(false);
   // Le fragment n'est lu et posté QU'UNE FOIS. Sans ce verrou, le double appel
   // des effets (React en mode strict) enverrait deux confirmations : la seconde
   // trouverait le lien déjà consommé et afficherait un échec PAR-DESSUS une
@@ -59,6 +75,7 @@ export default function VerifierPage() {
     // Signature invalide, lien expiré, lien déjà consommé : le serveur ne dit
     // pas laquelle des trois, et cette page n'a donc qu'une phrase à offrir.
     ERR_LIEN_INVALIDE: t("verify.lien.echec"),
+    ERR_SIGNUP_PASSWORD: t("verify.signup.requis"),
   };
 
   const request = async (event: React.FormEvent) => {
@@ -68,11 +85,12 @@ export default function VerifierPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       // Les deux choix partent DÈS LA DEMANDE : ils voyagent signés dans le
       // lien, et se retrouvent donc sur le téléphone qui ouvrira le courriel.
-      body: JSON.stringify({ email, syncOptin, isTeacher }),
+      body: JSON.stringify({ email, syncOptin, isTeacher, ...(besoinMotDePasse ? { signupPassword } : {}) }),
     });
     setBusy(false);
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
+      if (data?.error?.code === "ERR_SIGNUP_PASSWORD") setBesoinMotDePasse(true);
       setError(errorLabels[data?.error?.code] || "La demande a échoué.");
       return;
     }
@@ -156,8 +174,7 @@ export default function VerifierPage() {
       return;
     }
     if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(fragment)) {
-      setLienEnCours(true);
-      void envoyerConfirmation({ lien: fragment });
+      setLienEnAttente({ lien: fragment, email: adresseDuLien(fragment) });
     }
     // Volontairement sans dépendances : ce fragment se lit au premier rendu, et
     // une seule fois — c'est le verrou lienTraite qui en répond, pas React.
@@ -195,7 +212,27 @@ export default function VerifierPage() {
         </p>
       )}
 
-      {step === "request" && !lienEnCours && (
+      {/* LE LIEN ATTEND UN CLIC HUMAIN (voir l'en-tête du fichier). */}
+      {lienEnAttente && !lienEnCours && step !== "done" && (
+        <div className="mt-6 flex flex-col gap-3 rounded border border-white/15 bg-secondary p-3">
+          <p className="text-sm">
+            {t("verify.lien.question")}
+            {lienEnAttente.email && <> <b>{lienEnAttente.email}</b></>}
+          </p>
+          <button type="button" disabled={busy}
+            onClick={() => {
+              const { lien } = lienEnAttente;
+              setLienEnAttente(null);
+              setLienEnCours(true);
+              void envoyerConfirmation({ lien });
+            }}
+            className="rounded bg-[#DC6521] px-4 py-2 font-bold hover:opacity-90 disabled:opacity-50">
+            {t("verify.confirm")}
+          </button>
+        </div>
+      )}
+
+      {step === "request" && !lienEnCours && !lienEnAttente && (
         <form onSubmit={request} className="mt-6 flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">{t("verify.email")}
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
@@ -209,6 +246,12 @@ export default function VerifierPage() {
             <input type="checkbox" checked={syncOptin} onChange={e => setSyncOptin(e.target.checked)} />
             {t("verify.sync")}
           </label>
+          {besoinMotDePasse && (
+            <label className="flex flex-col gap-1 text-sm">{t("verify.signup.label")}
+              <input type="password" value={signupPassword} onChange={e => setSignupPassword(e.target.value)}
+                required autoFocus autoComplete="off" className="rounded bg-tertiary p-2" />
+            </label>
+          )}
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={isTeacher} onChange={e => setIsTeacher(e.target.checked)} />
             Je suis enseignant·e — je souhaite gérer des sessions de classe (rattachement à un établissement validé par l'admin)
@@ -305,4 +348,18 @@ export default function VerifierPage() {
       {error && <p role="alert" className="mt-4 text-sm text-red-400">{error}</p>}
     </div>
   );
+}
+
+// Adresse portée par la charge du lien, pour l'AFFICHAGE seulement : la charge
+// est encodée, pas chiffrée (src/server/token.ts), et c'est le serveur qui en
+// vérifie la signature. Illisible : on n'affiche rien, le bouton reste.
+function adresseDuLien(lien: string): string {
+  try {
+    const charge = lien.slice(0, lien.lastIndexOf("."));
+    const json = atob(charge.replace(/-/g, "+").replace(/_/g, "/"));
+    const e = JSON.parse(json)?.e;
+    return typeof e === "string" ? e : "";
+  } catch {
+    return "";
+  }
 }
