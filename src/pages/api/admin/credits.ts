@@ -6,6 +6,7 @@ import { etatDesComptes, mouvements, bouger, reglerContribution, commissionRecha
 import { BillingCurrency } from '../../../utils/env';
 import { paypalActif, rembourser, FRAIS_PAYPAL_PCT } from '../../../server/paypal';
 import { ERR } from '../../../shared/providers';
+import { getDb } from '../../../server/db';
 
 // PORTE-MONNAIE DES ÉTABLISSEMENTS.
 //
@@ -69,6 +70,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!etablissementId) return res.status(400).json({ error: { code: 'ERR_SCHOOL_UNKNOWN' } });
     if (!Number.isFinite(montant) || montant === 0) {
       return res.status(400).json({ error: { code: 'ERR_AMOUNT_INVALID' } });
+    }
+    // Une école qui n'existe pas se dit AVANT d'écrire : bouger() lèverait de
+    // toute façon (sans rien laisser au registre), mais en 500 muette au lieu
+    // d'une réponse que l'interface sait lire.
+    if (!getDb().prepare('SELECT 1 AS v FROM etablissements WHERE id = ?').get(etablissementId)) {
+      return res.status(404).json({ error: { code: 'ERR_SCHOOL_UNKNOWN' } });
     }
     // Une recharge est toujours positive ; un ajustement peut corriger dans les
     // deux sens (une erreur de saisie, un geste commercial).

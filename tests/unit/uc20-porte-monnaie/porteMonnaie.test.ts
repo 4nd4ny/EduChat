@@ -223,8 +223,10 @@ describe('tarifDuModele — quatre niveaux de repli', () => {
     const db = await base();
     db.prepare('INSERT INTO tarifs (provider, prix_mtok, updated_at) VALUES (?, ?, ?)').run('mistral', 2, 0);
     expect(tarifDuModele('mistral', 'mistral-x')).toMatchObject({ entree: 2, sortie: 2, repli: expect.stringContaining('prix unique') });
+    // Les anciennes colonnes tarifs.prix_entree_mtok / prix_sortie_mtok, que
+    // plus aucun écran n'écrit, ne priment plus sur le prix unique (UC-21, anomalie 5).
     db.prepare('UPDATE tarifs SET prix_entree_mtok = 1, prix_sortie_mtok = 4 WHERE provider = ?').run('mistral');
-    expect(tarifDuModele('mistral', 'mistral-x')).toMatchObject({ entree: 1, sortie: 4 });
+    expect(tarifDuModele('mistral', 'mistral-x')).toMatchObject({ entree: 2, sortie: 2 });
   });
   it('4. sinon zéro, et il est dit', () => {
     const t = tarifDuModele('openai', 'gpt-x');

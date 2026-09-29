@@ -5,7 +5,11 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { poserEnv } from '../../helpers/env';
 import { viderBase, creerEtablissement, creerCompte, base } from '../../helpers/db';
-import { installerFauxPaypal, ENV_PAYPAL, evenementCapture, evenementRemboursement, type FauxPaypal } from './fauxPaypal';
+import { installerFauxPaypal, ENV_PAYPAL, evenementCapture, evenementRemboursement, rembourserDepuisPaypal, type FauxPaypal } from './fauxPaypal';
+
+// L'alerte à l'administration est observée, jamais envoyée.
+const { notifyAdmin } = vi.hoisted(() => ({ notifyAdmin: vi.fn() }));
+vi.mock('../../../src/server/mail', () => ({ notifyAdmin }));
 
 type ModPaypal = typeof import('../../../src/server/paypal');
 type ModPM = typeof import('../../../src/server/porteMonnaie');
@@ -18,7 +22,7 @@ async function charger(env: Record<string, string | undefined>): Promise<{ pp: M
   };
 }
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); notifyAdmin.mockClear(); });
 
 describe('configuration', () => {
   it('éteint sans identifiants, ou s’il en manque un seul (webhook compris)', async () => {
@@ -138,13 +142,33 @@ describe('avec PayPal allumé (bac à sable doublé)', () => {
       expect((await pp.traiterEvenement(evenementCapture('CAP-4', orderId))).raison).toBe('Devise USD ≠ CHF : rien n\'est crédité.');
       expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(0);
     });
-    it('ANOMALIE : un titulaire disparu est confondu avec un doublon — l’argent reçu n’est crédité nulle part', async () => {
+    it('corrigé : un titulaire disparu n’est PAS un doublon — erreur remontée, intention « orpheline », administration alertée', async () => {
+      const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
       const { orderId } = await pp.creerRecharge(pm.titulaireCompte('p@x.ch'), 20, 'p@x.ch');
       (await base()).prepare('DELETE FROM users WHERE email = ?').run('p@x.ch');
       f.captures.set('CAP-5', { value: '20.00', currency_code: 'CHF', status: 'COMPLETED' });
-      const v = await pp.traiterEvenement(evenementCapture('CAP-5', orderId));
-      expect(v).toEqual({ creditee: false, raison: 'Déjà créditée (idempotence).' });
-      expect((await intention(orderId)).etat).toBe('attente');
+      await expect(pp.traiterEvenement(evenementCapture('CAP-5', orderId))).rejects.toThrow(/introuvable/);
+      expect(await intention(orderId)).toMatchObject({ etat: 'orpheline', capture_id: 'CAP-5' });
+      expect(erreurs).toHaveBeenCalled();
+      expect(notifyAdmin).toHaveBeenCalledTimes(1);
+      expect(notifyAdmin.mock.calls[0][1]).toContain('CAP-5');
+      // PayPal réessaie : toujours une erreur, mais l'administration n'est pas relancée à chaque fois.
+      await expect(pp.traiterEvenement(evenementCapture('CAP-5', orderId))).rejects.toThrow(/introuvable/);
+      expect(notifyAdmin).toHaveBeenCalledTimes(1);
+      expect((await base()).prepare('SELECT COUNT(*) AS n FROM credit_mouvements').get()).toEqual({ n: 0 });
+    });
+    it('une panne passagère n’est pas un doublon : le réessai de PayPal crédite normalement', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { orderId } = await pp.creerRecharge(pm.titulaireEcole(ecole), 50, 'x');
+      f.captures.set('CAP-6', { value: '50.00', currency_code: 'CHF', status: 'COMPLETED' });
+      const db = await base();
+      const renomme = db.prepare('UPDATE etablissements SET id = 424242 WHERE id = ?').run(ecole);
+      expect(renomme.changes).toBe(1);
+      await expect(pp.traiterEvenement(evenementCapture('CAP-6', orderId))).rejects.toThrow();
+      db.prepare('UPDATE etablissements SET id = ? WHERE id = 424242').run(ecole);
+      const v = await pp.traiterEvenement(evenementCapture('CAP-6', orderId));
+      expect(v).toEqual({ creditee: true, raison: 'Solde 47.50 CHF.', montant: 50 });
+      expect(await intention(orderId)).toMatchObject({ etat: 'creditee' });
     });
   });
 
@@ -155,14 +179,67 @@ describe('avec PayPal allumé (bac à sable doublé)', () => {
       await pp.traiterEvenement(evenementCapture(cap, orderId));
       return orderId;
     }
-    it('reprend le montant de la recharge (le solde peut passer sous zéro), une seule fois', async () => {
+    it('remboursement fait depuis PayPal : reprend le montant remboursé (le solde peut passer sous zéro), une seule fois', async () => {
       const orderId = await crediter(100, 'CAP-R');
       pm.bouger(pm.titulaireEcole(ecole), 'consommation', -50);
+      rembourserDepuisPaypal(f, 'CAP-R', '100.00');
       const v = await pp.traiterEvenement(evenementRemboursement('CAP-R'));
       expect(v).toEqual({ creditee: false, raison: 'Repris. Solde -55.00 CHF.' });
       expect(await intention(orderId)).toMatchObject({ etat: 'reprise' });
       expect((await pp.traiterEvenement(evenementRemboursement('CAP-R'))).raison).toBe('Reprise déjà enregistrée.');
       expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(-55);
+    });
+    it('remboursement partiel : seul le montant remboursé est repris, jamais plus que la capture au total', async () => {
+      const orderId = await crediter(100, 'CAP-RP');  // crédite 95
+      rembourserDepuisPaypal(f, 'CAP-RP', '30.00', 'RF-1');
+      expect((await pp.traiterEvenement(evenementRemboursement('CAP-RP', 'PAYMENT.CAPTURE.REFUNDED', 'RF-1'))).raison)
+        .toBe('Repris. Solde 65.00 CHF.');
+      expect(await intention(orderId)).toMatchObject({ etat: 'creditee' }); // le reste demeure remboursable
+      // Un second remboursement partiel est une reprise distincte…
+      rembourserDepuisPaypal(f, 'CAP-RP', '20.00', 'RF-2');
+      expect((await pp.traiterEvenement(evenementRemboursement('CAP-RP', 'PAYMENT.CAPTURE.REFUNDED', 'RF-2'))).raison)
+        .toBe('Repris. Solde 45.00 CHF.');
+      // … et un litige ensuite ne reprend que ce que la capture n'a pas encore rendu (100 − 50).
+      await pp.traiterEvenement({ event_type: 'CUSTOMER.DISPUTE.CREATED',
+        resource: { id: 'PP-D-2', disputed_transactions: [{ seller_transaction_id: 'CAP-RP' }] } });
+      expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(-5);
+      expect(await intention(orderId)).toMatchObject({ etat: 'reprise' });
+    });
+    it('remboursement annulé ou dans une autre devise : rien n’est repris', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await crediter(100, 'CAP-RA');
+      f.remboursementsConnus.set('RF-A', { value: '100.00', currency_code: 'CHF', status: 'CANCELLED' });
+      f.remboursementsConnus.set('RF-U', { value: '100.00', currency_code: 'USD', status: 'COMPLETED' });
+      expect((await pp.traiterEvenement(evenementRemboursement('CAP-RA', 'PAYMENT.CAPTURE.REFUNDED', 'RF-A'))).raison)
+        .toBe('Remboursement non abouti (CANCELLED).');
+      expect((await pp.traiterEvenement(evenementRemboursement('CAP-RA', 'PAYMENT.CAPTURE.REFUNDED', 'RF-U'))).raison)
+        .toBe('Devise USD ≠ CHF : rien n\'est repris.');
+      expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(95);
+    });
+    it('remboursement DEMANDÉ par la plateforme : la notification qui suit ne débite pas une seconde fois', async () => {
+      const orderId = await crediter(100, 'CAP-RD');
+      await pp.rembourser(pm.titulaireEcole(ecole), 'dir@a.ch');
+      expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(0);
+      const v = await pp.traiterEvenement(evenementRemboursement('CAP-RD'));
+      expect(v).toEqual({ creditee: false, raison: 'Remboursement REFUND-CAP-RD demandé par la plateforme : déjà débité.' });
+      expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(0);
+      expect(await intention(orderId)).toMatchObject({ etat: 'creditee' });
+    });
+    it('reconnu même sans trace au registre, par le repère custom_id relu chez PayPal', async () => {
+      await crediter(100, 'CAP-RC');
+      await pp.rembourser(pm.titulaireEcole(ecole), 'dir@a.ch');
+      // La notification arrive avant (ou sans) la trace : seul le repère relu chez PayPal témoigne.
+      (await base()).prepare("DELETE FROM credit_mouvements WHERE paypal_id LIKE 'rembours:%'").run();
+      expect((await pp.traiterEvenement(evenementRemboursement('CAP-RC'))).raison)
+        .toBe('Remboursement REFUND-CAP-RC demandé par la plateforme : déjà débité.');
+      expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(0);
+    });
+    it('reprise pour un titulaire disparu : erreur remontée et alerte, pas « déjà enregistrée »', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await crediter(20, 'CAP-RX');
+      (await base()).prepare('UPDATE etablissements SET id = 424242 WHERE id = ?').run(ecole);
+      await expect(pp.traiterEvenement(evenementRemboursement('CAP-RX', 'PAYMENT.CAPTURE.REVERSED'))).rejects.toThrow(/introuvable/);
+      expect(notifyAdmin).toHaveBeenCalledTimes(1);
     });
     it('litige : la capture se lit dans disputed_transactions', async () => {
       await crediter(20, 'CAP-D');
@@ -193,6 +270,11 @@ describe('avec PayPal allumé (bac à sable doublé)', () => {
       expect(f.remboursements).toEqual([
         { capture: 'CAP-2', value: '20.00', currency_code: 'CHF' }, { capture: 'CAP-1', value: '90.01', currency_code: 'CHF' }]);
       expect(pm.soldeDe(pm.titulaireEcole(ecole))).toBe(0);
+      // Chaque remboursement porte le repère de la plateforme et laisse une trace à montant nul.
+      expect(f.remboursementsConnus.get('REFUND-CAP-2')?.custom_id).toBe('educhat:remboursement-demande');
+      const traces = (await base()).prepare(
+        "SELECT montant, paypal_id FROM credit_mouvements WHERE paypal_id LIKE 'rembours:%' ORDER BY paypal_id").all();
+      expect(traces).toEqual([{ montant: 0, paypal_id: 'rembours:REFUND-CAP-1' }, { montant: 0, paypal_id: 'rembours:REFUND-CAP-2' }]);
     });
     it('ce que PayPal refuse de rendre revient au porte-monnaie', async () => {
       await crediter(pm.titulaireEcole(ecole), 100, 'CAP-1');
