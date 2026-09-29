@@ -25,6 +25,11 @@ import { ERR } from '../../shared/providers';
 // PROMPTAGOGUE sur l'accueil vu depuis son réseau. Il ne peut PAS modifier :
 // les IP (l'identité même de l'établissement — le site uniquement), le statut
 // RESPIRE ni l'email de facturation.
+//
+// LES DEUX QUOTAS NE SONT PAS À L'ÉCOLE SEULE : le super-administrateur écrit
+// les mêmes colonnes (token_quota_monthly, quota_per_student_daily) depuis
+// /admin (POST /api/admin/etablissements, sans borne haute). Aucune des deux
+// portes ne prime : la dernière écriture l'emporte.
 
 const MAX_SLOTS = 30;
 

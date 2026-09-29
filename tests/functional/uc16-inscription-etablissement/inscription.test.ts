@@ -212,15 +212,27 @@ describe('Scénarios d’erreur', () => {
     expect(notifications).toHaveLength(0);
   });
 
-  it('plus de 3 tentatives par minute depuis un réseau : 429 ERR_RATE_LIMIT (échecs compris)', async () => {
+  it('plus de 3 tentatives par minute depuis un réseau : 429 ERR_RATE_LIMIT (refus en transaction compris)', async () => {
     const adresse = ipNeuve();
     const jeton = await creerCompte('resp@college.ch');
-    for (let i = 0; i < 3; i++) {
+    // Tout ce qui atteint la transaction compte, qu'il aboutisse (201) ou non (409).
+    expect((await appeler(inscription, { method: 'POST', ip: adresse, token: jeton, body: { name: 'A', adminName: 'R' } })).status).toBe(201);
+    expect((await appeler(inscription, { method: 'POST', ip: adresse, token: jeton, body: { name: 'B', adminName: 'R' } })).status).toBe(409);
+    expect((await appeler(inscription, { method: 'POST', ip: adresse, token: jeton, body: { name: 'C', adminName: 'R' } })).status).toBe(409);
+    const autre = await creerCompte('autre@college.ch');
+    const r = await appeler(inscription, { method: 'POST', ip: adresse, token: autre, body: { name: 'Collège', adminName: 'R' } });
+    expect(r.status).toBe(429);
+    expect(r.json.error.code).toBe('ERR_RATE_LIMIT');
+  });
+
+  it('corrigé : les saisies invalides (400) ne consomment pas le débit du réseau', async () => {
+    const adresse = ipNeuve();
+    const jeton = await creerCompte('resp@college.ch');
+    for (let i = 0; i < 5; i++) {
       expect((await appeler(inscription, { method: 'POST', ip: adresse, token: jeton, body: { name: '' } })).status).toBe(400);
     }
     const r = await appeler(inscription, { method: 'POST', ip: adresse, token: jeton, body: { name: 'Collège', adminName: 'R' } });
-    expect(r.status).toBe(429);
-    expect(r.json.error.code).toBe('ERR_RATE_LIMIT');
+    expect(r.status).toBe(201);
   });
 
   it('méthode autre que POST : 405', async () => {
@@ -230,13 +242,27 @@ describe('Scénarios d’erreur', () => {
   });
 });
 
-describe('Comportement actuel discutable (voir « Anomalies constatées »)', () => {
-  it('/api/ip annonce « non revendiquée » une graphie que l’inscription jugera prise', async () => {
+describe('Anomalie corrigée : /api/ip et l’inscription jugent « revendiquée » de la même façon', () => {
+  it('une IPv4 mappée d’une adresse prise est annoncée revendiquée, et l’inscription l’écarte', async () => {
     await creerEtablissement({ ips: '198.51.100.210' });
     const jeton = await creerCompte('resp@college.ch');
     const vu = await appeler(ip, { method: 'GET', ip: '::ffff:198.51.100.210' });
-    expect(vu.json.revendiquee).toBe(false); // comparaison exacte
+    expect(vu.json.revendiquee).toBe(true); // forme canonique, comme l'inscription
     const r = await appeler(inscription, { method: 'POST', ip: '::ffff:198.51.100.210', token: jeton, body: { name: 'X', adminName: 'R' } });
-    expect(r.json.ipRetenue).toBe(''); // comparaison canonique
+    expect(r.json.ipRetenue).toBe('');
+  });
+
+  it('une graphie IPv6 équivalente est annoncée revendiquée', async () => {
+    await creerEtablissement({ ips: '2001:db8::7' });
+    const vu = await appeler(ip, { method: 'GET', ip: '2001:DB8:0:0:0:0:0:7' });
+    expect(vu.json.revendiquee).toBe(true);
+  });
+
+  it('non-régression : une adresse libre est annoncée libre, et l’inscription la garde', async () => {
+    await creerEtablissement({ ips: '198.51.100.211' });
+    const jeton = await creerCompte('resp@college.ch');
+    expect((await appeler(ip, { method: 'GET', ip: '198.51.100.212' })).json.revendiquee).toBe(false);
+    const r = await appeler(inscription, { method: 'POST', ip: '198.51.100.212', token: jeton, body: { name: 'X', adminName: 'R' } });
+    expect(r.json.ipRetenue).toBe('198.51.100.212');
   });
 });

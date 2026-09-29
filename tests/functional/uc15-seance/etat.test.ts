@@ -125,15 +125,39 @@ describe('Erreurs', () => {
   });
 });
 
-describe('Comportement actuel discutable (voir « Anomalies constatées »)', () => {
-  it('un tuteur archivé après le déploiement reste nommé par la console, pas chez les élèves', async () => {
+describe('Anomalie corrigée : la console voit le tuteur comme le voient les élèves', () => {
+  it('un tuteur archivé après le déploiement n’est plus nommé, ni par la console ni chez les élèves', async () => {
     const a = await ecole();
     const id = await creerTuteur({ name: 'Euclide' });
     await setAuthLock(a.cle, 30);
     await appeler(reglages, { method: 'PUT', ip: a.ip, body: { promptName: 'Euclide' } });
     (await base()).prepare('UPDATE prompts SET archived = 1 WHERE id = ?').run(id);
     expect((await appeler(reglages, { method: 'GET', ip: a.ip })).json.settings.promptName).toBeNull();
-    // session-status ne filtre que sur status = 'published' (pas CLAUSE_VISIBLE).
-    expect((await appeler(statut, { method: 'GET', ip: a.ip })).json.settings.promptName).toBe('Euclide');
+    // session-status applique désormais CLAUSE_VISIBLE, comme session-settings.
+    const r = await appeler(statut, { method: 'GET', ip: a.ip });
+    expect(r.json.settings).not.toBeNull();
+    expect(r.json.settings.promptName).toBeNull();
+  });
+
+  it('un tuteur réservé par une AUTRE école après le déploiement n’est plus nommé', async () => {
+    const a = await ecole();
+    const b = await ecole();
+    const id = await creerTuteur({ name: 'Hypatie' });
+    await setAuthLock(a.cle, 30);
+    await appeler(reglages, { method: 'PUT', ip: a.ip, body: { promptName: 'Hypatie' } });
+    // L'école B reprend le tuteur pour elle seule (catalogue non publié).
+    (await base()).prepare('UPDATE prompts SET etablissement_id = ?, publie = 0 WHERE id = ?').run(b.id, id);
+    expect((await appeler(reglages, { method: 'GET', ip: a.ip })).json.settings.promptName).toBeNull();
+    expect((await appeler(statut, { method: 'GET', ip: a.ip })).json.settings.promptName).toBeNull();
+  });
+
+  it('non-régression : un tuteur réservé à l’école de la séance reste nommé', async () => {
+    const a = await ecole();
+    const id = await creerTuteur({ name: 'Archimède' });
+    (await base()).prepare('UPDATE prompts SET etablissement_id = ? WHERE id = ?').run(a.id, id);
+    await setAuthLock(a.cle, 30);
+    await appeler(reglages, { method: 'PUT', ip: a.ip, body: { promptName: 'Archimède' } });
+    expect((await appeler(reglages, { method: 'GET', ip: a.ip })).json.settings.promptName).toBe('Archimède');
+    expect((await appeler(statut, { method: 'GET', ip: a.ip })).json.settings.promptName).toBe('Archimède');
   });
 });

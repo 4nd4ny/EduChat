@@ -111,7 +111,14 @@ RESPIRE, le fournisseur actif et l'email de facturation restent la main du site 
   règle « présence du champ ». Un `PUT { atelierPromptagogue: true }` remet `hours` à `[]` et les
   deux quotas à `0` (quota illimité). L'écran actuel envoie toujours tout, donc sans effet visible
   aujourd'hui ; test devenu « corrigé : un PUT partiel ne touche plus horaires et quotas… ».
-- **Plafond mensuel : deux commentaires qui se contredisent** — `src/pages/api/etablissement.ts:23-27`
+- **Corrigée** (commentaires seulement, aucun changement de comportement) — les en-têtes de
+  `src/pages/api/etablissement.ts` et de `src/pages/api/admin/etablissements.ts` décrivent
+  désormais le code réel : les deux quotas (plafond mensuel et quota quotidien par élève) sont
+  **partagés** — écrits par l'administrateur de l'école (`PUT /api/etablissement`, bornés) et par
+  le super-administrateur (`POST /api/admin/etablissements`, sans borne haute) ; la dernière
+  écriture l'emporte. Seule l'écriture *par la route d'administration* est réservée au site.
+  Arbitrer qui doit primer relève d'une décision produit, non tranchée ici.
+  Constat d'origine : **Plafond mensuel : deux commentaires qui se contredisent** — `src/pages/api/etablissement.ts:23-27`
   le dit réglable par l'école (et le code l'écrit), alors que `src/pages/api/admin/etablissements.ts:7-10`
   et `:49-50` réservent « les quotas » au site. Le super-administrateur et l'école écrivent donc
   la même colonne ; le dernier qui enregistre l'emporte.

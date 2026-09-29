@@ -68,17 +68,34 @@ describe('Scénario alternatif : poste d’école reconnu par SECRET_ALLOWED_IPS
   });
 });
 
-describe('Anomalie : une école en base n’entre jamais par ses horaires sur /api/auth', () => {
+describe('Anomalie 4 corrigée : une école en base entre par SES horaires sur /api/auth', () => {
   beforeAll(async () => { await charger({ ...TOUT, SECRET_PASSWD: HASH }); });
 
-  it('dans ses propres horaires, GET répond { authorized: false } alors que mayUseServerKeys dit oui', async () => {
-    await db.creerEtablissement({ ips: '198.51.100.50', hours: LUNDI_8_12 });
+  it('dans ses propres horaires, GET entre sans mot de passe, comme mayUseServerKeys, et pose la courtoisie', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.50', hours: LUNDI_8_12 });
     horloge(LUNDI_10H);
     expect(await acces.mayUseServerKeys('198.51.100.50')).toBe(true);
     const r = await appeler(auth, { method: 'GET', ip: '198.51.100.50' });
-    // Comportement actuel : la branche « IP + horaires » ne regarde que
-    // SECRET_ALLOWED_IPS et SECRET_ALLOWED_HOURS.
-    expect(r.json).toEqual({ authorized: false });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ success: true, message: 'Connexion autorisée via IP' });
+    // Verrou de courtoisie sur la salle de CETTE école (portée etab:<id>).
+    expect(await acces.getAuthLockExpiry(`etab:${id}`)).toBe(LUNDI_10H.getTime() + 30 * 60_000);
+  });
+
+  it('hors de ses horaires : { authorized: false }, comme mayUseServerKeys', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.51', hours: LUNDI_8_12 });
+    horloge(LUNDI_18H);
+    expect(await acces.mayUseServerKeys('198.51.100.51')).toBe(false);
+    expect((await appeler(auth, { method: 'GET', ip: '198.51.100.51' })).json).toEqual({ authorized: false });
+    expect(await acces.checkAuthLock(`etab:${id}`)).toBe(false);
+  });
+
+  it('dans les horaires, un POST au mot de passe faux n’est pas validé (anomalie 6) : 401', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.52', hours: LUNDI_8_12 });
+    horloge(LUNDI_10H);
+    const r = await appeler(auth, { method: 'POST', body: { password: 'faux30' }, ip: '198.51.100.52' });
+    expect(r.status).toBe(401);
+    expect(await acces.checkAuthLock(`etab:${id}`)).toBe(false);
   });
 });
 
@@ -137,15 +154,41 @@ describe('Pas de verrou de courtoisie hors horaires', () => {
   });
 });
 
-describe('Anomalie : un mot de passe de salle qui finit par des chiffres est inutilisable', () => {
+describe('Anomalie 3 corrigée : un mot de passe de salle qui finit par des chiffres', () => {
   beforeAll(async () => { await charger({ ...TOUT, SECRET_PASSWD: bcrypt.hashSync('Salle2024', 4) }); });
 
-  it('les chiffres finaux sont tous lus comme la durée : le mot de passe comparé devient « Salle »', async () => {
+  it('suffixé d’une durée (console /enseignant) : ouvre pour cette durée', async () => {
     const id = await db.creerEtablissement({ ips: '198.51.100.90' });
-    for (const saisie of ['Salle202430', 'Salle2024']) {
-      const r = await appeler(auth, { method: 'POST', body: { password: saisie }, ip: '198.51.100.90' });
-      expect(r.status).toBe(401);
-    }
+    const avant = Date.now();
+    const r = await appeler(auth, { method: 'POST', body: { password: 'Salle202430' }, ip: '198.51.100.90' });
+    expect(r.status).toBe(200);
+    const echeance = await acces.getAuthLockExpiry(`etab:${id}`);
+    expect(echeance).toBeGreaterThanOrEqual(avant + 30 * 60_000);
+    expect(echeance).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
+  });
+
+  it('sans suffixe (écran /school) : la saisie entière est essayée d’abord, durée par défaut 60 min', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.91' });
+    const avant = Date.now();
+    const r = await appeler(auth, { method: 'POST', body: { password: 'Salle2024' }, ip: '198.51.100.91' });
+    expect(r.status).toBe(200);
+    expect(await acces.getAuthLockExpiry(`etab:${id}`)).toBeGreaterThanOrEqual(avant + 60 * 60_000);
+  });
+
+  it('suffixe d’un seul chiffre : les chiffres restent au mot de passe tant que possible', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.92' });
+    const avant = Date.now();
+    const r = await appeler(auth, { method: 'POST', body: { password: 'Salle20245' }, ip: '198.51.100.92' });
+    expect(r.status).toBe(200);
+    const echeance = await acces.getAuthLockExpiry(`etab:${id}`);
+    expect(echeance).toBeGreaterThanOrEqual(avant + 5 * 60_000);
+    expect(echeance).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+  });
+
+  it('le mot de passe amputé de ses chiffres (« Salle30 ») n’ouvre rien : 401', async () => {
+    const id = await db.creerEtablissement({ ips: '198.51.100.93' });
+    const r = await appeler(auth, { method: 'POST', body: { password: 'Salle30' }, ip: '198.51.100.93' });
+    expect(r.status).toBe(401);
     expect(await acces.checkAuthLock(`etab:${id}`)).toBe(false);
   });
 });

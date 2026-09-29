@@ -1,16 +1,26 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { isIP } from 'net';
 import { getDb } from '../../../server/db';
+import { ipCanonique } from '../../../server/access';
 import { requireAdmin } from '../../../server/admin';
 import { notifyAdmin } from '../../../server/mail';
 import { ERR, SCHOOL_PROVIDER_IDS } from '../../../shared/providers';
 
 // Gestion des établissements (« clients »).
-// L'établissement porte : ses IP, son statut RESPIRE (gratuit), son quota
-// mensuel de tokens sur la clé interne, son fournisseur actif, son contact
-// de facturation — tout cela reste la main du SITE.
+// L'établissement porte : ses IP, son statut RESPIRE (gratuit), son fournisseur
+// actif, son contact de facturation — tout cela reste la main du SITE, et de
+// lui seul.
 //
-// UNE SEULE EXCEPTION, et elle est étroite : l'ouverture du catalogue
+// LES DEUX QUOTAS SONT PARTAGÉS, pas réservés. Le plafond mensuel de tokens
+// (token_quota_monthly) et le quota quotidien par élève
+// (quota_per_student_daily) s'écrivent ICI par le super-administrateur, mais
+// AUSSI par l'administrateur de l'école via PUT /api/etablissement (page
+// /etablissement, bornés là-bas à 10 milliards et 10 millions). Même colonne,
+// deux portes : le dernier qui enregistre l'emporte, sans verrou ni arbitrage.
+// Ce qui est réservé au site, c'est l'ÉCRITURE PAR CETTE ROUTE : une école n'y
+// touche aux quotas ni par le grand formulaire ni par l'action « catalogue ».
+//
+// UNE SEULE EXCEPTION sur cette route, et elle est étroite : l'ouverture du catalogue
 // (catalogue_ouvert) appartient à l'école, puisqu'il s'agit de ce que SES
 // élèves voient. Elle passe donc par une action à part (« catalogue »),
 // qui n'écrit que cette colonne et que sur la ligne de l'administrateur qui
@@ -18,27 +28,11 @@ import { ERR, SCHOOL_PROVIDER_IDS } from '../../../shared/providers';
 // cocher RESPIRE et se donner la gratuité — la portée n'est pas un détail
 // d'affichage, elle décide de ce qui est écrit.
 
-/**
- * LA FORME CANONIQUE D'UNE ADRESSE — pour dédoublonner, et pour rien d'autre.
- *
- * Copie volontaire de celle de l'inscription en libre-service
- * (src/pages/api/etablissement/inscription.ts), qui ne l'exporte pas : les deux
- * portes qui écrivent des IP d'école doivent trancher « deux écoles
- * désignent-elles la même machine ? » de la même façon, graphies IPv4 mappée
- * et IPv6 comprises. Comme là-bas, on STOCKE la chaîne saisie (c'est elle que
- * resolveEtablissementByIp compare) et on ne COMPARE que la forme canonique.
- * Si l'une change, l'autre doit suivre.
- */
-function canonique(brut: string): string {
-  const sansPrefixe = brut.replace(/^::ffff:/i, '');
-  if (isIP(sansPrefixe) === 4) return sansPrefixe;
-  if (isIP(brut) === 6) {
-    try { return new URL(`http://[${brut}]`).hostname.slice(1, -1); }
-    catch { return brut.toLowerCase(); }
-  }
-  return brut;
-}
-
+// Deux écoles désignent-elles la même machine ? On STOCKE la chaîne saisie
+// (c'est elle que resolveEtablissementByIp compare) et on ne COMPARE que la
+// forme canonique — la même règle, importée, que l'inscription en libre-service
+// et /api/ip : deux portes qui écrivent des IP d'école ne doivent pas en juger
+// différemment.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const scope = requireAdmin(req);
   if (!scope) return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
@@ -74,8 +68,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     return res.status(200).json({ ok: true, id: cible });
   }
 
-  // Tout le reste — créer, renommer, régler les IP, les quotas, RESPIRE, la
-  // facturation — relève du site et de lui seul.
+  // Tout le reste de CETTE ROUTE — créer, renommer, régler les IP, les quotas,
+  // RESPIRE, la facturation — n'est ouvert qu'au super-administrateur. (Les
+  // quotas ne lui sont pas réservés pour autant : l'école règle les siens par
+  // PUT /api/etablissement — voir l'en-tête.)
   if (scope.niveau !== 'super') return res.status(403).json({ error: { code: 'ERR_FORBIDDEN' } });
 
   if (req.method === 'POST') {
@@ -114,10 +110,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       for (const row of db.prepare('SELECT ips FROM etablissements WHERE id != ?').all(id) as { ips: string }[]) {
         for (const brut of row.ips.split(',')) {
           const valeur = brut.trim();
-          if (valeur) prises.add(canonique(valeur));
+          if (valeur) prises.add(ipCanonique(valeur));
         }
       }
-      if (listeIps.some(ip => prises.has(canonique(ip)))) {
+      if (listeIps.some(ip => prises.has(ipCanonique(ip)))) {
         return res.status(409).json({ error: { code: 'ERR_IP_TAKEN' } });
       }
     }
